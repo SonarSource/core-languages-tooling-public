@@ -18,7 +18,7 @@ jobs:
     # TODO: Choose the appropriate runner for your repository
     # For guidance on runner selection, visit:
     # https://xtranet-sonarsource.atlassian.net/wiki/spaces/Platform/pages/3694231566/GitHub+Actions+Runner+-+GitHub
-    runs-on: github-ubuntu-latest-s  # Required for public repositories
+    runs-on: warp-custom-ubuntu-24-04  # Required for public repositories
     name: Build
     permissions:
       id-token: write
