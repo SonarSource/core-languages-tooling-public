@@ -26,12 +26,13 @@ echo "  installed: $HOOKS_DIR/add-bom-to-dotnet.sh"
 if jq -e '.hooks.PostToolUse // [] | map(select(.matcher == "Write")) | length > 0' "$SETTINGS" > /dev/null 2>&1; then
     echo "  settings.json already has a Write hook — skipped (add manually if needed)"
 else
+    cp "$SETTINGS" "$SETTINGS.bak"
     tmp=$(mktemp)
     jq --arg cmd "$HOOK_CMD" '
         .hooks |= (. // {}) |
         .hooks.PostToolUse |= (. // []) + [{"matcher": "Write", "hooks": [{"type": "command", "command": $cmd}]}]
     ' "$SETTINGS" > "$tmp" && mv "$tmp" "$SETTINGS"
-    echo "  updated: $SETTINGS"
+    echo "  updated: $SETTINGS  (backup: $SETTINGS.bak)"
 fi
 
 echo "Done. Restart Claude Code for the hooks to take effect."
