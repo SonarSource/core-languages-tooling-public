@@ -5,6 +5,7 @@
     "local>SonarSource/renovate-config"
   ],
   "minimumReleaseAgeBehaviour": "timestamp-optional",
+  "prCreation": "immediate",
   "rebaseWhen": "never",
   "enabledManagers": [
     "github-actions",
