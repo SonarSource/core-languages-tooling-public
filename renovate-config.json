@@ -7,6 +7,9 @@
   "minimumReleaseAgeBehaviour": "timestamp-optional",
   "prCreation": "immediate",
   "rebaseWhen": "never",
+  "addLabels": [
+    "dependencies"
+  ],
   "enabledManagers": [
     "github-actions",
     "maven",
