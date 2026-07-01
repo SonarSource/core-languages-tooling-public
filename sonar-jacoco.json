@@ -1,0 +1,12 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "local>SonarSource/core-languages-tooling-public:languages-team"
+  ],
+  "schedule": [
+    "before 4am on Monday"
+  ],
+  "reviewers": [
+    "team:quality-jvm-squad"
+  ]
+}

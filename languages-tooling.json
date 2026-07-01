@@ -1,0 +1,26 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "local>SonarSource/core-languages-tooling-public:languages-team"
+  ],
+  "configMigration": true,
+  "autoApprove": true,
+  "prCreation": "immediate",
+  "rebaseWhen": "never",
+  "packageRules": [
+    {
+      "description": "Don't group updates by default",
+      "matchPackageNames": [
+        "*"
+      ],
+      "groupName": null
+    },
+    {
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "matchCurrentVersion": "!/^0/"
+    }
+  ]
+}
