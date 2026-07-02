@@ -49,7 +49,7 @@ jobs:
           run-shadow-scans: true
 
       - name: Run IRIS Analysis
-        uses: SonarSource/unified-dogfooding-actions/run-iris@master
+        uses: SonarSource/unified-dogfooding-actions/run-iris@03e023516511b1c9da325ad104c2290e3b91688c # master
         with:
           # TODO: Replace these placeholders with your actual project keys and platforms
           primary_project_key: "YOUR-PROJECT-KEY"
