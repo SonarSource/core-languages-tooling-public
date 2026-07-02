@@ -42,7 +42,7 @@ jobs:
       # Vault token is used because built-in GITHUB_TOKEN doesn't trigger CI
       - name: Get secrets
         id: secrets
-        uses: SonarSource/vault-action-wrapper@v3
+        uses: SonarSource/vault-action-wrapper@881045d830534a70ec3c7c275fa3714412c8ff6e # 3.6.1
         with:
           secrets: |
             development/github/token/{REPO_OWNER_NAME_DASH}-nuget-lock-update token | GITHUB_TOKEN;
