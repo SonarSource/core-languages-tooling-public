@@ -1,9 +1,15 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "description": "Shared Renovate preset for Core Languages & Parsers repositories.",
-  "extends": ["local>SonarSource/renovate-config"],
+  "extends": [
+    "local>SonarSource/renovate-config"
+  ],
   "minimumReleaseAgeBehaviour": "timestamp-optional",
+  "prCreation": "immediate",
   "rebaseWhen": "never",
+  "addLabels": [
+    "dependencies"
+  ],
   "enabledManagers": [
     "github-actions",
     "maven",
@@ -18,7 +24,9 @@
   "packageRules": [
     {
       "description": "Don't group updates by default",
-      "matchPackageNames": ["*"],
+      "matchPackageNames": [
+        "*"
+      ],
       "groupName": null
     }
   ]
