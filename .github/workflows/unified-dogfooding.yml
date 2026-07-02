@@ -36,7 +36,7 @@ jobs:
       id-token: write
       contents: write
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       # TODO: Choose and uncomment the appropriate build action for your project:
       # - uses: SonarSource/ci-github-actions/build-maven@v1       # For Maven-based Java projects
