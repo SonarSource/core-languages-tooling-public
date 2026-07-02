@@ -44,7 +44,7 @@ jobs:
       # - uses: SonarSource/ci-github-actions/build-poetry@v1      # For Python projects using Poetry
       # - uses: SonarSource/ci-github-actions/build-npm@v1         # For Node.js projects using npm
       # - uses: SonarSource/ci-github-actions/build-yarn@v1        # For Node.js projects using Yarn
-      - uses: SonarSource/ci-github-actions/BUILD-ACTION-HERE@v1
+      - uses: SonarSource/ci-github-actions/BUILD-ACTION-HERE@9d3488f52305895f599feb1ec8560c1a5339aa99 # 1.8.1
         with:
           run-shadow-scans: true
 
