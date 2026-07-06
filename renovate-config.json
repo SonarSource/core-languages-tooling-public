@@ -30,31 +30,37 @@
       "groupName": null
     },
     {
-      "description": "Keep SonarSource GitHub Actions on floating major refs",
+      "description": "Do not update SonarSource GH actions, we want the branch-version. Only external actions must have commit ID.",
       "matchManagers": [
         "github-actions"
       ],
       "matchDepNames": [
         "SonarSource/**"
-      ],
-      "pinDigests": false
-    },
-    {
-      "description": "Do not create pin, minor, patch, or digest PRs for SonarSource GitHub Actions",
-      "matchManagers": [
-        "github-actions"
-      ],
-      "matchDepNames": [
-        "SonarSource/**"
-      ],
-      "matchUpdateTypes": [
-        "pin",
-        "pinDigest",
-        "digest",
-        "minor",
-        "patch"
       ],
       "enabled": false
+    },
+    {
+      "description": "Group MSTest dependencies into a single PR",
+      "matchPackageNames": [
+        "MSTest.**",
+        "Microsoft.NET.Test.Sdk"
+      ],
+      "groupName": "MSTest"
+    },
+    {
+      "description": "Group protobuf packages together - Grpc.Tools bundles protoc which must be compatible with the Google.Protobuf runtime",
+      "matchPackageNames": [
+        "Google.Protobuf",
+        "Grpc.Tools"
+      ],
+      "groupName": "protobuf"
+    },
+    {
+      "description": "Do not update FluentAssertions above v7 due to license change",
+      "matchPackageNames": [
+        "FluentAssertions"
+      ],
+      "allowedVersions": "<8.0.0"
     }
   ]
 }
