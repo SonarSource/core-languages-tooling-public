@@ -38,29 +38,6 @@
         "SonarSource/**"
       ],
       "enabled": false
-    },
-    {
-      "description": "Group MSTest dependencies into a single PR",
-      "matchPackageNames": [
-        "MSTest.**",
-        "Microsoft.NET.Test.Sdk"
-      ],
-      "groupName": "MSTest"
-    },
-    {
-      "description": "Group protobuf packages together - Grpc.Tools bundles protoc which must be compatible with the Google.Protobuf runtime",
-      "matchPackageNames": [
-        "Google.Protobuf",
-        "Grpc.Tools"
-      ],
-      "groupName": "protobuf"
-    },
-    {
-      "description": "Do not update FluentAssertions above v7 due to license change",
-      "matchPackageNames": [
-        "FluentAssertions"
-      ],
-      "allowedVersions": "<8.0.0"
     }
   ]
 }
