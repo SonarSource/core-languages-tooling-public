@@ -72,6 +72,18 @@
         "FluentAssertions"
       ],
       "allowedVersions": "<8.0.0"
+    },
+    {
+      "description": "Group parent POM updates into a single PR",
+      "matchManagers": [
+        "maven"
+      ],
+      "matchPackageNames": [
+        "org.sonarsource.parent:parent",
+        "com.sonarsource.parent:parent"
+      ],
+      "groupName": "Parent",
+      "groupSlug": "parent"
     }
   ]
 }
