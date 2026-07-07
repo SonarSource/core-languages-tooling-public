@@ -18,6 +18,7 @@
     "gradle-wrapper",
     "npm",
     "cargo",
+    "dockerfile",
     "pre-commit",
     "mise"
   ],
