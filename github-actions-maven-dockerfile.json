@@ -1,0 +1,12 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Shared Renovate preset for repositories using GitHub Actions, Maven, and Dockerfile updates.",
+  "enabledManagers": [
+    "github-actions",
+    "maven",
+    "dockerfile"
+  ],
+  "dockerfile": {
+    "enabled": true
+  }
+}
