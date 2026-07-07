@@ -84,6 +84,16 @@
       ],
       "groupName": "Parent",
       "groupSlug": "parent"
+    },
+    {
+      "description": "Group Roslyn dependencies into a single PR",
+      "matchManagers": [
+        "nuget"
+      ],
+      "matchPackageNames": [
+        "Microsoft.CodeAnalysis.*"
+      ],
+      "groupName": "Roslyn"
     }
   ]
 }
