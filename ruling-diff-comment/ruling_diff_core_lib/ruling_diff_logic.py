@@ -50,7 +50,34 @@ def parse_rule_filename(filename: str) -> tuple[str, str]:
 
 
 def strip_project_key(key: str) -> str:
-    return key.split(":", 1)[1] if ":" in key else key
+    """
+    Extract file path from ruling JSON key.
+
+    Handles different formats:
+    - Python: "airflow:airflow/cli/cli_parser.py" -> "airflow/cli/cli_parser.py"
+    - Java Maven: "commons-beanutils:commons-beanutils:src/main/..." -> "src/main/..."
+    - Java Maven: "org.eclipse.jetty:jetty-project:jetty-http/src/main/..." -> "jetty-http/src/main/..."
+
+    Strategy:
+    - If there are 3+ colon-separated parts (Java Maven format), return everything after the 2nd colon
+    - Otherwise (Python format), return everything after the 1st colon
+    """
+    if ":" not in key:
+        return key
+
+    parts = key.split(":", 2)  # Split into at most 3 parts
+
+    if len(parts) == 3:
+        # Java Maven format: groupId:artifactId:path
+        # Return just the path (3rd part)
+        return parts[2]
+    elif len(parts) == 2:
+        # Python format: project:path
+        # Return just the path (2nd part)
+        return parts[1]
+    else:
+        # No colon, return as-is
+        return key
 
 
 def diff_ruling_jsons(

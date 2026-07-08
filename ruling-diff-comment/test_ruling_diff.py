@@ -71,6 +71,48 @@ class ParsePathTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             core.parse_rule_filename("-S1066.json")
 
+    def test_strip_project_key_python_format(self) -> None:
+        # Python format: project:path
+        self.assertEqual(
+            "airflow/cli/cli_parser.py",
+            core.strip_project_key("airflow:airflow/cli/cli_parser.py")
+        )
+
+    def test_strip_project_key_java_maven_format_commons_beanutils(self) -> None:
+        # Java Maven format: groupId:artifactId:path
+        self.assertEqual(
+            "src/main/java/org/apache/commons/beanutils2/LazyDynaList.java",
+            core.strip_project_key("commons-beanutils:commons-beanutils:src/main/java/org/apache/commons/beanutils2/LazyDynaList.java")
+        )
+
+    def test_strip_project_key_java_maven_format_eclipse_jetty(self) -> None:
+        # Java Maven format with module path: groupId:artifactId:module/path
+        self.assertEqual(
+            "jetty-http/src/main/java/org/eclipse/jetty/http/QuotedCSVParser.java",
+            core.strip_project_key("org.eclipse.jetty:jetty-project:jetty-http/src/main/java/org/eclipse/jetty/http/QuotedCSVParser.java")
+        )
+
+    def test_strip_project_key_java_maven_format_test_file(self) -> None:
+        # Java Maven format with test file
+        self.assertEqual(
+            "jetty-io/src/test/java/org/eclipse/jetty/io/IOTest.java",
+            core.strip_project_key("org.eclipse.jetty:jetty-project:jetty-io/src/test/java/org/eclipse/jetty/io/IOTest.java")
+        )
+
+    def test_strip_project_key_no_colon(self) -> None:
+        # Edge case: no colon in key
+        self.assertEqual(
+            "simple-path/file.py",
+            core.strip_project_key("simple-path/file.py")
+        )
+
+    def test_strip_project_key_no_colon_simple_file(self) -> None:
+        # Edge case: simple filename with no path separator
+        self.assertEqual(
+            "file.py",
+            core.strip_project_key("file.py")
+        )
+
 
 class DiffLogicTest(unittest.TestCase):
     def test_diff_ruling_jsons_added_issues(self) -> None:
