@@ -162,7 +162,7 @@ def is_ruling_json(path: str, ruling_root: str = EXPECTED_RULING_ROOT) -> bool:
 def _is_missing_at_ref(stderr: str) -> bool:
     return any(
         marker in stderr
-        for marker in ("exists on disk, but not in", "does not exist in", "path '")
+        for marker in ("exists on disk, but not in", "does not exist in")
     )
 
 

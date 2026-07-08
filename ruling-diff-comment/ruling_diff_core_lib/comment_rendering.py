@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import PurePosixPath
+
 from ruling_diff_core_lib.models_and_constants import (
     COMMENT_MARKER,
     COMMENT_SOFT_LIMIT,
@@ -94,8 +96,31 @@ def format_rule_summary(rule_diff: RuleDiff) -> str:
     return " - ".join(summary_parts)
 
 
+_FENCE_BY_EXT = {
+    ".py": "python",
+    ".java": "java",
+    ".cs": "csharp",
+    ".js": "javascript",
+    ".ts": "typescript",
+    ".cpp": "cpp",
+    ".c": "c",
+    ".h": "cpp",
+    ".go": "go",
+    ".rb": "ruby",
+    ".php": "php",
+    ".kt": "kotlin",
+    ".scala": "scala",
+}
+
+
+def _fence_language(file_path: str) -> str:
+    """Get the appropriate markdown fence language for a file based on its extension."""
+    return _FENCE_BY_EXT.get(PurePosixPath(file_path).suffix, "")
+
+
 def format_snippet_block(snippet: Snippet) -> str:
-    return "\n".join([format_snippet_header(snippet), "```python", snippet.body, "```"])
+    lang = _fence_language(snippet.file_path)
+    return "\n".join([format_snippet_header(snippet), f"```{lang}", snippet.body, "```"])
 
 
 def format_snippet_header(snippet: Snippet) -> str:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections import Counter
 from pathlib import PurePosixPath
 
@@ -148,7 +149,11 @@ def build_rule_diff_for_file(
     source_cache: SourceCache,
     io: RulingDiffIO,
 ) -> RuleDiff | None:
-    project, repository, rule_key = parse_ruling_path(path, io.ruling_root)
+    try:
+        project, repository, rule_key = parse_ruling_path(path, io.ruling_root)
+    except ValueError as exc:
+        logging.warning("Skipping unrecognized ruling path %s: %s", path, exc)
+        return None
     old_json: OptionalRulingJson = io.load_json_at_ref(path, base_sha)
     new_json: OptionalRulingJson = io.load_json_at_ref(path, head_sha)
     file_diffs: list[IssueDiff] = diff_ruling_jsons(old_json, new_json)
