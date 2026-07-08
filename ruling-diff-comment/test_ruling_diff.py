@@ -24,9 +24,13 @@ class FakeRulingDiffIO:
         self,
         json_by_ref_path: dict[tuple[str, str], dict[str, list[int]] | None],
         text_by_ref_path: dict[tuple[str, str], str | None],
+        ruling_root: str = "private/its-enterprise/ruling/src/test/resources/expected_ruling",
+        sources_root: str = "private/its-enterprise/sources_ruling",
     ) -> None:
         self.json_by_ref_path = json_by_ref_path
         self.text_by_ref_path = text_by_ref_path
+        self.ruling_root = ruling_root
+        self.sources_root = sources_root
         self.load_json_calls: list[tuple[str, str]] = []
         self.load_text_calls: list[tuple[str, str]] = []
         self.resolve_calls: list[tuple[str, str]] = []
