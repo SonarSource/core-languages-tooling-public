@@ -23,26 +23,34 @@ class CommandError(RuntimeError):
 
 
 class GitHubActionIO:
+    def __init__(
+        self,
+        ruling_root: str = EXPECTED_RULING_ROOT,
+        sources_root: str = RULING_SOURCES_SUBMODULE,
+    ):
+        self.ruling_root = ruling_root
+        self.sources_root = sources_root
+
     def load_json_at_ref(self, path: str, ref: str) -> dict[str, list[int]] | None:
         return load_json_at_ref(path, ref)
 
     def load_text_at_ref(self, path: str, ref: str) -> str | None:
-        return load_text_at_ref(path, ref)
+        return load_text_at_ref(path, ref, self.sources_root)
 
     def resolve_source_path(self, project: str, file_path: str) -> str:
         if project == "project":
             return self._resolve_project_source_path(file_path)
         source_root = PROJECT_SOURCE_OVERRIDES.get(
-            project, f"{RULING_SOURCES_SUBMODULE}/{project}"
+            project, f"{self.sources_root}/{project}"
         )
         return f"{source_root}/{file_path.lstrip('/')}"
 
     def _resolve_project_source_path(self, file_path: str) -> str:
         clean_path = file_path.lstrip("/")
-        primary_candidate = f"{RULING_SOURCES_SUBMODULE}/{clean_path}"
+        primary_candidate = f"{self.sources_root}/{clean_path}"
         candidates = [primary_candidate]
         candidates.extend(
-            self._with_direct_children_prefixes(RULING_SOURCES_SUBMODULE, clean_path)
+            self._with_direct_children_prefixes(self.sources_root, clean_path)
         )
         candidates.append(f"{SOURCES_INTERNAL_RULING_ROOT}/{clean_path}")
         candidates.append(f"{SOURCES_INTERNAL_NAMESPACE_RULING_ROOT}/{clean_path}")
@@ -124,7 +132,7 @@ def parse_json_documents(content: str) -> list[object]:
     return documents
 
 
-def get_changed_ruling_files(base_sha: str, head_sha: str) -> list[str]:
+def get_changed_ruling_files(base_sha: str, head_sha: str, ruling_root: str = EXPECTED_RULING_ROOT) -> list[str]:
     output = run_command(
         [
             "git",
@@ -132,22 +140,22 @@ def get_changed_ruling_files(base_sha: str, head_sha: str) -> list[str]:
             "--name-only",
             f"{base_sha}...{head_sha}",
             "--",
-            f"{EXPECTED_RULING_ROOT}/",
+            f"{ruling_root}/",
         ]
     )
     changed = [
         path
         for path in (line.strip() for line in output.splitlines())
-        if is_ruling_json(path)
+        if is_ruling_json(path, ruling_root)
     ]
     return sorted(set(changed))
 
 
-def is_ruling_json(path: str) -> bool:
+def is_ruling_json(path: str, ruling_root: str = EXPECTED_RULING_ROOT) -> bool:
     return (
         bool(path)
         and path.endswith(".json")
-        and path.startswith(f"{EXPECTED_RULING_ROOT}/")
+        and path.startswith(f"{ruling_root}/")
     )
 
 
@@ -194,9 +202,9 @@ def normalize_ruling_json(data: dict, path: str, ref: str) -> dict[str, list[int
     return normalized
 
 
-def load_text_at_ref(path: str, ref: str) -> str | None:
-    if is_ruling_source_path(path):
-        return load_submodule_text_at_ref(path, ref)
+def load_text_at_ref(path: str, ref: str, sources_root: str = RULING_SOURCES_SUBMODULE) -> str | None:
+    if is_ruling_source_path(path, sources_root):
+        return load_submodule_text_at_ref(path, ref, sources_root)
 
     result = subprocess.run(
         ["git", "show", f"{ref}:{path}"], capture_output=True, text=True
@@ -210,22 +218,22 @@ def load_text_at_ref(path: str, ref: str) -> str | None:
     )
 
 
-def is_ruling_source_path(path: str) -> bool:
-    return path.startswith(f"{RULING_SOURCES_SUBMODULE}/")
+def is_ruling_source_path(path: str, sources_root: str = RULING_SOURCES_SUBMODULE) -> bool:
+    return path.startswith(f"{sources_root}/")
 
 
-def load_submodule_text_at_ref(path: str, ref: str) -> str | None:
-    submodule_commit = get_submodule_commit_for_ref(ref)
+def load_submodule_text_at_ref(path: str, ref: str, sources_root: str = RULING_SOURCES_SUBMODULE) -> str | None:
+    submodule_commit = get_submodule_commit_for_ref(ref, sources_root)
     if submodule_commit is None:
         return load_text_with_workspace_fallback(path, ref)
 
-    submodule_relative_path = path[len(f"{RULING_SOURCES_SUBMODULE}/") :]
-    content = read_submodule_file_at_commit(submodule_commit, submodule_relative_path)
+    submodule_relative_path = path[len(f"{sources_root}/") :]
+    content = read_submodule_file_at_commit(submodule_commit, submodule_relative_path, sources_root)
     if content is not None:
         return content
 
-    fetch_submodule_commit(submodule_commit)
-    content = read_submodule_file_at_commit(submodule_commit, submodule_relative_path)
+    fetch_submodule_commit(submodule_commit, sources_root)
+    content = read_submodule_file_at_commit(submodule_commit, submodule_relative_path, sources_root)
     if content is not None:
         return content
 
@@ -238,9 +246,9 @@ def load_submodule_text_at_ref(path: str, ref: str) -> str | None:
     return load_text_with_workspace_fallback(path, ref)
 
 
-def get_submodule_commit_for_ref(ref: str) -> str | None:
+def get_submodule_commit_for_ref(ref: str, sources_root: str = RULING_SOURCES_SUBMODULE) -> str | None:
     result = subprocess.run(
-        ["git", "rev-parse", f"{ref}:{RULING_SOURCES_SUBMODULE}"],
+        ["git", "rev-parse", f"{ref}:{sources_root}"],
         capture_output=True,
         text=True,
     )
@@ -254,9 +262,9 @@ def get_submodule_commit_for_ref(ref: str) -> str | None:
     return result.stdout.strip()
 
 
-def read_submodule_file_at_commit(commit: str, relative_path: str) -> str | None:
+def read_submodule_file_at_commit(commit: str, relative_path: str, sources_root: str = RULING_SOURCES_SUBMODULE) -> str | None:
     result = subprocess.run(
-        ["git", "-C", RULING_SOURCES_SUBMODULE, "show", f"{commit}:{relative_path}"],
+        ["git", "-C", sources_root, "show", f"{commit}:{relative_path}"],
         capture_output=True,
         text=True,
     )
@@ -265,12 +273,12 @@ def read_submodule_file_at_commit(commit: str, relative_path: str) -> str | None
     return None
 
 
-def fetch_submodule_commit(commit: str) -> None:
+def fetch_submodule_commit(commit: str, sources_root: str = RULING_SOURCES_SUBMODULE) -> None:
     subprocess.run(
         [
             "git",
             "-C",
-            RULING_SOURCES_SUBMODULE,
+            sources_root,
             "fetch",
             "--depth",
             "1",

@@ -16,8 +16,8 @@ from ruling_diff_core_lib.models_and_constants import (
 from ruling_diff_core_lib.snippet_generation import build_snippets_for_rule
 
 
-def parse_ruling_path(path: str) -> tuple[str, str, str]:
-    prefix = f"{EXPECTED_RULING_ROOT}/"
+def parse_ruling_path(path: str, ruling_root: str = EXPECTED_RULING_ROOT) -> tuple[str, str, str]:
+    prefix = f"{ruling_root}/"
     if not path.startswith(prefix):
         raise ValueError(f"Unexpected ruling path outside expected root: {path}")
     relative_path = path[len(prefix) :]
@@ -121,7 +121,7 @@ def build_rule_diff_for_file(
     source_cache: SourceCache,
     io: RulingDiffIO,
 ) -> RuleDiff | None:
-    project, repository, rule_key = parse_ruling_path(path)
+    project, repository, rule_key = parse_ruling_path(path, io.ruling_root)
     old_json: OptionalRulingJson = io.load_json_at_ref(path, base_sha)
     new_json: OptionalRulingJson = io.load_json_at_ref(path, head_sha)
     file_diffs: list[IssueDiff] = diff_ruling_jsons(old_json, new_json)

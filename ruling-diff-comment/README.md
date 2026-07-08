@@ -26,16 +26,21 @@ Add this action to your workflow:
     repository: ${{ github.repository }}
     base-sha: ${{ github.event.pull_request.base.sha }}
     head-sha: ${{ github.event.pull_request.head.sha }}
+    # Optional: customize for different analyzers
+    # ruling-root: 'its/ruling/src/test/resources'  # For Java
+    # sources-root: 'its/sources'                    # For Java
 ```
 
 ## Inputs
 
-| Input | Description | Required |
-|-------|-------------|----------|
-| `pr-number` | Pull request number | Yes |
-| `repository` | Repository in `owner/repo` format | Yes |
-| `base-sha` | Base commit SHA for comparison | Yes |
-| `head-sha` | Head commit SHA for comparison | Yes |
+| Input | Description | Required | Default |
+|-------|-------------|----------|---------|
+| `pr-number` | Pull request number | Yes | - |
+| `repository` | Repository in `owner/repo` format | Yes | - |
+| `base-sha` | Base commit SHA for comparison | Yes | - |
+| `head-sha` | Head commit SHA for comparison | Yes | - |
+| `ruling-root` | Path to ruling directory | No | `private/its-enterprise/ruling/src/test/resources/expected_ruling` |
+| `sources-root` | Path to sources directory | No | `private/its-enterprise/sources_ruling` |
 
 ## Requirements
 
@@ -52,30 +57,56 @@ Add this action to your workflow:
 
 ### Ruling File Location
 
-The action expects ruling files to be located under:
+By default, the action expects ruling files at:
 ```
 private/its-enterprise/ruling/src/test/resources/expected_ruling/
 ```
 
-This path is configured in `ruling_diff_core_lib/models_and_constants.py` via the `EXPECTED_RULING_ROOT` constant.
+Override with the `ruling-root` input parameter for different analyzers.
 
 ### Source File Resolution
 
-Source files for generating code snippets are resolved based on project name. The default behavior looks for sources in:
+Source files for code snippets are resolved based on project name. The default looks for sources in:
 ```
 private/its-enterprise/sources_ruling/{project}/
 ```
 
-For analyzers with different source layouts, you can configure project-specific overrides in `ruling_diff_core_lib/models_and_constants.py` by modifying the `PROJECT_SOURCE_OVERRIDES` dictionary.
+Override with the `sources-root` input parameter for different analyzers.
+
+### Ruling JSON Key Formats
+
+The action supports different ruling JSON key formats:
+
+**Python format** (2-part):
+```
+"airflow:airflow/cli/cli_parser.py": [42]
+```
+Extracts: `airflow/cli/cli_parser.py`
+
+**Java Maven format** (3-part):
+```
+"commons-beanutils:commons-beanutils:src/main/java/...": [42]
+"org.eclipse.jetty:jetty-project:jetty-http/src/main/...": [42]
+```
+Extracts: `src/main/java/...` or `jetty-http/src/main/...`
+
+The action automatically detects and handles both formats.
 
 ### Adapting for Different Analyzers
 
 When using this action in a different analyzer repository:
 
-1. Verify the `EXPECTED_RULING_ROOT` matches your ruling directory structure
-2. Update `PROJECT_SOURCE_OVERRIDES` if your ruling sources use different paths
-3. Ensure your workflow initializes any necessary submodules before running the action
-4. Configure the workflow trigger paths to match your ruling file locations
+1. **Set `ruling-root` parameter** to match your ruling directory
+   - Java: `its/ruling/src/test/resources`
+   - Python: `private/its-enterprise/ruling/src/test/resources/expected_ruling`
+
+2. **Set `sources-root` parameter** to match your sources directory
+   - Java: `its/sources`
+   - Python: `private/its-enterprise/sources_ruling`
+
+3. **Ensure sources are available** at the specified path
+
+4. **Configure workflow trigger paths** to match your ruling file locations
 
 See `example-workflow.yml` for a reference implementation.
 

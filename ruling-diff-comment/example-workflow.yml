@@ -64,5 +64,8 @@ jobs:
           repository: ${{ github.repository }}
           base-sha: ${{ inputs.base-sha || github.event.pull_request.base.sha }}
           head-sha: ${{ inputs.head-sha || github.event.pull_request.head.sha }}
+          # For Java analyzer, use:
+          # ruling-root: 'its/ruling/src/test/resources'
+          # sources-root: 'its/sources'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

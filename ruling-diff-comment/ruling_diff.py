@@ -26,6 +26,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--repository", required=True)
     parser.add_argument("--base-sha", required=True)
     parser.add_argument("--head-sha", required=True)
+    parser.add_argument(
+        "--ruling-root",
+        default="private/its-enterprise/ruling/src/test/resources/expected_ruling",
+        help="Path to ruling directory"
+    )
+    parser.add_argument(
+        "--sources-root",
+        default="private/its-enterprise/sources_ruling",
+        help="Path to sources directory"
+    )
     args = parser.parse_args()
     if "/" not in args.repository:
         raise ValueError("--repository must be in owner/repo format")
@@ -45,13 +55,15 @@ def main() -> None:
         logging.info("Missing pr/base/head arguments. Skipping ruling diff comment.")
         return
 
-    changed_files = get_changed_ruling_files(args.base_sha, args.head_sha)
+    changed_files = get_changed_ruling_files(
+        args.base_sha, args.head_sha, args.ruling_root
+    )
     if not changed_files:
         logging.info("No changed ruling json files found. Nothing to do.")
         return
 
     logging.info("Found %d changed ruling json files", len(changed_files))
-    io = GitHubActionIO()
+    io = GitHubActionIO(args.ruling_root, args.sources_root)
     rule_diffs = build_rule_diffs(
         changed_files,
         args.base_sha,

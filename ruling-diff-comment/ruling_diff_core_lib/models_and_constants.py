@@ -11,6 +11,9 @@ SourceCache = dict[tuple[str, str], OptionalSourceLines]
 
 
 class RulingDiffIO(Protocol):
+    ruling_root: str
+    sources_root: str
+
     def load_json_at_ref(self, path: str, ref: str) -> OptionalRulingJson:
         ...
 
