@@ -1,0 +1,68 @@
+# Example workflow for using ruling-diff-comment action
+# This is a reference implementation that can be adapted for different analyzers
+
+name: Ruling Diff Comment
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      # Adjust this path to match your analyzer's ruling directory structure
+      - 'private/its-enterprise/ruling/src/test/resources/expected_ruling/**'
+      # Include action changes to test modifications
+      - '.github/actions/ruling-diff-comment/**'
+      - '.github/workflows/ruling-diff-comment.yml'
+  workflow_dispatch:
+    inputs:
+      pr-number:
+        description: 'Pull request number'
+        required: true
+        type: string
+      base-sha:
+        description: 'Base commit SHA for diff'
+        required: true
+        type: string
+      head-sha:
+        description: 'Head commit SHA for diff'
+        required: true
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  ruling-diff-comment:
+    runs-on: ubuntu-latest  # Adjust runner type as needed
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # If your analyzer uses submodules for ruling sources, initialize them here
+      # - name: Checkout ruling sources submodule
+      #   run: git submodule update --init --recursive --depth 1 private/its-enterprise/sources_ruling
+
+      # Install required tools (uv and gh CLI)
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      # gh CLI is typically pre-installed on GitHub runners
+      # If not, add installation step here
+
+      # Use the action from the public repository
+      - name: Post ruling diff comment
+        uses: SonarSource/core-languages-tooling-public/ruling-diff-comment@master
+        with:
+          pr-number: ${{ inputs.pr-number || github.event.pull_request.number }}
+          repository: ${{ github.repository }}
+          base-sha: ${{ inputs.base-sha || github.event.pull_request.base.sha }}
+          head-sha: ${{ inputs.head-sha || github.event.pull_request.head.sha }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
