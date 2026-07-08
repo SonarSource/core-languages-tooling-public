@@ -14,36 +14,19 @@ concurrency:
   cancel-in-progress: ${{ github.ref_name != github.event.repository.default_branch }}
 
 jobs:
-  build:
-    # TODO: Choose the appropriate runner for your repository
-    # For guidance on runner selection, visit:
-    # https://xtranet-sonarsource.atlassian.net/wiki/spaces/Platform/pages/3694231566/GitHub+Actions+Runner+-+GitHub
-    runs-on: github-ubuntu-latest-s  # Required for public repositories
-    name: Build
-    permissions:
-      id-token: write
-      contents: read
+  test-ruling-diff-comment:
+    runs-on: ubuntu-latest
+    name: Test ruling-diff-comment action
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0 #TODO: update to the last version
 
-      # SECURITY BEST PRACTICES:
-      # - Pin all external actions to specific SHA commits (not tags) for security
-      # - All secrets MUST come from Vault using SonarSource/vault-action-wrapper
-      # - Never use GitHub Secrets for sensitive data
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
 
-      # TODO: Add your build steps here
-      #
-      # For ready-to-use SonarSource GitHub Actions with real-world examples
-      # and production-ready implementations, visit:
-      # https://github.com/SonarSource/ci-github-actions
-      #
-      # For caching, use SonarSource/gh-action_cache@v1
-      # It automatically chooses GitHub Actions cache (public) or S3 cache (private)
-      #
-      # Real-world reference repositories:
-      # - sonar-dummy: Private Java/Maven
-      # - sonar-dummy-gradle-oss: Public Java/Gradle
-      # - sonar-dummy-python-oss: Public Python/Poetry
-      # - sonar-dummy-js: Public NodeJS/Yarn
-      #
+      - name: Run unit tests
+        run: |
+          cd ruling-diff-comment
+          uv run python -m unittest discover -v -s . -p "test_ruling_diff.py"
