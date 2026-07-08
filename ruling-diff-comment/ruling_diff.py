@@ -81,6 +81,6 @@ def main() -> None:
 if __name__ == "__main__":
     try:
         main()
-    except Exception as exc:
-        logging.error("Failed to generate ruling diff comment: %s", exc)
+    except Exception:
+        logging.exception("Failed to generate ruling diff comment")
         sys.exit(1)
