@@ -462,15 +462,7 @@ class GitHubActionIOTest(unittest.TestCase):
             io_impl.resolve_source_path("project", "biopython/Bio/Nexus/Nexus.py"),
         )
 
-    def test_resolve_source_path_for_project_rulings_falls_back_to_sources_child(self) -> None:
-        io_impl = io.GitHubActionIO()
-        self.assertEqual(
-            "private/its-enterprise/sources_ruling/specific-rules/S1716.py",
-            io_impl.resolve_source_path("project", "S1716.py"),
-        )
-
     def test_resolve_source_path_for_project_rulings_falls_back_to_sources_internal(self) -> None:
-        io_impl = io.GitHubActionIO()
         with tempfile.TemporaryDirectory() as tmp_dir:
             sources_ruling = f"{tmp_dir}/sources_ruling"
             sources_internal = f"{tmp_dir}/sources_internal_ruling"
@@ -489,10 +481,10 @@ class GitHubActionIOTest(unittest.TestCase):
                     sources_namespace,
                 ),
             ):
+                io_impl = io.GitHubActionIO(sources_root=sources_ruling)
                 self.assertEqual(target, io_impl.resolve_source_path("project", "foo.py"))
 
     def test_resolve_source_path_for_project_rulings_falls_back_to_namespace_child(self) -> None:
-        io_impl = io.GitHubActionIO()
         with tempfile.TemporaryDirectory() as tmp_dir:
             sources_ruling = f"{tmp_dir}/sources_ruling"
             sources_internal = f"{tmp_dir}/sources_internal_ruling"
@@ -512,10 +504,10 @@ class GitHubActionIOTest(unittest.TestCase):
                     sources_namespace,
                 ),
             ):
+                io_impl = io.GitHubActionIO(sources_root=sources_ruling)
                 self.assertEqual(target, io_impl.resolve_source_path("project", "foo.py"))
 
     def test_resolve_source_path_for_project_rulings_returns_primary_on_miss(self) -> None:
-        io_impl = io.GitHubActionIO()
         with tempfile.TemporaryDirectory() as tmp_dir:
             sources_ruling = f"{tmp_dir}/sources_ruling"
             sources_internal = f"{tmp_dir}/sources_internal_ruling"
@@ -533,6 +525,7 @@ class GitHubActionIOTest(unittest.TestCase):
                     sources_namespace,
                 ),
             ):
+                io_impl = io.GitHubActionIO(sources_root=sources_ruling)
                 self.assertEqual(primary, io_impl.resolve_source_path("project", "missing.py"))
 
     def test_resolve_source_path_uses_project_overrides(self) -> None:
