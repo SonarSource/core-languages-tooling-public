@@ -212,7 +212,8 @@ def load_text_at_ref(path: str, ref: str, sources_root: str = RULING_SOURCES_SUB
     if result.returncode == 0:
         return result.stdout
     if _is_missing_at_ref(result.stderr):
-        return load_text_with_workspace_fallback(path, ref)
+        logging.warning("Source file '%s' not found at %s", path, ref)
+        return None
     raise CommandError(
         f"Failed to read source file at ref: git show {ref}:{path}\nstdout: {result.stdout}\nstderr: {result.stderr}"
     )
@@ -225,7 +226,8 @@ def is_ruling_source_path(path: str, sources_root: str = RULING_SOURCES_SUBMODUL
 def load_submodule_text_at_ref(path: str, ref: str, sources_root: str = RULING_SOURCES_SUBMODULE) -> str | None:
     submodule_commit = get_submodule_commit_for_ref(ref, sources_root)
     if submodule_commit is None:
-        return load_text_with_workspace_fallback(path, ref)
+        logging.warning("Source file '%s' not found at %s", path, ref)
+        return None
 
     submodule_relative_path = path[len(f"{sources_root}/") :]
     content = read_submodule_file_at_commit(submodule_commit, submodule_relative_path, sources_root)
@@ -243,7 +245,7 @@ def load_submodule_text_at_ref(path: str, ref: str, sources_root: str = RULING_S
         submodule_commit,
         ref,
     )
-    return load_text_with_workspace_fallback(path, ref)
+    return None
 
 
 def get_submodule_commit_for_ref(ref: str, sources_root: str = RULING_SOURCES_SUBMODULE) -> str | None:
@@ -288,22 +290,6 @@ def fetch_submodule_commit(commit: str, sources_root: str = RULING_SOURCES_SUBMO
         capture_output=True,
         text=True,
     )
-
-
-def load_text_with_workspace_fallback(path: str, ref: str) -> str | None:
-    workspace_content = load_workspace_text(path)
-    if workspace_content is None:
-        logging.warning("Source file '%s' not found at %s", path, ref)
-        return None
-    logging.warning("Source file '%s' not found at %s, using workspace copy", path, ref)
-    return workspace_content
-
-
-def load_workspace_text(path: str) -> str | None:
-    workspace_path = Path(path)
-    if not workspace_path.is_file():
-        return None
-    return workspace_path.read_text(encoding="utf-8")
 
 
 def get_existing_comment_id(pr_number: str, repository: str) -> str | None:
