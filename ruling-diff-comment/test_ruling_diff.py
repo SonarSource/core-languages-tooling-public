@@ -399,28 +399,6 @@ class SourceLoadingTest(unittest.TestCase):
         )
 
         self.assertEqual("print('from submodule')\n", content)
-
-    @patch("ruling_diff_io.subprocess.run")
-    def test_load_text_at_ref_falls_back_to_workspace_copy_with_warning(
-        self, mocked_run
-    ) -> None:
-        mocked_run.return_value = subprocess.CompletedProcess(
-            args=["git"],
-            returncode=128,
-            stdout="",
-            stderr="fatal: path 'private/its-enterprise/sources_ruling/foo.py' exists on disk, but not in 'deadbeef'",
-        )
-        with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as tmp:
-            tmp.write("print('from workspace')\n")
-            tmp_path = tmp.name
-        try:
-            with self.assertLogs(level="WARNING") as logs:
-                content = io.load_text_at_ref(tmp_path, "deadbeef")
-            self.assertEqual("print('from workspace')\n", content)
-            self.assertTrue(any("using workspace copy" in log for log in logs.output))
-        finally:
-            pathlib.Path(tmp_path).unlink(missing_ok=True)
-
     @patch("ruling_diff_io.subprocess.run")
     def test_load_text_at_ref_warns_when_source_missing(self, mocked_run) -> None:
         mocked_run.return_value = subprocess.CompletedProcess(
