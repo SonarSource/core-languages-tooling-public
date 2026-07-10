@@ -1,0 +1,46 @@
+name: 'Ruling Diff Comment'
+description: 'Posts a human-readable summary of ruling file changes on PRs'
+
+inputs:
+  pr-number:
+    description: 'Pull request number'
+    required: true
+  repository:
+    description: 'owner/repo'
+    required: true
+  base-sha:
+    description: 'Base commit SHA for diff'
+    required: true
+  head-sha:
+    description: 'Head commit SHA for diff'
+    required: true
+  ruling-root:
+    description: 'Path to ruling directory (e.g., its/ruling/src/test/resources for Java)'
+    required: false
+    default: 'private/its-enterprise/ruling/src/test/resources/expected_ruling'
+  sources-root:
+    description: 'Path to sources directory (e.g., its/sources for Java)'
+    required: false
+    default: 'private/its-enterprise/sources_ruling'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Generate and post ruling diff comment
+      shell: bash
+      env:
+        GH_TOKEN: ${{ env.GH_TOKEN }}
+        PR_NUMBER: ${{ inputs.pr-number }}
+        REPOSITORY: ${{ inputs.repository }}
+        BASE_SHA: ${{ inputs.base-sha }}
+        HEAD_SHA: ${{ inputs.head-sha }}
+        RULING_ROOT: ${{ inputs.ruling-root }}
+        SOURCES_ROOT: ${{ inputs.sources-root }}
+      run: |
+        uv run --project "${{ github.action_path }}" python "${{ github.action_path }}/ruling_diff.py" \
+          --pr-number "$PR_NUMBER" \
+          --repository "$REPOSITORY" \
+          --base-sha "$BASE_SHA" \
+          --head-sha "$HEAD_SHA" \
+          --ruling-root "$RULING_ROOT" \
+          --sources-root "$SOURCES_ROOT"
