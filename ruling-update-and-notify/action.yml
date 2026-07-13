@@ -369,7 +369,7 @@ runs:
 
     - name: Post ruling diff comment
       if: steps.setup-env.outputs.is-pr == 'true' && steps.check-diff.outputs.has-differences == 'true'
-      uses: SonarSource/core-languages-tooling-public/ruling-diff-comment@master
+      uses: SonarSource/core-languages-tooling-public/ruling-diff-comment@romain/ruling-sync-PR-dotnet
       with:
         pr-number: ${{ steps.setup-env.outputs.pr-number }}
         repository: ${{ steps.setup-env.outputs.repository }}
