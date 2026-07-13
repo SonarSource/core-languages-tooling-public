@@ -66,45 +66,98 @@ runs:
       with:
         enable-cache: true
 
+    - name: Validate inputs
+      shell: bash
+      run: |
+        # Validate ruling-root is not empty and not a dangerous path
+        if [ -z "$RULING_ROOT" ] || [ "$RULING_ROOT" = "/" ] || [ "$RULING_ROOT" = "." ]; then
+          echo "::error::ruling-root must be a non-empty path, not '/', and not '.'"
+          exit 1
+        fi
+
+        # Validate it doesn't escape the workspace
+        if [[ "$RULING_ROOT" == ../* ]] || [[ "$RULING_ROOT" == */../* ]]; then
+          echo "::error::ruling-root must not contain '..' path components"
+          exit 1
+        fi
+      env:
+        RULING_ROOT: ${{ inputs.ruling-root }}
+
     - name: Setup environment variables
       id: setup-env
       shell: bash
+      env:
+        INPUT_PR_NUMBER: ${{ inputs.pr-number }}
+        INPUT_TARGET_REF: ${{ inputs.target-ref }}
+        INPUT_BASE_REF: ${{ inputs.base-ref }}
+        INPUT_BASE_SHA: ${{ inputs.base-sha }}
+        INPUT_HEAD_SHA: ${{ inputs.head-sha }}
+        INPUT_REPOSITORY: ${{ inputs.repository }}
+        GITHUB_HEAD_REF: ${{ github.head_ref }}
+        GITHUB_REF_NAME: ${{ github.ref_name }}
+        GITHUB_BASE_REF: ${{ github.base_ref }}
+        GITHUB_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        GITHUB_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        GITHUB_SHA: ${{ github.sha }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
       run: |
         # Detect if this is a PR event
-        if [ -n "${{ inputs.pr-number }}" ]; then
+        if [ -n "$INPUT_PR_NUMBER" ]; then
           IS_PR=true
-          PR_NUMBER="${{ inputs.pr-number }}"
+          PR_NUMBER="$INPUT_PR_NUMBER"
         else
           IS_PR=false
           PR_NUMBER=""
         fi
 
-        # Set target and base refs
-        TARGET_REF="${{ inputs.target-ref }}"
+        # Set target and base refs (validated to prevent injection)
+        TARGET_REF="$INPUT_TARGET_REF"
         if [ -z "$TARGET_REF" ]; then
-          TARGET_REF="${{ github.head_ref || github.ref_name }}"
+          TARGET_REF="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+        fi
+        # Validate ref name (must be alphanumeric, -, _, /, .)
+        if ! [[ "$TARGET_REF" =~ ^[a-zA-Z0-9/_.-]+$ ]]; then
+          echo "::error::Invalid target-ref: $TARGET_REF"
+          exit 1
         fi
 
-        BASE_REF="${{ inputs.base-ref }}"
+        BASE_REF="$INPUT_BASE_REF"
         if [ -z "$BASE_REF" ]; then
-          BASE_REF="${{ github.base_ref || github.event.repository.default_branch }}"
+          BASE_REF="${GITHUB_BASE_REF:-$GITHUB_DEFAULT_BRANCH}"
+        fi
+        # Validate ref name
+        if ! [[ "$BASE_REF" =~ ^[a-zA-Z0-9/_.-]+$ ]]; then
+          echo "::error::Invalid base-ref: $BASE_REF"
+          exit 1
         fi
 
-        # Set SHAs
-        BASE_SHA="${{ inputs.base-sha }}"
+        # Set SHAs (validated to be 40-char hex)
+        BASE_SHA="$INPUT_BASE_SHA"
         if [ -z "$BASE_SHA" ] && [ "$IS_PR" = "true" ]; then
-          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          BASE_SHA="$GITHUB_PR_BASE_SHA"
+        fi
+        if [ -n "$BASE_SHA" ] && ! [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+          echo "::error::Invalid base-sha: $BASE_SHA"
+          exit 1
         fi
 
-        HEAD_SHA="${{ inputs.head-sha }}"
+        HEAD_SHA="$INPUT_HEAD_SHA"
         if [ -z "$HEAD_SHA" ]; then
-          HEAD_SHA="${{ github.sha }}"
+          HEAD_SHA="$GITHUB_SHA"
+        fi
+        if [ -n "$HEAD_SHA" ] && ! [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+          echo "::error::Invalid head-sha: $HEAD_SHA"
+          exit 1
         fi
 
-        # Set repository
-        REPOSITORY="${{ inputs.repository }}"
+        # Set repository (validated format)
+        REPOSITORY="$INPUT_REPOSITORY"
         if [ -z "$REPOSITORY" ]; then
-          REPOSITORY="${{ github.repository }}"
+          REPOSITORY="$GITHUB_REPOSITORY"
+        fi
+        if ! [[ "$REPOSITORY" =~ ^[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+$ ]]; then
+          echo "::error::Invalid repository: $REPOSITORY"
+          exit 1
         fi
 
         echo "is-pr=$IS_PR" >> "$GITHUB_OUTPUT"
@@ -279,20 +332,24 @@ runs:
         rm -rf "$TEMP_DIR"
         echo "::endgroup::"
 
-    - name: Check for differences
+    - name: Check for differences and stage changes
       id: check-diff
       shell: bash
+      env:
+        RULING_ROOT: ${{ inputs.ruling-root }}
       run: |
         # Check if there are uncommitted changes in the ruling directory
         # produced by the artifact sync / sync-command steps.
-        if [ -n "$(git status --porcelain -- "${{ inputs.ruling-root }}/")" ]; then
+        if [ -n "$(git status --porcelain -- "$RULING_ROOT/")" ]; then
           echo "has-differences=true" >> "$GITHUB_OUTPUT"
+          # Stage the changes so ruling-diff-comment can see them
+          git add "$RULING_ROOT/"
         else
           echo "has-differences=false" >> "$GITHUB_OUTPUT"
         fi
 
     - name: Post ruling diff comment
-      if: steps.setup-env.outputs.is-pr == 'true'
+      if: steps.setup-env.outputs.is-pr == 'true' && steps.check-diff.outputs.has-differences == 'true'
       uses: SonarSource/core-languages-tooling-public/ruling-diff-comment@master
       with:
         pr-number: ${{ steps.setup-env.outputs.pr-number }}
@@ -314,11 +371,13 @@ runs:
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
+        FIX_PR_BRANCH_PREFIX: ${{ inputs.fix-pr-branch-prefix }}
+        TARGET_REF: ${{ steps.setup-env.outputs.target-ref }}
+        IS_PR: ${{ steps.setup-env.outputs.is-pr }}
+        PR_NUMBER: ${{ steps.setup-env.outputs.pr-number }}
+        RULING_ROOT: ${{ inputs.ruling-root }}
       run: |
-        FIX_BRANCH="${{ inputs.fix-pr-branch-prefix }}-${{ steps.setup-env.outputs.target-ref }}"
-        TARGET_REF="${{ steps.setup-env.outputs.target-ref }}"
-        IS_PR="${{ steps.setup-env.outputs.is-pr }}"
-        PR_NUMBER="${{ steps.setup-env.outputs.pr-number }}"
+        FIX_BRANCH="${FIX_PR_BRANCH_PREFIX}-${TARGET_REF}"
 
         if [ "$IS_PR" = "true" ]; then
           FIX_PR_TITLE="Update ruling results for PR #${PR_NUMBER}"
@@ -333,7 +392,13 @@ runs:
         fi
 
         # Stash changes before checkout
-        git stash push -m "ruling-sync-changes" -- "${{ inputs.ruling-root }}/"
+        STASH_CREATED=false
+        if git diff --quiet -- "$RULING_ROOT/"; then
+          echo "No changes to stash"
+        else
+          git stash push -m "ruling-sync-changes" -- "$RULING_ROOT/"
+          STASH_CREATED=true
+        fi
 
         git fetch origin "$TARGET_REF"
         git config user.name "github-actions[bot]"
@@ -343,8 +408,17 @@ runs:
         if git ls-remote --exit-code origin "refs/heads/$FIX_BRANCH" > /dev/null 2>&1; then
           echo "Fix branch already exists, updating it"
           git checkout -b "$FIX_BRANCH" "origin/$TARGET_REF"
-          git stash pop || true  # Ignore error if stash is empty
-          git add "${{ inputs.ruling-root }}/"
+
+          # Pop stash if we created one
+          if [ "$STASH_CREATED" = "true" ]; then
+            if ! git stash pop; then
+              echo "::error::Failed to apply stashed changes - likely merge conflict"
+              git stash drop || true
+              exit 1
+            fi
+          fi
+
+          git add "$RULING_ROOT/"
 
           if git diff --staged --quiet; then
             echo "No ruling changes to commit"
@@ -373,8 +447,17 @@ runs:
         else
           echo "Creating new fix branch"
           git checkout -b "$FIX_BRANCH" "origin/$TARGET_REF"
-          git stash pop || true  # Ignore error if stash is empty
-          git add "${{ inputs.ruling-root }}/"
+
+          # Pop stash if we created one
+          if [ "$STASH_CREATED" = "true" ]; then
+            if ! git stash pop; then
+              echo "::error::Failed to apply stashed changes - likely merge conflict"
+              git stash drop || true
+              exit 1
+            fi
+          fi
+
+          git add "$RULING_ROOT/"
 
           if git diff --staged --quiet; then
             echo "No ruling changes to commit"
@@ -402,13 +485,15 @@ runs:
 
     - name: Cleanup stale fix PR
       if: |
-        inputs.ruling-failed != 'true' ||
-        steps.check-diff.outputs.has-differences != 'true'
+        env.skip-update != 'true' &&
+        (inputs.ruling-failed != 'true' || steps.check-diff.outputs.has-differences != 'true')
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
+        FIX_PR_BRANCH_PREFIX: ${{ inputs.fix-pr-branch-prefix }}
+        TARGET_REF: ${{ steps.setup-env.outputs.target-ref }}
       run: |
-        FIX_BRANCH="${{ inputs.fix-pr-branch-prefix }}-${{ steps.setup-env.outputs.target-ref }}"
+        FIX_BRANCH="${FIX_PR_BRANCH_PREFIX}-${TARGET_REF}"
 
         # Check if there's an open PR for the fix branch
         FIX_PR_STATE=$(gh pr view "$FIX_BRANCH" --json state --jq '.state' 2>/dev/null || true)
