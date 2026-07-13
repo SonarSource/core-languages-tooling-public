@@ -190,6 +190,11 @@ def parse_ruling_json(content: str, path: str, ref: str) -> dict[str, list[int]]
 
 
 def normalize_ruling_json(data: dict, path: str, ref: str) -> dict[str, list[int]]:
+    # Check if this is .NET format with "Issues" array
+    if "Issues" in data and isinstance(data["Issues"], list):
+        return normalize_dotnet_ruling_json(data, path, ref)
+
+    # Otherwise, use the standard format (rule -> list of line numbers)
     normalized: dict[str, list[int]] = {}
     for key, value in data.items():
         if not isinstance(key, str):
@@ -199,6 +204,56 @@ def normalize_ruling_json(data: dict, path: str, ref: str) -> dict[str, list[int
                 f"Ruling file {path} at {ref} has non-integer line list for key {key}"
             )
         normalized[key] = value
+    return normalized
+
+
+def normalize_dotnet_ruling_json(data: dict, path: str, ref: str) -> dict[str, list[int]]:
+    """
+    Normalize .NET ruling format to standard format.
+
+    .NET format:
+    {
+      "Issues": [
+        {"Id": "S1135", "Location": {"StartLine": 270, ...}, ...},
+        {"Id": "S1135", "Location": {"StartLine": 54, ...}, ...}
+      ]
+    }
+
+    Standard format:
+    {
+      "S1135": [54, 270]
+    }
+    """
+    normalized: dict[str, list[int]] = {}
+    issues = data["Issues"]
+
+    if not isinstance(issues, list):
+        raise ValueError(f"Ruling file {path} at {ref} has non-list Issues field")
+
+    for issue in issues:
+        if not isinstance(issue, dict):
+            raise ValueError(f"Ruling file {path} at {ref} has non-dict issue in Issues array")
+
+        rule_id = issue.get("Id")
+        if not isinstance(rule_id, str):
+            raise ValueError(f"Ruling file {path} at {ref} has issue without string Id field")
+
+        location = issue.get("Location")
+        if not isinstance(location, dict):
+            raise ValueError(f"Ruling file {path} at {ref} has issue without Location object")
+
+        start_line = location.get("StartLine")
+        if not isinstance(start_line, int):
+            raise ValueError(f"Ruling file {path} at {ref} has issue without integer StartLine")
+
+        if rule_id not in normalized:
+            normalized[rule_id] = []
+        normalized[rule_id].append(start_line)
+
+    # Sort line numbers for each rule for consistency
+    for rule_id in normalized:
+        normalized[rule_id].sort()
+
     return normalized
 
 
