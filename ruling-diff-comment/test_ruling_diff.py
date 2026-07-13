@@ -118,6 +118,45 @@ class ParsePathTest(unittest.TestCase):
         )
 
 
+class NormalizeJsonTest(unittest.TestCase):
+    def test_normalize_standard_format(self) -> None:
+        # Standard format: rule -> list of line numbers
+        data = {"S1234": [10, 20, 30]}
+        result = io.normalize_ruling_json(data, "test.json", "HEAD")
+        self.assertEqual({"S1234": [10, 20, 30]}, result)
+
+    def test_normalize_dotnet_format(self) -> None:
+        # .NET format with Issues array
+        data = {
+            "Issues": [
+                {
+                    "Id": "S1135",
+                    "Message": "Complete the task",
+                    "Location": {"StartLine": 270, "StartColumn": 16, "EndLine": 270, "EndColumn": 20}
+                },
+                {
+                    "Id": "S1135",
+                    "Message": "Complete the task",
+                    "Location": {"StartLine": 54, "StartColumn": 12, "EndLine": 54, "EndColumn": 16}
+                },
+                {
+                    "Id": "S1192",
+                    "Message": "Define a constant",
+                    "Location": {"StartLine": 100, "StartColumn": 10, "EndLine": 100, "EndColumn": 20}
+                }
+            ]
+        }
+        result = io.normalize_ruling_json(data, "test.json", "HEAD")
+        # Should group by rule ID and sort line numbers
+        self.assertEqual({"S1135": [54, 270], "S1192": [100]}, result)
+
+    def test_normalize_dotnet_format_empty_issues(self) -> None:
+        # .NET format with empty Issues array
+        data = {"Issues": []}
+        result = io.normalize_ruling_json(data, "test.json", "HEAD")
+        self.assertEqual({}, result)
+
+
 class DiffLogicTest(unittest.TestCase):
     def test_diff_ruling_jsons_added_issues(self) -> None:
         diffs = core.diff_ruling_jsons({"proj:a.py": [1, 2]}, {"proj:a.py": [1, 2, 3]})
