@@ -115,8 +115,8 @@ runs:
         if [ -z "$TARGET_REF" ]; then
           TARGET_REF="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
         fi
-        # Validate ref name (must be alphanumeric, -, _, /, .)
-        if ! [[ "$TARGET_REF" =~ ^[a-zA-Z0-9/_.-]+$ ]]; then
+        # Validate ref name (must start with alphanumeric, cannot start with -)
+        if ! [[ "$TARGET_REF" =~ ^[a-zA-Z0-9][a-zA-Z0-9/_.-]*$ ]]; then
           echo "::error::Invalid target-ref: $TARGET_REF"
           exit 1
         fi
@@ -125,8 +125,8 @@ runs:
         if [ -z "$BASE_REF" ]; then
           BASE_REF="${GITHUB_BASE_REF:-$GITHUB_DEFAULT_BRANCH}"
         fi
-        # Validate ref name
-        if ! [[ "$BASE_REF" =~ ^[a-zA-Z0-9/_.-]+$ ]]; then
+        # Validate ref name (must start with alphanumeric, cannot start with -)
+        if ! [[ "$BASE_REF" =~ ^[a-zA-Z0-9][a-zA-Z0-9/_.-]*$ ]]; then
           echo "::error::Invalid base-ref: $BASE_REF"
           exit 1
         fi
@@ -170,12 +170,15 @@ runs:
 
     - name: Fetch base branch
       shell: bash
+      env:
+        BASE_REF: ${{ steps.setup-env.outputs.base-ref }}
+        BASE_SHA: ${{ steps.setup-env.outputs.base-sha }}
       run: |
-        git fetch origin "${{ steps.setup-env.outputs.base-ref }}"
-        if [ -n "${{ steps.setup-env.outputs.base-sha }}" ]; then
-          git fetch origin "${{ steps.setup-env.outputs.base-sha }}" || true
-          if ! git cat-file -e "${{ steps.setup-env.outputs.base-sha }}^{commit}" 2>/dev/null; then
-            echo "::warning::Failed to fetch PR base SHA: ${{ steps.setup-env.outputs.base-sha }}"
+        git fetch origin -- "$BASE_REF"
+        if [ -n "$BASE_SHA" ]; then
+          git fetch origin -- "$BASE_SHA" || true
+          if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            echo "::warning::Failed to fetch PR base SHA: $BASE_SHA"
           fi
         fi
 
@@ -391,23 +394,23 @@ runs:
         🤖 Generated with GitHub Actions"
         fi
 
-        # Stash changes before checkout
+        # Stash changes before checkout (account for staged changes too)
         STASH_CREATED=false
-        if git diff --quiet -- "$RULING_ROOT/"; then
+        if git diff --quiet -- "$RULING_ROOT/" && git diff --cached --quiet -- "$RULING_ROOT/"; then
           echo "No changes to stash"
         else
           git stash push -m "ruling-sync-changes" -- "$RULING_ROOT/"
           STASH_CREATED=true
         fi
 
-        git fetch origin "$TARGET_REF"
+        git fetch origin -- "$TARGET_REF"
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
 
         # Check if fix branch already exists
-        if git ls-remote --exit-code origin "refs/heads/$FIX_BRANCH" > /dev/null 2>&1; then
+        if git ls-remote --exit-code origin -- "refs/heads/$FIX_BRANCH" > /dev/null 2>&1; then
           echo "Fix branch already exists, updating it"
-          git checkout -b "$FIX_BRANCH" "origin/$TARGET_REF"
+          git checkout -b "$FIX_BRANCH" -- "origin/$TARGET_REF"
 
           # Pop stash if we created one
           if [ "$STASH_CREATED" = "true" ]; then
@@ -446,7 +449,7 @@ runs:
           fi
         else
           echo "Creating new fix branch"
-          git checkout -b "$FIX_BRANCH" "origin/$TARGET_REF"
+          git checkout -b "$FIX_BRANCH" -- "origin/$TARGET_REF"
 
           # Pop stash if we created one
           if [ "$STASH_CREATED" = "true" ]; then
