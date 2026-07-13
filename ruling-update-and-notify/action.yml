@@ -11,8 +11,9 @@ inputs:
     description: 'Whether the ruling test failed (true/false)'
     required: true
   sync-command:
-    description: 'Command to run to sync/update ruling expected results (e.g., "mvn clean test -Dupdate-expected")'
-    required: true
+    description: 'Optional command to run after syncing artifacts (e.g., "mvn clean test -Dupdate-expected")'
+    required: false
+    default: ''
   ruling-root:
     description: 'Path to ruling expected results directory'
     required: true
@@ -282,20 +283,9 @@ runs:
       id: check-diff
       shell: bash
       run: |
-        # Use ruling-diff-comment action to check for differences
-        BASE_SHA_ARG=""
-        if [ -n "${{ steps.setup-env.outputs.base-sha }}" ]; then
-          BASE_SHA_ARG="${{ steps.setup-env.outputs.base-sha }}"
-        else
-          BASE_SHA_ARG="origin/${{ steps.setup-env.outputs.base-ref }}"
-        fi
-
-        HEAD_SHA_ARG="${{ steps.setup-env.outputs.head-sha }}"
-
-        # Check if there are changes in the ruling directory
-        CHANGED_FILES=$(git diff --name-only "$BASE_SHA_ARG" "$HEAD_SHA_ARG" -- "${{ inputs.ruling-root }}/" || echo "")
-
-        if [ -n "$CHANGED_FILES" ]; then
+        # Check if there are uncommitted changes in the ruling directory
+        # produced by the artifact sync / sync-command steps.
+        if [ -n "$(git status --porcelain -- "${{ inputs.ruling-root }}/")" ]; then
           echo "has-differences=true" >> "$GITHUB_OUTPUT"
         else
           echo "has-differences=false" >> "$GITHUB_OUTPUT"
