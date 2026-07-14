@@ -1,0 +1,523 @@
+name: 'Ruling Update and Notify'
+description: 'Updates ruling results when tests fail and notifies via PR comments'
+author: 'SonarSource'
+
+inputs:
+  pr-number:
+    description: 'Pull request number (for PR events only)'
+    required: false
+    default: ''
+  ruling-failed:
+    description: 'Whether the ruling test failed (true/false)'
+    required: true
+  sync-command:
+    description: 'Optional command to run after syncing artifacts (e.g., "mvn clean test -Dupdate-expected")'
+    required: false
+    default: ''
+  ruling-root:
+    description: 'Path to ruling expected results directory'
+    required: true
+  sources-root:
+    description: 'Path to ruling sources directory'
+    required: false
+    default: ''
+  base-sha:
+    description: 'Base commit SHA for comparison (auto-detected for PRs if not provided)'
+    required: false
+    default: ''
+  head-sha:
+    description: 'Head commit SHA for comparison (defaults to current HEAD)'
+    required: false
+    default: ''
+  target-ref:
+    description: 'Target branch/ref name (auto-detected if not provided)'
+    required: false
+    default: ''
+  base-ref:
+    description: 'Base branch/ref name (auto-detected if not provided)'
+    required: false
+    default: ''
+  create-fix-pr:
+    description: 'Whether to create a fix PR when ruling fails (true/false)'
+    required: false
+    default: 'true'
+  fix-pr-branch-prefix:
+    description: 'Prefix for the fix PR branch name'
+    required: false
+    default: 'fix/update-ruling-for'
+  repository:
+    description: 'Repository in format owner/repo (defaults to current repository)'
+    required: false
+    default: ''
+
+outputs:
+  has-differences:
+    description: 'Whether there are ruling differences (true/false)'
+    value: ${{ steps.check-diff.outputs.has-differences }}
+  fix-pr-url:
+    description: 'URL of the fix PR if created'
+    value: ${{ steps.create-fix-pr.outputs.fix-pr-url }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install uv
+      uses: astral-sh/setup-uv@v5
+      with:
+        enable-cache: true
+
+    - name: Validate inputs
+      shell: bash
+      run: |
+        # Validate ruling-root is not empty
+        if [ -z "$RULING_ROOT" ]; then
+          echo "::error::ruling-root must be a non-empty path"
+          exit 1
+        fi
+
+        # Reject absolute paths
+        if [[ "$RULING_ROOT" == /* ]]; then
+          echo "::error::ruling-root must be a relative path, not an absolute path"
+          exit 1
+        fi
+
+        # Reject paths starting with . (including '.', './', '..')
+        if [[ "$RULING_ROOT" == .* ]]; then
+          echo "::error::ruling-root must not start with '.'"
+          exit 1
+        fi
+
+        # Reject paths containing '..' anywhere
+        if [[ "$RULING_ROOT" == *..* ]]; then
+          echo "::error::ruling-root must not contain '..' path components"
+          exit 1
+        fi
+
+        # Validate it only contains safe characters (alphanumeric, /, _, and -)
+        if ! [[ "$RULING_ROOT" =~ ^[a-zA-Z0-9/_-]+(/[a-zA-Z0-9/_-]+)*$ ]]; then
+          echo "::error::ruling-root contains invalid characters. Only alphanumeric, /, _, and - are allowed"
+          exit 1
+        fi
+      env:
+        RULING_ROOT: ${{ inputs.ruling-root }}
+
+    - name: Setup environment variables
+      id: setup-env
+      shell: bash
+      env:
+        INPUT_PR_NUMBER: ${{ inputs.pr-number }}
+        INPUT_TARGET_REF: ${{ inputs.target-ref }}
+        INPUT_BASE_REF: ${{ inputs.base-ref }}
+        INPUT_BASE_SHA: ${{ inputs.base-sha }}
+        INPUT_HEAD_SHA: ${{ inputs.head-sha }}
+        INPUT_REPOSITORY: ${{ inputs.repository }}
+        GITHUB_HEAD_REF: ${{ github.head_ref }}
+        GITHUB_REF_NAME: ${{ github.ref_name }}
+        GITHUB_BASE_REF: ${{ github.base_ref }}
+        GITHUB_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        GITHUB_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        GITHUB_SHA: ${{ github.sha }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+      run: |
+        # Detect if this is a PR event
+        if [ -n "$INPUT_PR_NUMBER" ]; then
+          IS_PR=true
+          PR_NUMBER="$INPUT_PR_NUMBER"
+        else
+          IS_PR=false
+          PR_NUMBER=""
+        fi
+
+        # Set target and base refs (validated to prevent injection)
+        TARGET_REF="$INPUT_TARGET_REF"
+        if [ -z "$TARGET_REF" ]; then
+          TARGET_REF="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+        fi
+        # Validate ref name (must start with alphanumeric, cannot start with -)
+        if ! [[ "$TARGET_REF" =~ ^[a-zA-Z0-9][a-zA-Z0-9/_.-]*$ ]]; then
+          echo "::error::Invalid target-ref: $TARGET_REF"
+          exit 1
+        fi
+
+        BASE_REF="$INPUT_BASE_REF"
+        if [ -z "$BASE_REF" ]; then
+          BASE_REF="${GITHUB_BASE_REF:-$GITHUB_DEFAULT_BRANCH}"
+        fi
+        # Validate ref name (must start with alphanumeric, cannot start with -)
+        if ! [[ "$BASE_REF" =~ ^[a-zA-Z0-9][a-zA-Z0-9/_.-]*$ ]]; then
+          echo "::error::Invalid base-ref: $BASE_REF"
+          exit 1
+        fi
+
+        # Set SHAs (validated to be 40-char hex)
+        BASE_SHA="$INPUT_BASE_SHA"
+        if [ -z "$BASE_SHA" ] && [ "$IS_PR" = "true" ]; then
+          BASE_SHA="$GITHUB_PR_BASE_SHA"
+        fi
+        if [ -n "$BASE_SHA" ] && ! [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+          echo "::error::Invalid base-sha: $BASE_SHA"
+          exit 1
+        fi
+
+        HEAD_SHA="$INPUT_HEAD_SHA"
+        if [ -z "$HEAD_SHA" ]; then
+          HEAD_SHA="$GITHUB_SHA"
+        fi
+        if [ -n "$HEAD_SHA" ] && ! [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+          echo "::error::Invalid head-sha: $HEAD_SHA"
+          exit 1
+        fi
+
+        # Set repository (validated format)
+        REPOSITORY="$INPUT_REPOSITORY"
+        if [ -z "$REPOSITORY" ]; then
+          REPOSITORY="$GITHUB_REPOSITORY"
+        fi
+        if ! [[ "$REPOSITORY" =~ ^[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+$ ]]; then
+          echo "::error::Invalid repository: $REPOSITORY"
+          exit 1
+        fi
+
+        echo "is-pr=$IS_PR" >> "$GITHUB_OUTPUT"
+        echo "pr-number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+        echo "target-ref=$TARGET_REF" >> "$GITHUB_OUTPUT"
+        echo "base-ref=$BASE_REF" >> "$GITHUB_OUTPUT"
+        echo "base-sha=$BASE_SHA" >> "$GITHUB_OUTPUT"
+        echo "head-sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+        echo "repository=$REPOSITORY" >> "$GITHUB_OUTPUT"
+
+    - name: Fetch base branch
+      shell: bash
+      env:
+        BASE_REF: ${{ steps.setup-env.outputs.base-ref }}
+        BASE_SHA: ${{ steps.setup-env.outputs.base-sha }}
+      run: |
+        git fetch origin -- "$BASE_REF"
+        if [ -n "$BASE_SHA" ]; then
+          git fetch origin -- "$BASE_SHA" || true
+          if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            echo "::warning::Failed to fetch PR base SHA: $BASE_SHA"
+          fi
+        fi
+
+    - name: Check for auto-update loop
+      if: inputs.ruling-failed == 'true'
+      shell: bash
+      run: |
+        LAST_COMMIT_MSG=$(git log -1 --format=%B)
+        if echo "$LAST_COMMIT_MSG" | grep -q "🤖 Generated with GitHub Actions"; then
+          echo "::warning::Last commit was an auto-update, skipping to prevent infinite loop"
+          echo "skip-update=true" >> "$GITHUB_ENV"
+        else
+          echo "skip-update=false" >> "$GITHUB_ENV"
+        fi
+
+    - name: Download ruling artifacts
+      id: download-artifacts
+      if: inputs.ruling-failed == 'true' && env.skip-update == 'false'
+      continue-on-error: true
+      uses: actions/download-artifact@v4
+      with:
+        pattern: actual_*
+        path: ruling-artifacts-temp
+        merge-multiple: false
+
+    - name: Sync ruling artifacts
+      if: inputs.ruling-failed == 'true' && env.skip-update == 'false'
+      shell: bash
+      run: |
+        set -e  # Exit on error
+        echo "::group::Syncing ruling artifacts"
+
+        TEMP_DIR="ruling-artifacts-temp"
+
+        # Check if download step failed
+        if [ "${{ steps.download-artifacts.outcome }}" != "success" ]; then
+          echo "::error::Failed to download artifacts"
+          echo "::error::Download step outcome: ${{ steps.download-artifacts.outcome }}"
+          echo "::error::This is a critical failure - ruling results cannot be synced without artifacts"
+          echo ""
+          echo "Diagnostic information:"
+          echo "  Run ID: ${{ github.run_id }}"
+          echo "  Workflow run URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          echo "  Repository: ${{ github.repository }}"
+          echo "  Event: ${{ github.event_name }}"
+          echo "  Ref: ${{ github.ref }}"
+          echo "  SHA: ${{ github.sha }}"
+          echo ""
+          echo "Possible causes:"
+          echo "  1. No artifacts with pattern 'actual_*' were uploaded in previous jobs"
+          echo "  2. Artifacts expired (default retention: 90 days)"
+          echo "  3. Artifacts were uploaded but not yet available (timing issue)"
+          echo "  4. Insufficient permissions to access artifacts"
+          echo "::endgroup::"
+          exit 1
+        fi
+
+        if [ ! -d "$TEMP_DIR" ]; then
+          echo "::error::No artifacts were downloaded (temp directory does not exist)"
+          echo "::error::This is a critical failure - ruling results cannot be synced without artifacts"
+          echo ""
+          echo "Diagnostic information:"
+          echo "  Run ID: ${{ github.run_id }}"
+          echo "  Workflow run URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          echo "  Repository: ${{ github.repository }}"
+          echo "  Event: ${{ github.event_name }}"
+          echo "  Ref: ${{ github.ref }}"
+          echo "  SHA: ${{ github.sha }}"
+          echo ""
+          echo "Possible causes:"
+          echo "  1. No artifacts with pattern 'actual_*' were uploaded in previous jobs"
+          echo "  2. Artifacts expired (default retention: 90 days)"
+          echo "  3. Artifacts were uploaded but not yet available (timing issue)"
+          echo "  4. Insufficient permissions to access artifacts"
+          echo "::endgroup::"
+          exit 1
+        fi
+
+        # Check if temp directory has any artifacts
+        if [ -z "$(ls -A "$TEMP_DIR" 2>/dev/null)" ]; then
+          echo "::error::Artifact directory is empty"
+          echo "::error::No 'actual_*' artifacts found to sync"
+          echo "::endgroup::"
+          exit 1
+        fi
+
+        echo "Found artifacts:"
+        ls -la "$TEMP_DIR"
+        echo ""
+
+        # Merge downloaded artifacts into ruling-root
+        echo "Merging artifacts into ${{ inputs.ruling-root }}"
+        COPY_SUCCESS=false
+
+        for artifact_dir in "$TEMP_DIR"/actual_*; do
+          if [ -d "$artifact_dir" ]; then
+            artifact_name=$(basename "$artifact_dir")
+            echo "Processing: $artifact_name"
+
+            if [ -z "$(ls -A "$artifact_dir" 2>/dev/null)" ]; then
+              echo "::warning::Artifact directory is empty: $artifact_name"
+              continue
+            fi
+
+            set +e
+            COPY_OUTPUT=$(cp -rv "$artifact_dir"/* "${{ inputs.ruling-root }}/" 2>&1)
+            COPY_EXIT_CODE=$?
+            set -e
+
+            if [ $COPY_EXIT_CODE -eq 0 ]; then
+              echo "  ✓ Successfully merged: $artifact_name"
+              COPY_SUCCESS=true
+            else
+              echo "::error::Failed to copy artifact contents: $artifact_name"
+              echo "::error::Exit code: $COPY_EXIT_CODE"
+              echo "::error::Output: $COPY_OUTPUT"
+              rm -rf "$TEMP_DIR"
+              echo "::endgroup::"
+              exit 1
+            fi
+          fi
+        done
+
+        if [ "$COPY_SUCCESS" = false ]; then
+          echo "::error::No artifacts were successfully merged into ruling-root"
+          rm -rf "$TEMP_DIR"
+          echo "::endgroup::"
+          exit 1
+        fi
+
+        echo ""
+        echo "✓ Artifact sync complete"
+
+        # Run custom sync command if provided (optional)
+        SYNC_CMD='${{ inputs.sync-command }}'
+        if [ -n "$SYNC_CMD" ]; then
+          echo ""
+          echo "Running custom sync command: $SYNC_CMD"
+          set +e
+          eval "$SYNC_CMD"
+          SYNC_EXIT_CODE=$?
+          set -e
+
+          if [ $SYNC_EXIT_CODE -ne 0 ]; then
+            echo "::error::Custom sync command failed with exit code: $SYNC_EXIT_CODE"
+            rm -rf "$TEMP_DIR"
+            echo "::endgroup::"
+            exit 1
+          fi
+          echo "✓ Custom sync command completed successfully"
+        fi
+
+        # Cleanup
+        rm -rf "$TEMP_DIR"
+        echo "::endgroup::"
+
+    - name: Check for differences
+      id: check-diff
+      shell: bash
+      env:
+        RULING_ROOT: ${{ inputs.ruling-root }}
+      run: |
+        # Check if there are uncommitted changes in the ruling directory
+        # produced by the artifact sync / sync-command steps.
+        if [ -n "$(git status --porcelain -- "$RULING_ROOT/")" ]; then
+          echo "has-differences=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "has-differences=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Post ruling diff comment
+      if: steps.setup-env.outputs.is-pr == 'true' && steps.check-diff.outputs.has-differences == 'true'
+      uses: SonarSource/core-languages-tooling-public/ruling-diff-comment@master
+      with:
+        pr-number: ${{ steps.setup-env.outputs.pr-number }}
+        repository: ${{ steps.setup-env.outputs.repository }}
+        base-sha: ${{ steps.setup-env.outputs.base-sha }}
+        head-sha: ${{ steps.setup-env.outputs.head-sha }}
+        ruling-root: ${{ inputs.ruling-root }}
+        sources-root: ${{ inputs.sources-root }}
+      env:
+        GH_TOKEN: ${{ github.token }}
+
+    - name: Create fix PR
+      id: create-fix-pr
+      if: |
+        inputs.ruling-failed == 'true' &&
+        env.skip-update == 'false' &&
+        steps.check-diff.outputs.has-differences == 'true' &&
+        inputs.create-fix-pr == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        FIX_PR_BRANCH_PREFIX: ${{ inputs.fix-pr-branch-prefix }}
+        TARGET_REF: ${{ steps.setup-env.outputs.target-ref }}
+        IS_PR: ${{ steps.setup-env.outputs.is-pr }}
+        PR_NUMBER: ${{ steps.setup-env.outputs.pr-number }}
+        RULING_ROOT: ${{ inputs.ruling-root }}
+      run: |
+        FIX_BRANCH="${FIX_PR_BRANCH_PREFIX}-${TARGET_REF}"
+
+        if [ "$IS_PR" = "true" ]; then
+          FIX_PR_TITLE="Update ruling results for PR #${PR_NUMBER}"
+          FIX_PR_BODY="Auto-generated ruling update for PR #${PR_NUMBER}.
+
+        🤖 Generated with GitHub Actions"
+        else
+          FIX_PR_TITLE="Update ruling results for ${TARGET_REF}"
+          FIX_PR_BODY="Auto-generated ruling update for ${TARGET_REF}.
+
+        🤖 Generated with GitHub Actions"
+        fi
+
+        # Stash changes before checkout (account for staged changes too)
+        STASH_CREATED=false
+        if git diff --quiet -- "$RULING_ROOT/" && git diff --cached --quiet -- "$RULING_ROOT/"; then
+          echo "No changes to stash"
+        else
+          git stash push -m "ruling-sync-changes" -- "$RULING_ROOT/"
+          STASH_CREATED=true
+        fi
+
+        git fetch origin -- "$TARGET_REF"
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+
+        # Check if fix branch already exists
+        if git ls-remote --exit-code origin -- "refs/heads/$FIX_BRANCH" > /dev/null 2>&1; then
+          echo "Fix branch already exists, updating it"
+          git switch -c "$FIX_BRANCH" "origin/$TARGET_REF"
+
+          # Pop stash if we created one
+          if [ "$STASH_CREATED" = "true" ]; then
+            if ! git stash pop; then
+              echo "::error::Failed to apply stashed changes - likely merge conflict"
+              git stash drop || true
+              exit 1
+            fi
+          fi
+
+          git add "$RULING_ROOT/"
+
+          if git diff --staged --quiet; then
+            echo "No ruling changes to commit"
+          else
+            git commit -m "Update ruling results
+
+        🤖 Generated with GitHub Actions"
+            git push --force-with-lease origin "$FIX_BRANCH"
+          fi
+
+          # Get existing PR URL
+          FIX_PR_URL=$(gh pr list \
+            --head "$FIX_BRANCH" \
+            --base "$TARGET_REF" \
+            --state open \
+            --json url \
+            --jq '.[0].url // empty' 2>/dev/null || true)
+
+          if [ -z "$FIX_PR_URL" ]; then
+            FIX_PR_URL=$(gh pr create \
+              --title "$FIX_PR_TITLE" \
+              --base "$TARGET_REF" \
+              --head "$FIX_BRANCH" \
+              --body "$FIX_PR_BODY")
+          fi
+        else
+          echo "Creating new fix branch"
+          git switch -c "$FIX_BRANCH" "origin/$TARGET_REF"
+
+          # Pop stash if we created one
+          if [ "$STASH_CREATED" = "true" ]; then
+            if ! git stash pop; then
+              echo "::error::Failed to apply stashed changes - likely merge conflict"
+              git stash drop || true
+              exit 1
+            fi
+          fi
+
+          git add "$RULING_ROOT/"
+
+          if git diff --staged --quiet; then
+            echo "No ruling changes to commit"
+          else
+            git commit -m "Update ruling results
+
+        🤖 Generated with GitHub Actions"
+            git push origin "$FIX_BRANCH"
+            FIX_PR_URL=$(gh pr create \
+              --title "$FIX_PR_TITLE" \
+              --base "$TARGET_REF" \
+              --head "$FIX_BRANCH" \
+              --body "$FIX_PR_BODY")
+          fi
+        fi
+
+        echo "fix-pr-url=$FIX_PR_URL" >> "$GITHUB_OUTPUT"
+
+        # Add comment to original PR if this is a PR event
+        if [ "$IS_PR" = "true" ] && [ -n "$FIX_PR_URL" ]; then
+          gh pr comment "$PR_NUMBER" --body "❌ **Ruling needs updating.** A fix PR has been created: ${FIX_PR_URL}
+
+        Please review and merge it into your branch."
+        fi
+
+    - name: Cleanup stale fix PR
+      if: |
+        env.skip-update != 'true' &&
+        (inputs.ruling-failed != 'true' || steps.check-diff.outputs.has-differences != 'true')
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        FIX_PR_BRANCH_PREFIX: ${{ inputs.fix-pr-branch-prefix }}
+        TARGET_REF: ${{ steps.setup-env.outputs.target-ref }}
+      run: |
+        FIX_BRANCH="${FIX_PR_BRANCH_PREFIX}-${TARGET_REF}"
+
+        # Check if there's an open PR for the fix branch
+        FIX_PR_STATE=$(gh pr view "$FIX_BRANCH" --json state --jq '.state' 2>/dev/null || true)
+        if [ "$FIX_PR_STATE" = "OPEN" ]; then
+          echo "Closing stale fix PR"
+          gh pr close "$FIX_BRANCH" --comment "No longer needed — the original PR is now up to date."
+          git push origin --delete "$FIX_BRANCH" 2>/dev/null || true
+        fi
