@@ -93,7 +93,7 @@ runs:
           exit 1
         fi
 
-        # Validate it only contains safe characters (alphanumeric, /, _, -, .)
+        # Validate it only contains safe characters (alphanumeric, /, _, and -)
         if ! [[ "$RULING_ROOT" =~ ^[a-zA-Z0-9/_-]+(/[a-zA-Z0-9/_-]+)*$ ]]; then
           echo "::error::ruling-root contains invalid characters. Only alphanumeric, /, _, and - are allowed"
           exit 1
