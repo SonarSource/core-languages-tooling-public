@@ -69,15 +69,33 @@ runs:
     - name: Validate inputs
       shell: bash
       run: |
-        # Validate ruling-root is not empty and not a dangerous path
-        if [ -z "$RULING_ROOT" ] || [ "$RULING_ROOT" = "/" ] || [ "$RULING_ROOT" = "." ]; then
-          echo "::error::ruling-root must be a non-empty path, not '/', and not '.'"
+        # Validate ruling-root is not empty
+        if [ -z "$RULING_ROOT" ]; then
+          echo "::error::ruling-root must be a non-empty path"
           exit 1
         fi
 
-        # Validate it doesn't escape the workspace
-        if [[ "$RULING_ROOT" == ../* ]] || [[ "$RULING_ROOT" == */../* ]]; then
+        # Reject absolute paths
+        if [[ "$RULING_ROOT" == /* ]]; then
+          echo "::error::ruling-root must be a relative path, not an absolute path"
+          exit 1
+        fi
+
+        # Reject paths starting with . (including '.', './', '..')
+        if [[ "$RULING_ROOT" == .* ]]; then
+          echo "::error::ruling-root must not start with '.'"
+          exit 1
+        fi
+
+        # Reject paths containing '..' anywhere
+        if [[ "$RULING_ROOT" == *..* ]]; then
           echo "::error::ruling-root must not contain '..' path components"
+          exit 1
+        fi
+
+        # Validate it only contains safe characters (alphanumeric, /, _, -, .)
+        if ! [[ "$RULING_ROOT" =~ ^[a-zA-Z0-9/_-]+(/[a-zA-Z0-9/_-]+)*$ ]]; then
+          echo "::error::ruling-root contains invalid characters. Only alphanumeric, /, _, and - are allowed"
           exit 1
         fi
       env:
@@ -335,7 +353,7 @@ runs:
         rm -rf "$TEMP_DIR"
         echo "::endgroup::"
 
-    - name: Check for differences and stage changes
+    - name: Check for differences
       id: check-diff
       shell: bash
       env:
@@ -345,8 +363,6 @@ runs:
         # produced by the artifact sync / sync-command steps.
         if [ -n "$(git status --porcelain -- "$RULING_ROOT/")" ]; then
           echo "has-differences=true" >> "$GITHUB_OUTPUT"
-          # Stage the changes so ruling-diff-comment can see them
-          git add "$RULING_ROOT/"
         else
           echo "has-differences=false" >> "$GITHUB_OUTPUT"
         fi
@@ -410,7 +426,7 @@ runs:
         # Check if fix branch already exists
         if git ls-remote --exit-code origin -- "refs/heads/$FIX_BRANCH" > /dev/null 2>&1; then
           echo "Fix branch already exists, updating it"
-          git checkout -b "$FIX_BRANCH" -- "origin/$TARGET_REF"
+          git switch -c "$FIX_BRANCH" "origin/$TARGET_REF"
 
           # Pop stash if we created one
           if [ "$STASH_CREATED" = "true" ]; then
@@ -449,7 +465,7 @@ runs:
           fi
         else
           echo "Creating new fix branch"
-          git checkout -b "$FIX_BRANCH" -- "origin/$TARGET_REF"
+          git switch -c "$FIX_BRANCH" "origin/$TARGET_REF"
 
           # Pop stash if we created one
           if [ "$STASH_CREATED" = "true" ]; then
