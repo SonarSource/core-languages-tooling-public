@@ -227,9 +227,6 @@ def normalize_dotnet_ruling_json(data: dict, path: str, ref: str) -> dict[str, l
     normalized: dict[str, list[int]] = {}
     issues = data["Issues"]
 
-    if not isinstance(issues, list):
-        raise ValueError(f"Ruling file {path} at {ref} has non-list Issues field")
-
     for issue in issues:
         if not isinstance(issue, dict):
             raise ValueError(f"Ruling file {path} at {ref} has non-dict issue in Issues array")

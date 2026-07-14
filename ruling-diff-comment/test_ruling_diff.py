@@ -156,6 +156,55 @@ class NormalizeJsonTest(unittest.TestCase):
         result = io.normalize_ruling_json(data, "test.json", "HEAD")
         self.assertEqual({}, result)
 
+    def test_normalize_dotnet_format_non_dict_issue(self) -> None:
+        # .NET format with non-dict issue in Issues array
+        data = {"Issues": ["not a dict"]}
+        with self.assertRaises(ValueError) as ctx:
+            io.normalize_ruling_json(data, "test.json", "HEAD")
+        self.assertIn("non-dict issue", str(ctx.exception))
+
+    def test_normalize_dotnet_format_missing_id(self) -> None:
+        # .NET format with missing Id field
+        data = {"Issues": [{"Location": {"StartLine": 10}}]}
+        with self.assertRaises(ValueError) as ctx:
+            io.normalize_ruling_json(data, "test.json", "HEAD")
+        self.assertIn("without string Id", str(ctx.exception))
+
+    def test_normalize_dotnet_format_non_string_id(self) -> None:
+        # .NET format with non-string Id field
+        data = {"Issues": [{"Id": 123, "Location": {"StartLine": 10}}]}
+        with self.assertRaises(ValueError) as ctx:
+            io.normalize_ruling_json(data, "test.json", "HEAD")
+        self.assertIn("without string Id", str(ctx.exception))
+
+    def test_normalize_dotnet_format_missing_location(self) -> None:
+        # .NET format with missing Location field
+        data = {"Issues": [{"Id": "S1234"}]}
+        with self.assertRaises(ValueError) as ctx:
+            io.normalize_ruling_json(data, "test.json", "HEAD")
+        self.assertIn("without Location object", str(ctx.exception))
+
+    def test_normalize_dotnet_format_non_dict_location(self) -> None:
+        # .NET format with non-dict Location field
+        data = {"Issues": [{"Id": "S1234", "Location": "not a dict"}]}
+        with self.assertRaises(ValueError) as ctx:
+            io.normalize_ruling_json(data, "test.json", "HEAD")
+        self.assertIn("without Location object", str(ctx.exception))
+
+    def test_normalize_dotnet_format_missing_start_line(self) -> None:
+        # .NET format with missing StartLine field
+        data = {"Issues": [{"Id": "S1234", "Location": {}}]}
+        with self.assertRaises(ValueError) as ctx:
+            io.normalize_ruling_json(data, "test.json", "HEAD")
+        self.assertIn("without integer StartLine", str(ctx.exception))
+
+    def test_normalize_dotnet_format_non_int_start_line(self) -> None:
+        # .NET format with non-integer StartLine field
+        data = {"Issues": [{"Id": "S1234", "Location": {"StartLine": "10"}}]}
+        with self.assertRaises(ValueError) as ctx:
+            io.normalize_ruling_json(data, "test.json", "HEAD")
+        self.assertIn("without integer StartLine", str(ctx.exception))
+
 
 class DiffLogicTest(unittest.TestCase):
     def test_diff_ruling_jsons_added_issues(self) -> None:
