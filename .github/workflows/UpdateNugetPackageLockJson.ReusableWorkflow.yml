@@ -79,6 +79,25 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
-          git diff --cached --quiet; if ($LASTEXITCODE -eq 0) { exit 0 }
+
+          # 'git diff --cached --quiet' exits 1 when there are staged changes. That is the
+          # expected "there is something to commit" signal, not a failure. GitHub Actions runs
+          # pwsh with $ErrorActionPreference='Stop', which (via $PSNativeCommandUseErrorActionPreference)
+          # promotes that exit code 1 to a terminating error and aborts the step before it can commit.
+          # Capture the exit code with error promotion disabled, then branch on it.
+          $ErrorActionPreference = 'Continue'
+          git diff --cached --quiet
+          $diffExit = $LASTEXITCODE
+          $ErrorActionPreference = 'Stop'
+
+          if ($diffExit -eq 0) {
+            Write-Host "No lock file changes to commit."
+            exit 0
+          }
+          elseif ($diffExit -ne 1) {
+            Write-Host "##[error]git diff failed with exit code $diffExit"
+            exit $diffExit
+          }
+
           git commit -m "${{ inputs.commitMessagePrefix }}Update NuGet package lock files"
           git push
