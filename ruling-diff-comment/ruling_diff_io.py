@@ -237,11 +237,14 @@ def normalize_dotnet_ruling_json(data: dict, path: str, ref: str) -> dict[str, l
 
         location = issue.get("Location")
         if not isinstance(location, dict):
-            raise ValueError(f"Ruling file {path} at {ref} has issue without Location object")
-
-        start_line = location.get("StartLine")
-        if not isinstance(start_line, int):
-            raise ValueError(f"Ruling file {path} at {ref} has issue without integer StartLine")
+            logging.warning("Ruling file %s at %s has issue without Location field; using line 0", path, ref)
+            start_line = 0
+            
+        else:
+            start_line = location.get("StartLine")
+            if not isinstance(start_line, int):
+                logging.warning("Ruling file %s at %s has issue with non-integer StartLine; using line 0", path, ref)
+                start_line = 0
 
         if rule_id not in normalized:
             normalized[rule_id] = []
