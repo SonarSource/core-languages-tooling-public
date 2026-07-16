@@ -178,32 +178,28 @@ class NormalizeJsonTest(unittest.TestCase):
         self.assertIn("without string Id", str(ctx.exception))
 
     def test_normalize_dotnet_format_missing_location(self) -> None:
-        # .NET format with missing Location field
+        # .NET format with missing Location field - should default to line 0
         data = {"Issues": [{"Id": "S1234"}]}
-        with self.assertRaises(ValueError) as ctx:
-            io.normalize_ruling_json(data, "test.json", "HEAD")
-        self.assertIn("without Location object", str(ctx.exception))
+        result = io.normalize_ruling_json(data, "test.json", "HEAD")
+        self.assertEqual({"S1234": [0]}, result)
 
     def test_normalize_dotnet_format_non_dict_location(self) -> None:
-        # .NET format with non-dict Location field
+        # .NET format with non-dict Location field - should default to line 0
         data = {"Issues": [{"Id": "S1234", "Location": "not a dict"}]}
-        with self.assertRaises(ValueError) as ctx:
-            io.normalize_ruling_json(data, "test.json", "HEAD")
-        self.assertIn("without Location object", str(ctx.exception))
+        result = io.normalize_ruling_json(data, "test.json", "HEAD")
+        self.assertEqual({"S1234": [0]}, result)
 
     def test_normalize_dotnet_format_missing_start_line(self) -> None:
-        # .NET format with missing StartLine field
+        # .NET format with missing StartLine field - should default to line 0
         data = {"Issues": [{"Id": "S1234", "Location": {}}]}
-        with self.assertRaises(ValueError) as ctx:
-            io.normalize_ruling_json(data, "test.json", "HEAD")
-        self.assertIn("without integer StartLine", str(ctx.exception))
+        result = io.normalize_ruling_json(data, "test.json", "HEAD")
+        self.assertEqual({"S1234": [0]}, result)
 
     def test_normalize_dotnet_format_non_int_start_line(self) -> None:
-        # .NET format with non-integer StartLine field
+        # .NET format with non-integer StartLine field - should default to line 0
         data = {"Issues": [{"Id": "S1234", "Location": {"StartLine": "10"}}]}
-        with self.assertRaises(ValueError) as ctx:
-            io.normalize_ruling_json(data, "test.json", "HEAD")
-        self.assertIn("without integer StartLine", str(ctx.exception))
+        result = io.normalize_ruling_json(data, "test.json", "HEAD")
+        self.assertEqual({"S1234": [0]}, result)
 
 
 class DiffLogicTest(unittest.TestCase):
