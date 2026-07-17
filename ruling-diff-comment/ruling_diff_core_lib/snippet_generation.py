@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import logging
+from pathlib import Path
+
 from ruling_diff_core_lib.models_and_constants import (
     IssueDiff,
     MAX_SNIPPETS_PER_FILE,
@@ -124,11 +127,10 @@ def create_issue_snippet(
     head_sha: str,
     io: RulingDiffIO,
 ) -> Snippet:
-    ref = head_sha if change_kind == "added" else base_sha
     source_path = io.resolve_source_path(project, file_path)
-    lines = load_source_lines_with_cache(source_cache, ref, source_path, io)
+    lines = load_source_lines_with_cache(source_cache, source_path)
     body = (
-        f"(source file not found at this revision: {file_path})"
+        f"(source file not found: {file_path})"
         if lines is None
         else render_snippet(lines, line_number)
     )
@@ -142,12 +144,22 @@ def create_issue_snippet(
 
 def load_source_lines_with_cache(
     cache: SourceCache,
-    ref: str,
     path: str,
-    io: RulingDiffIO,
 ) -> OptionalSourceLines:
-    key = (ref, path)
-    if key not in cache:
-        content = io.load_text_at_ref(path, ref)
-        cache[key] = None if content is None else content.splitlines()
-    return cache[key]
+    if path not in cache:
+        content = read_source_file(path)
+        cache[path] = None if content is None else content.splitlines()
+    return cache[path]
+
+
+def read_source_file(path: str) -> str | None:
+    """Read a source file from disk."""
+    file_path = Path(path)
+    if not file_path.is_file():
+        logging.warning("Source file '%s' not found on disk", path)
+        return None
+    try:
+        return file_path.read_text()
+    except OSError as exc:
+        logging.warning("Failed to read source file '%s': %s", path, exc)
+        return None

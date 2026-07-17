@@ -34,9 +34,6 @@ class GitHubActionIO:
     def load_json_at_ref(self, path: str, ref: str) -> dict[str, list[int]] | None:
         return load_json_at_ref(path, ref)
 
-    def load_text_at_ref(self, path: str, ref: str) -> str | None:
-        return load_text_at_ref(path, ref, self.sources_root)
-
     def resolve_source_path(self, project: str, file_path: str) -> str:
         if project == "project":
             return self._resolve_project_source_path(file_path)
@@ -255,96 +252,6 @@ def normalize_dotnet_ruling_json(data: dict, path: str, ref: str) -> dict[str, l
         normalized[rule_id].sort()
 
     return normalized
-
-
-def load_text_at_ref(path: str, ref: str, sources_root: str = RULING_SOURCES_SUBMODULE) -> str | None:
-    if is_ruling_source_path(path, sources_root):
-        return load_submodule_text_at_ref(path, ref, sources_root)
-
-    result = subprocess.run(
-        ["git", "show", f"{ref}:{path}"], capture_output=True, text=True
-    )
-    if result.returncode == 0:
-        return result.stdout
-    if _is_missing_at_ref(result.stderr):
-        logging.warning("Source file '%s' not found at %s", path, ref)
-        return None
-    raise CommandError(
-        f"Failed to read source file at ref: git show {ref}:{path}\nstdout: {result.stdout}\nstderr: {result.stderr}"
-    )
-
-
-def is_ruling_source_path(path: str, sources_root: str = RULING_SOURCES_SUBMODULE) -> bool:
-    return path.startswith(f"{sources_root}/")
-
-
-def load_submodule_text_at_ref(path: str, ref: str, sources_root: str = RULING_SOURCES_SUBMODULE) -> str | None:
-    submodule_commit = get_submodule_commit_for_ref(ref, sources_root)
-    if submodule_commit is None:
-        logging.warning("Source file '%s' not found at %s", path, ref)
-        return None
-
-    submodule_relative_path = path[len(f"{sources_root}/") :]
-    content = read_submodule_file_at_commit(submodule_commit, submodule_relative_path, sources_root)
-    if content is not None:
-        return content
-
-    fetch_submodule_commit(submodule_commit, sources_root)
-    content = read_submodule_file_at_commit(submodule_commit, submodule_relative_path, sources_root)
-    if content is not None:
-        return content
-
-    logging.warning(
-        "Source file '%s' not found in submodule commit %s for %s",
-        path,
-        submodule_commit,
-        ref,
-    )
-    return None
-
-
-def get_submodule_commit_for_ref(ref: str, sources_root: str = RULING_SOURCES_SUBMODULE) -> str | None:
-    result = subprocess.run(
-        ["git", "rev-parse", f"{ref}:{sources_root}"],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        logging.warning(
-            "Could not resolve ruling sources submodule commit for %s: %s",
-            ref,
-            result.stderr.strip(),
-        )
-        return None
-    return result.stdout.strip()
-
-
-def read_submodule_file_at_commit(commit: str, relative_path: str, sources_root: str = RULING_SOURCES_SUBMODULE) -> str | None:
-    result = subprocess.run(
-        ["git", "-C", sources_root, "show", f"{commit}:{relative_path}"],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode == 0:
-        return result.stdout
-    return None
-
-
-def fetch_submodule_commit(commit: str, sources_root: str = RULING_SOURCES_SUBMODULE) -> None:
-    subprocess.run(
-        [
-            "git",
-            "-C",
-            sources_root,
-            "fetch",
-            "--depth",
-            "1",
-            "origin",
-            commit,
-        ],
-        capture_output=True,
-        text=True,
-    )
 
 
 def get_existing_comment_id(pr_number: str, repository: str) -> str | None:

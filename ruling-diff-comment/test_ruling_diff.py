@@ -12,6 +12,7 @@ if str(MODULE_DIR) not in sys.path:
 
 import ruling_diff_core as core
 import ruling_diff_io as io
+from ruling_diff_core_lib.snippet_generation import read_source_file
 
 
 IssueDiff = core.IssueDiff
@@ -23,25 +24,18 @@ class FakeRulingDiffIO:
     def __init__(
         self,
         json_by_ref_path: dict[tuple[str, str], dict[str, list[int]] | None],
-        text_by_ref_path: dict[tuple[str, str], str | None],
         ruling_root: str = "private/its-enterprise/ruling/src/test/resources/expected_ruling",
         sources_root: str = "private/its-enterprise/sources_ruling",
     ) -> None:
         self.json_by_ref_path = json_by_ref_path
-        self.text_by_ref_path = text_by_ref_path
         self.ruling_root = ruling_root
         self.sources_root = sources_root
         self.load_json_calls: list[tuple[str, str]] = []
-        self.load_text_calls: list[tuple[str, str]] = []
         self.resolve_calls: list[tuple[str, str]] = []
 
     def load_json_at_ref(self, path: str, ref: str) -> dict[str, list[int]] | None:
         self.load_json_calls.append((path, ref))
         return self.json_by_ref_path.get((path, ref))
-
-    def load_text_at_ref(self, path: str, ref: str) -> str | None:
-        self.load_text_calls.append((path, ref))
-        return self.text_by_ref_path.get((path, ref))
 
     def resolve_source_path(self, project: str, file_path: str) -> str:
         self.resolve_calls.append((project, file_path))
@@ -387,7 +381,7 @@ class SnippetRenderingTest(unittest.TestCase):
 
 
 class BuildRuleDiffsWithIOTest(unittest.TestCase):
-    def test_build_rule_diffs_uses_io_object_and_respects_refs(self) -> None:
+    def test_build_rule_diffs_uses_io_object(self) -> None:
         changed_file = (
             "private/its-enterprise/ruling/src/test/resources/expected_ruling/"
             "airflow/python-S107.json"
@@ -396,11 +390,6 @@ class BuildRuleDiffsWithIOTest(unittest.TestCase):
             json_by_ref_path={
                 (changed_file, "base-sha"): {"airflow:a.py": [2]},
                 (changed_file, "head-sha"): {"airflow:a.py": [2, 7]},
-            },
-            text_by_ref_path={
-                ("sources/airflow/a.py", "head-sha"): "\n".join(
-                    [f"line {index}" for index in range(1, 12)]
-                ),
             },
         )
 
@@ -415,28 +404,6 @@ class BuildRuleDiffsWithIOTest(unittest.TestCase):
         self.assertIn((changed_file, "base-sha"), io_impl.load_json_calls)
         self.assertIn((changed_file, "head-sha"), io_impl.load_json_calls)
         self.assertEqual([("airflow", "a.py")], io_impl.resolve_calls)
-        self.assertEqual([("sources/airflow/a.py", "head-sha")], io_impl.load_text_calls)
-
-    def test_build_rule_diffs_caches_source_loads_per_ref_and_path(self) -> None:
-        changed_file = (
-            "private/its-enterprise/ruling/src/test/resources/expected_ruling/"
-            "airflow/python-S107.json"
-        )
-        io_impl = FakeRulingDiffIO(
-            json_by_ref_path={
-                (changed_file, "base-sha"): {"airflow:a.py": [1]},
-                (changed_file, "head-sha"): {"airflow:a.py": [2, 2]},
-            },
-            text_by_ref_path={
-                ("sources/airflow/a.py", "base-sha"): "base\ncontent\n",
-                ("sources/airflow/a.py", "head-sha"): "head\ncontent\n",
-            },
-        )
-
-        core.build_rule_diffs([changed_file], "base-sha", "head-sha", io_impl)
-
-        self.assertEqual(1, io_impl.load_text_calls.count(("sources/airflow/a.py", "base-sha")))
-        self.assertEqual(1, io_impl.load_text_calls.count(("sources/airflow/a.py", "head-sha")))
 
     def test_build_rule_diffs_missing_source_produces_placeholder_snippet(self) -> None:
         changed_file = (
@@ -448,53 +415,33 @@ class BuildRuleDiffsWithIOTest(unittest.TestCase):
                 (changed_file, "base-sha"): {"airflow:a.py": [1]},
                 (changed_file, "head-sha"): {"airflow:a.py": [1, 3]},
             },
-            text_by_ref_path={("sources/airflow/a.py", "head-sha"): None},
         )
 
         diffs = core.build_rule_diffs([changed_file], "base-sha", "head-sha", io_impl)
 
         self.assertEqual(1, len(diffs[0].snippets))
         self.assertEqual(
-            "(source file not found at this revision: a.py)",
+            "(source file not found: a.py)",
             diffs[0].snippets[0].body,
         )
 
 
 class SourceLoadingTest(unittest.TestCase):
-    @patch("ruling_diff_io.subprocess.run")
-    def test_load_text_at_ref_reads_from_submodule_commit(self, mocked_run) -> None:
-        mocked_run.side_effect = [
-            subprocess.CompletedProcess(
-                args=["git", "rev-parse"],
-                returncode=0,
-                stdout="subsha123\n",
-                stderr="",
-            ),
-            subprocess.CompletedProcess(
-                args=["git", "-C", "sources", "show"],
-                returncode=0,
-                stdout="print('from submodule')\n",
-                stderr="",
-            ),
-        ]
+    def test_read_source_file_reads_from_disk(self) -> None:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+            f.write("print('hello')\n")
+            temp_path = f.name
+        try:
+            content = read_source_file(temp_path)
+            self.assertEqual("print('hello')\n", content)
+        finally:
+            pathlib.Path(temp_path).unlink()
 
-        content = io.load_text_at_ref(
-            "private/its-enterprise/sources_ruling/project/foo.py", "deadbeef"
-        )
-
-        self.assertEqual("print('from submodule')\n", content)
-    @patch("ruling_diff_io.subprocess.run")
-    def test_load_text_at_ref_warns_when_source_missing(self, mocked_run) -> None:
-        mocked_run.return_value = subprocess.CompletedProcess(
-            args=["git"],
-            returncode=128,
-            stdout="",
-            stderr="fatal: path 'missing.py' exists on disk, but not in 'deadbeef'",
-        )
+    def test_read_source_file_returns_none_when_missing(self) -> None:
         with self.assertLogs(level="WARNING") as logs:
-            content = io.load_text_at_ref("missing.py", "deadbeef")
+            content = read_source_file("nonexistent/file.py")
         self.assertIsNone(content)
-        self.assertTrue(any("not found at deadbeef" in log for log in logs.output))
+        self.assertTrue(any("not found on disk" in log for log in logs.output))
 
 
 class GitHubCommentLookupTest(unittest.TestCase):
