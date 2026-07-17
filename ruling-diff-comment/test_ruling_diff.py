@@ -118,6 +118,90 @@ class ParsePathTest(unittest.TestCase):
         )
 
 
+class NormalizeJsonTest(unittest.TestCase):
+    def test_normalize_standard_format(self) -> None:
+        # Standard format: rule -> list of line numbers
+        data = {"S1234": [10, 20, 30]}
+        result = io.normalize_ruling_json(data, "test.json", "HEAD")
+        self.assertEqual({"S1234": [10, 20, 30]}, result)
+
+    def test_normalize_dotnet_format(self) -> None:
+        # .NET format with Issues array
+        data = {
+            "Issues": [
+                {
+                    "Id": "S1135",
+                    "Message": "Complete the task",
+                    "Location": {"StartLine": 270, "StartColumn": 16, "EndLine": 270, "EndColumn": 20}
+                },
+                {
+                    "Id": "S1135",
+                    "Message": "Complete the task",
+                    "Location": {"StartLine": 54, "StartColumn": 12, "EndLine": 54, "EndColumn": 16}
+                },
+                {
+                    "Id": "S1192",
+                    "Message": "Define a constant",
+                    "Location": {"StartLine": 100, "StartColumn": 10, "EndLine": 100, "EndColumn": 20}
+                }
+            ]
+        }
+        result = io.normalize_ruling_json(data, "test.json", "HEAD")
+        # Should group by rule ID and sort line numbers
+        self.assertEqual({"S1135": [54, 270], "S1192": [100]}, result)
+
+    def test_normalize_dotnet_format_empty_issues(self) -> None:
+        # .NET format with empty Issues array
+        data = {"Issues": []}
+        result = io.normalize_ruling_json(data, "test.json", "HEAD")
+        self.assertEqual({}, result)
+
+    def test_normalize_dotnet_format_non_dict_issue(self) -> None:
+        # .NET format with non-dict issue in Issues array
+        data = {"Issues": ["not a dict"]}
+        with self.assertRaises(ValueError) as ctx:
+            io.normalize_ruling_json(data, "test.json", "HEAD")
+        self.assertIn("non-dict issue", str(ctx.exception))
+
+    def test_normalize_dotnet_format_missing_id(self) -> None:
+        # .NET format with missing Id field
+        data = {"Issues": [{"Location": {"StartLine": 10}}]}
+        with self.assertRaises(ValueError) as ctx:
+            io.normalize_ruling_json(data, "test.json", "HEAD")
+        self.assertIn("without string Id", str(ctx.exception))
+
+    def test_normalize_dotnet_format_non_string_id(self) -> None:
+        # .NET format with non-string Id field
+        data = {"Issues": [{"Id": 123, "Location": {"StartLine": 10}}]}
+        with self.assertRaises(ValueError) as ctx:
+            io.normalize_ruling_json(data, "test.json", "HEAD")
+        self.assertIn("without string Id", str(ctx.exception))
+
+    def test_normalize_dotnet_format_missing_location(self) -> None:
+        # .NET format with missing Location field - should default to line 0
+        data = {"Issues": [{"Id": "S1234"}]}
+        result = io.normalize_ruling_json(data, "test.json", "HEAD")
+        self.assertEqual({"S1234": [0]}, result)
+
+    def test_normalize_dotnet_format_non_dict_location(self) -> None:
+        # .NET format with non-dict Location field - should default to line 0
+        data = {"Issues": [{"Id": "S1234", "Location": "not a dict"}]}
+        result = io.normalize_ruling_json(data, "test.json", "HEAD")
+        self.assertEqual({"S1234": [0]}, result)
+
+    def test_normalize_dotnet_format_missing_start_line(self) -> None:
+        # .NET format with missing StartLine field - should default to line 0
+        data = {"Issues": [{"Id": "S1234", "Location": {}}]}
+        result = io.normalize_ruling_json(data, "test.json", "HEAD")
+        self.assertEqual({"S1234": [0]}, result)
+
+    def test_normalize_dotnet_format_non_int_start_line(self) -> None:
+        # .NET format with non-integer StartLine field - should default to line 0
+        data = {"Issues": [{"Id": "S1234", "Location": {"StartLine": "10"}}]}
+        result = io.normalize_ruling_json(data, "test.json", "HEAD")
+        self.assertEqual({"S1234": [0]}, result)
+
+
 class DiffLogicTest(unittest.TestCase):
     def test_diff_ruling_jsons_added_issues(self) -> None:
         diffs = core.diff_ruling_jsons({"proj:a.py": [1, 2]}, {"proj:a.py": [1, 2, 3]})
