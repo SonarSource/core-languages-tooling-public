@@ -220,7 +220,13 @@ runs:
       with:
         pattern: actual_*
         path: ruling-artifacts-temp
-        merge-multiple: false
+        # merge-multiple must be true: with download-artifact v8, when a single
+        # artifact matches the pattern, merge-multiple: false places the artifact
+        # contents directly in the path directory (not in a named subdirectory).
+        # This broke the sync step which expected actual_* subdirectories.
+        # Using merge-multiple: true gives consistent behavior regardless of
+        # the number of matching artifacts.
+        merge-multiple: true
 
     - name: Sync ruling artifacts
       if: inputs.ruling-failed == 'true' && env.skip-update == 'false'
@@ -287,41 +293,22 @@ runs:
         ls -la "$TEMP_DIR"
         echo ""
 
-        # Merge downloaded artifacts into ruling-root
-        echo "Merging artifacts into ${{ inputs.ruling-root }}"
-        COPY_SUCCESS=false
+        # Copy merged artifact contents into ruling-root
+        # With merge-multiple: true, all matching artifacts are merged into the
+        # temp directory directly (no per-artifact subdirectories).
+        echo "Copying artifacts into ${{ inputs.ruling-root }}"
 
-        for artifact_dir in "$TEMP_DIR"/actual_*; do
-          if [ -d "$artifact_dir" ]; then
-            artifact_name=$(basename "$artifact_dir")
-            echo "Processing: $artifact_name"
+        set +e
+        COPY_OUTPUT=$(cp -rv "$TEMP_DIR"/* "${{ inputs.ruling-root }}/" 2>&1)
+        COPY_EXIT_CODE=$?
+        set -e
 
-            if [ -z "$(ls -A "$artifact_dir" 2>/dev/null)" ]; then
-              echo "::warning::Artifact directory is empty: $artifact_name"
-              continue
-            fi
-
-            set +e
-            COPY_OUTPUT=$(cp -rv "$artifact_dir"/* "${{ inputs.ruling-root }}/" 2>&1)
-            COPY_EXIT_CODE=$?
-            set -e
-
-            if [ $COPY_EXIT_CODE -eq 0 ]; then
-              echo "  ✓ Successfully merged: $artifact_name"
-              COPY_SUCCESS=true
-            else
-              echo "::error::Failed to copy artifact contents: $artifact_name"
-              echo "::error::Exit code: $COPY_EXIT_CODE"
-              echo "::error::Output: $COPY_OUTPUT"
-              rm -rf "$TEMP_DIR"
-              echo "::endgroup::"
-              exit 1
-            fi
-          fi
-        done
-
-        if [ "$COPY_SUCCESS" = false ]; then
-          echo "::error::No artifacts were successfully merged into ruling-root"
+        if [ $COPY_EXIT_CODE -eq 0 ]; then
+          echo "  ✓ Successfully copied artifacts"
+        else
+          echo "::error::Failed to copy artifact contents"
+          echo "::error::Exit code: $COPY_EXIT_CODE"
+          echo "::error::Output: $COPY_OUTPUT"
           rm -rf "$TEMP_DIR"
           echo "::endgroup::"
           exit 1
