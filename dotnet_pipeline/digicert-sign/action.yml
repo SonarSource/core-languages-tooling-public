@@ -50,10 +50,6 @@ runs:
         path: ${{ steps.jsign-meta.outputs.binary }}
         key: jsign-${{ runner.os }}-${{ steps.jsign-meta.outputs.version }}
 
-    # jsign 7.4 (used by the "Sign assemblies" Azure step) builds a malformed URL for its
-    # DigiCert ONE keypairs lookup and fails with "Unknown JSON value type" - fixed upstream
-    # in 7.5. Keep this action's own jsign download/version pinned and separate from the
-    # Azure step's jar instead of reusing it.
     - name: Download jsign
       if: ${{ steps.jsign-cache.outputs.cache-hit != 'true' }}
       shell: pwsh
