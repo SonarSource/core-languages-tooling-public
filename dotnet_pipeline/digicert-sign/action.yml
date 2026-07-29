@@ -1,0 +1,153 @@
+name: DigiCert Sign
+description: Sign files (assemblies, NuGet packages) with the SonarSource DigiCert ONE code signing certificate via jsign.
+
+inputs:
+  files:
+    description: >-
+      One or more patterns to match files for signing. For multiple
+      patterns, provide a multiline string with one pattern per line.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Fetch DigiCert secrets
+      id: secrets
+      uses: SonarSource/vault-action-wrapper@v3
+      with:
+        secrets: |
+          development/kv/data/sign/digicert apikey                  | SM_API_KEY;
+          development/kv/data/sign/digicert client_cert_file_base64 | SM_CLIENT_CERT_FILE_B64;
+          development/kv/data/sign/digicert client_cert_password    | SM_CLIENT_CERT_PASSWORD;
+          development/kv/data/sign/digicert host                    | SM_HOST;
+
+    - name: Decode client certificate
+      shell: pwsh
+      id: client-cert
+      env:
+        SM_CLIENT_CERT_FILE_B64: ${{ fromJSON(steps.secrets.outputs.vault).SM_CLIENT_CERT_FILE_B64 }}
+      run: |
+        $certPath = Join-Path $env:RUNNER_TEMP "digicert-client-cert.p12"
+        [IO.File]::WriteAllBytes($certPath, [Convert]::FromBase64String($env:SM_CLIENT_CERT_FILE_B64))
+        "path=$certPath" >> $env:GITHUB_OUTPUT
+
+    - name: Set jsign metadata
+      id: jsign-meta
+      shell: pwsh
+      run: |
+        $version = "7.5"
+        $binary = Join-Path $env:RUNNER_TEMP "jsign-$version/jsign.jar"
+        # We use this path -> jsign-<version>/jsign.jar - and thus into the cache
+        # key below - so this never clashes with the jsign.jar cached by the Azure signing step that might have different version.
+        "version=$version" >> $env:GITHUB_OUTPUT
+        "sha256=602a51c3545a6dc4fb99bd2ea7152b26d1345916d0c93ddfbd5936cb735af91c" >> $env:GITHUB_OUTPUT
+        "binary=$binary" >> $env:GITHUB_OUTPUT
+
+    - name: Cache jsign jar
+      id: jsign-cache
+      uses: SonarSource/gh-action_cache@v1
+      with:
+        path: ${{ steps.jsign-meta.outputs.binary }}
+        key: jsign-${{ runner.os }}-${{ steps.jsign-meta.outputs.version }}
+
+    - name: Download jsign
+      if: ${{ steps.jsign-cache.outputs.cache-hit != 'true' }}
+      shell: pwsh
+      env:
+        JSIGN_VERSION: ${{ steps.jsign-meta.outputs.version }}
+        JSIGN_BINARY: ${{ steps.jsign-meta.outputs.binary }}
+      run: |
+        New-Item -ItemType Directory -Force -Path (Split-Path $env:JSIGN_BINARY) | Out-Null
+        $url = "https://github.com/ebourg/jsign/releases/download/$env:JSIGN_VERSION/jsign-$env:JSIGN_VERSION.jar"
+        Invoke-WebRequest -Uri $url -OutFile $env:JSIGN_BINARY -MaximumRetryCount 3 -RetryIntervalSec 5
+
+    - name: Verify jsign checksum
+      shell: pwsh
+      env:
+        JSIGN_SHA256: ${{ steps.jsign-meta.outputs.sha256 }}
+        JSIGN_BINARY: ${{ steps.jsign-meta.outputs.binary }}
+      run: |
+        $actual = (Get-FileHash -Path $env:JSIGN_BINARY -Algorithm SHA256).Hash
+        if ($actual -ne $env:JSIGN_SHA256) {
+          throw "Checksum mismatch for jsign: expected $($env:JSIGN_SHA256), got $actual"
+        }
+
+    - name: Resolve file patterns
+      id: glob
+      uses: tj-actions/glob@2deae40528141fc53131606d56b4e4ce2a486b29 # v22.0.2
+      with:
+        files: ${{ inputs.files }}
+        separator: "\n"
+        match-directories: false
+        read-gitignore: false
+
+    - name: Validate matched files
+      shell: pwsh
+      env:
+        MATCHED_FILES: ${{ steps.glob.outputs.paths }}
+      run: |
+        if ([string]::IsNullOrEmpty($env:MATCHED_FILES)) {
+          Write-Host "::error::No files matched the patterns in 'files'."
+          exit 1
+        }
+
+    - name: Sign artifacts
+      shell: pwsh
+      env:
+        FILES_LIST: ${{ steps.glob.outputs.paths-output-file }}
+        JSIGN_BINARY: ${{ steps.jsign-meta.outputs.binary }}
+        SM_API_KEY: ${{ fromJSON(steps.secrets.outputs.vault).SM_API_KEY }}
+        SM_CLIENT_CERT_PASSWORD: ${{ fromJSON(steps.secrets.outputs.vault).SM_CLIENT_CERT_PASSWORD }}
+        SM_HOST: ${{ fromJSON(steps.secrets.outputs.vault).SM_HOST }}
+        SM_CLIENT_CERT_FILE: ${{ steps.client-cert.outputs.path }}
+        CLIENT_CERT_PATH: ${{ steps.client-cert.outputs.path }}
+      run: |
+        $files = Get-Content $env:FILES_LIST
+
+        $activeLine = smctl certificate ls | Where-Object { ($_.Trim() -split '\s+')[3] -eq 'ACTIVE' } | Select-Object -First 1
+        if (-not $activeLine) {
+          Write-Host "::error::Could not determine the active DigiCert ONE certificate alias via smctl."
+          exit 1
+        }
+        $activeAlias = ($activeLine.Trim() -split '\s+')[1]
+        Write-Host "Using DigiCert ONE alias: $activeAlias"
+
+        foreach ($file in $files) {
+          Write-Host "Signing $file"
+          java -jar $env:JSIGN_BINARY `
+            --storetype DIGICERTONE `
+            --keystore $env:SM_HOST `
+            --storepass "$($env:SM_API_KEY)|$($env:CLIENT_CERT_PATH)|$($env:SM_CLIENT_CERT_PASSWORD)" `
+            --alias $activeAlias `
+            --tsaurl http://timestamp.digicert.com `
+            --alg SHA-256 `
+            $file
+          if ($LASTEXITCODE -ne 0) {
+            throw "jsign failed for $file"
+          }
+        }
+
+    - name: Verify signatures
+      shell: pwsh
+      env:
+        FILES_LIST: ${{ steps.glob.outputs.paths-output-file }}
+        JSIGN_BINARY: ${{ steps.jsign-meta.outputs.binary }}
+      run: |
+        $files = Get-Content $env:FILES_LIST
+        $failed = $false
+
+        foreach ($file in $files) {
+          Write-Host "Checking signature on $file"
+          java -jar $env:JSIGN_BINARY extract $file *> $null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Signature found on $file"
+          } else {
+            Write-Host "::error::No signature found on $file"
+            $failed = $true
+          }
+          Remove-Item -Path "$file.sig" -ErrorAction SilentlyContinue
+        }
+
+        if ($failed) {
+          throw "Signature verification failed for one or more files."
+        }
