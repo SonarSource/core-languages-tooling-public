@@ -51,20 +51,20 @@ class FakeRulingDiffIO:
 class ParsePathTest(unittest.TestCase):
     def test_parse_ruling_path(self) -> None:
         path = "private/its-enterprise/ruling/src/test/resources/expected_ruling/airflow/python-S1066.json"
-        self.assertEqual(("airflow", "python", "S1066"), core.parse_ruling_path(path))
+        self.assertEqual(core.parse_ruling_path(path), ("airflow", "python", "S1066"))
 
     def test_parse_ruling_path_with_pythonenterprise(self) -> None:
         path = "private/its-enterprise/ruling/src/test/resources/expected_ruling/specific-rules/pythonenterprise-S7471.json"
         self.assertEqual(
-            ("specific-rules", "pythonenterprise", "S7471"),
             core.parse_ruling_path(path),
+            ("specific-rules", "pythonenterprise", "S7471"),
         )
 
     def test_parse_ruling_path_with_legacy_key(self) -> None:
         path = "private/its-enterprise/ruling/src/test/resources/expected_ruling/scikit-learn/python-LineLength.json"
         self.assertEqual(
-            ("scikit-learn", "python", "LineLength"),
             core.parse_ruling_path(path),
+            ("scikit-learn", "python", "LineLength"),
         )
 
     def test_parse_rule_filename_rejects_empty_rule_key(self) -> None:
@@ -78,43 +78,43 @@ class ParsePathTest(unittest.TestCase):
     def test_strip_project_key_python_format(self) -> None:
         # Python format: project:path
         self.assertEqual(
+            core.strip_project_key("airflow:airflow/cli/cli_parser.py"),
             "airflow/cli/cli_parser.py",
-            core.strip_project_key("airflow:airflow/cli/cli_parser.py")
         )
 
     def test_strip_project_key_java_maven_format_commons_beanutils(self) -> None:
         # Java Maven format: groupId:artifactId:path
         self.assertEqual(
+            core.strip_project_key("commons-beanutils:commons-beanutils:src/main/java/org/apache/commons/beanutils2/LazyDynaList.java"),
             "src/main/java/org/apache/commons/beanutils2/LazyDynaList.java",
-            core.strip_project_key("commons-beanutils:commons-beanutils:src/main/java/org/apache/commons/beanutils2/LazyDynaList.java")
         )
 
     def test_strip_project_key_java_maven_format_eclipse_jetty(self) -> None:
         # Java Maven format with module path: groupId:artifactId:module/path
         self.assertEqual(
+            core.strip_project_key("org.eclipse.jetty:jetty-project:jetty-http/src/main/java/org/eclipse/jetty/http/QuotedCSVParser.java"),
             "jetty-http/src/main/java/org/eclipse/jetty/http/QuotedCSVParser.java",
-            core.strip_project_key("org.eclipse.jetty:jetty-project:jetty-http/src/main/java/org/eclipse/jetty/http/QuotedCSVParser.java")
         )
 
     def test_strip_project_key_java_maven_format_test_file(self) -> None:
         # Java Maven format with test file
         self.assertEqual(
+            core.strip_project_key("org.eclipse.jetty:jetty-project:jetty-io/src/test/java/org/eclipse/jetty/io/IOTest.java"),
             "jetty-io/src/test/java/org/eclipse/jetty/io/IOTest.java",
-            core.strip_project_key("org.eclipse.jetty:jetty-project:jetty-io/src/test/java/org/eclipse/jetty/io/IOTest.java")
         )
 
     def test_strip_project_key_no_colon(self) -> None:
         # Edge case: no colon in key
         self.assertEqual(
+            core.strip_project_key("simple-path/file.py"),
             "simple-path/file.py",
-            core.strip_project_key("simple-path/file.py")
         )
 
     def test_strip_project_key_no_colon_simple_file(self) -> None:
         # Edge case: simple filename with no path separator
         self.assertEqual(
+            core.strip_project_key("file.py"),
             "file.py",
-            core.strip_project_key("file.py")
         )
 
 
@@ -123,7 +123,7 @@ class NormalizeJsonTest(unittest.TestCase):
         # Standard format: rule -> list of line numbers
         data = {"S1234": [10, 20, 30]}
         result = io.normalize_ruling_json(data, "test.json", "HEAD")
-        self.assertEqual({"S1234": [10, 20, 30]}, result)
+        self.assertEqual(result, {"S1234": [10, 20, 30]})
 
     def test_normalize_dotnet_format(self) -> None:
         # .NET format with Issues array
@@ -148,13 +148,13 @@ class NormalizeJsonTest(unittest.TestCase):
         }
         result = io.normalize_ruling_json(data, "test.json", "HEAD")
         # Should group by rule ID and sort line numbers
-        self.assertEqual({"S1135": [54, 270], "S1192": [100]}, result)
+        self.assertEqual(result, {"S1135": [54, 270], "S1192": [100]})
 
     def test_normalize_dotnet_format_empty_issues(self) -> None:
         # .NET format with empty Issues array
         data = {"Issues": []}
         result = io.normalize_ruling_json(data, "test.json", "HEAD")
-        self.assertEqual({}, result)
+        self.assertEqual(result, {})
 
     def test_normalize_dotnet_format_non_dict_issue(self) -> None:
         # .NET format with non-dict issue in Issues array
@@ -181,74 +181,74 @@ class NormalizeJsonTest(unittest.TestCase):
         # .NET format with missing Location field - should default to line 0
         data = {"Issues": [{"Id": "S1234"}]}
         result = io.normalize_ruling_json(data, "test.json", "HEAD")
-        self.assertEqual({"S1234": [0]}, result)
+        self.assertEqual(result, {"S1234": [0]})
 
     def test_normalize_dotnet_format_non_dict_location(self) -> None:
         # .NET format with non-dict Location field - should default to line 0
         data = {"Issues": [{"Id": "S1234", "Location": "not a dict"}]}
         result = io.normalize_ruling_json(data, "test.json", "HEAD")
-        self.assertEqual({"S1234": [0]}, result)
+        self.assertEqual(result, {"S1234": [0]})
 
     def test_normalize_dotnet_format_missing_start_line(self) -> None:
         # .NET format with missing StartLine field - should default to line 0
         data = {"Issues": [{"Id": "S1234", "Location": {}}]}
         result = io.normalize_ruling_json(data, "test.json", "HEAD")
-        self.assertEqual({"S1234": [0]}, result)
+        self.assertEqual(result, {"S1234": [0]})
 
     def test_normalize_dotnet_format_non_int_start_line(self) -> None:
         # .NET format with non-integer StartLine field - should default to line 0
         data = {"Issues": [{"Id": "S1234", "Location": {"StartLine": "10"}}]}
         result = io.normalize_ruling_json(data, "test.json", "HEAD")
-        self.assertEqual({"S1234": [0]}, result)
+        self.assertEqual(result, {"S1234": [0]})
 
 
 class DiffLogicTest(unittest.TestCase):
     def test_diff_ruling_jsons_added_issues(self) -> None:
         diffs = core.diff_ruling_jsons({"proj:a.py": [1, 2]}, {"proj:a.py": [1, 2, 3]})
-        self.assertEqual(1, len(diffs))
-        self.assertEqual("a.py", diffs[0].file_path)
-        self.assertEqual([3], diffs[0].added_lines)
+        self.assertEqual(len(diffs), 1)
+        self.assertEqual(diffs[0].file_path, "a.py")
+        self.assertEqual(diffs[0].added_lines, [3])
 
     def test_diff_ruling_jsons_removed_issues(self) -> None:
         diffs = core.diff_ruling_jsons({"proj:a.py": [1, 2, 3]}, {"proj:a.py": [1]})
-        self.assertEqual([2, 3], diffs[0].removed_lines)
+        self.assertEqual(diffs[0].removed_lines, [2, 3])
 
     def test_diff_ruling_jsons_new_file_entry(self) -> None:
         diffs = core.diff_ruling_jsons(
             {"proj:a.py": [1]},
             {"proj:a.py": [1], "proj:b.py": [5]},
         )
-        self.assertEqual("b.py", diffs[0].file_path)
-        self.assertEqual([5], diffs[0].added_lines)
+        self.assertEqual(diffs[0].file_path, "b.py")
+        self.assertEqual(diffs[0].added_lines, [5])
 
     def test_diff_ruling_jsons_removed_file_entry(self) -> None:
         diffs = core.diff_ruling_jsons(
             {"proj:a.py": [1], "proj:b.py": [5]},
             {"proj:a.py": [1]},
         )
-        self.assertEqual("b.py", diffs[0].file_path)
-        self.assertEqual([5], diffs[0].removed_lines)
+        self.assertEqual(diffs[0].file_path, "b.py")
+        self.assertEqual(diffs[0].removed_lines, [5])
 
     def test_diff_ruling_jsons_new_ruling_file(self) -> None:
         diffs = core.diff_ruling_jsons(None, {"proj:a.py": [10]})
-        self.assertEqual([10], diffs[0].added_lines)
+        self.assertEqual(diffs[0].added_lines, [10])
 
     def test_diff_ruling_jsons_deleted_ruling_file(self) -> None:
         diffs = core.diff_ruling_jsons({"proj:a.py": [10]}, None)
-        self.assertEqual([10], diffs[0].removed_lines)
+        self.assertEqual(diffs[0].removed_lines, [10])
 
     def test_diff_ruling_jsons_no_changes(self) -> None:
         self.assertEqual(
-            [],
             core.diff_ruling_jsons(
                 {"proj:a.py": [10], "proj:b.py": [11, 12]},
                 {"proj:a.py": [10], "proj:b.py": [11, 12]},
             ),
+            [],
         )
 
     def test_duplicate_line_numbers_preserved(self) -> None:
         diffs = core.diff_ruling_jsons({"proj:a.py": [297]}, {"proj:a.py": [297, 297]})
-        self.assertEqual([297], diffs[0].added_lines)
+        self.assertEqual(diffs[0].added_lines, [297])
 
 
 class FormattingTest(unittest.TestCase):
@@ -326,7 +326,7 @@ class FormattingTest(unittest.TestCase):
 
     def test_strip_project_key_from_path(self) -> None:
         self.assertEqual(
-            "airflow/foo.py", core.strip_project_key("airflow:airflow/foo.py")
+            core.strip_project_key("airflow:airflow/foo.py"), "airflow/foo.py"
         )
 
     def test_line_zero_displayed_as_file_level(self) -> None:
@@ -383,7 +383,7 @@ class SnippetRenderingTest(unittest.TestCase):
 
     def test_render_snippet_missing_source_placeholder(self) -> None:
         rendered = core.render_snippet(None, issue_line=12, context=5)
-        self.assertEqual("(source file not found at this revision)", rendered)
+        self.assertEqual(rendered, "(source file not found at this revision)")
 
 
 class BuildRuleDiffsWithIOTest(unittest.TestCase):
@@ -406,16 +406,16 @@ class BuildRuleDiffsWithIOTest(unittest.TestCase):
 
         diffs = core.build_rule_diffs([changed_file], "base-sha", "head-sha", io_impl)
 
-        self.assertEqual(1, len(diffs))
-        self.assertEqual("airflow", diffs[0].project)
-        self.assertEqual("python", diffs[0].repo)
-        self.assertEqual("S107", diffs[0].rule_key)
-        self.assertEqual([7], diffs[0].file_diffs[0].added_lines)
-        self.assertEqual([], diffs[0].file_diffs[0].removed_lines)
+        self.assertEqual(len(diffs), 1)
+        self.assertEqual(diffs[0].project, "airflow")
+        self.assertEqual(diffs[0].repo, "python")
+        self.assertEqual(diffs[0].rule_key, "S107")
+        self.assertEqual(diffs[0].file_diffs[0].added_lines, [7])
+        self.assertEqual(diffs[0].file_diffs[0].removed_lines, [])
         self.assertIn((changed_file, "base-sha"), io_impl.load_json_calls)
         self.assertIn((changed_file, "head-sha"), io_impl.load_json_calls)
-        self.assertEqual([("airflow", "a.py")], io_impl.resolve_calls)
-        self.assertEqual([("sources/airflow/a.py", "head-sha")], io_impl.load_text_calls)
+        self.assertEqual(io_impl.resolve_calls, [("airflow", "a.py")])
+        self.assertEqual(io_impl.load_text_calls, [("sources/airflow/a.py", "head-sha")])
 
     def test_build_rule_diffs_caches_source_loads_per_ref_and_path(self) -> None:
         changed_file = (
@@ -435,8 +435,8 @@ class BuildRuleDiffsWithIOTest(unittest.TestCase):
 
         core.build_rule_diffs([changed_file], "base-sha", "head-sha", io_impl)
 
-        self.assertEqual(1, io_impl.load_text_calls.count(("sources/airflow/a.py", "base-sha")))
-        self.assertEqual(1, io_impl.load_text_calls.count(("sources/airflow/a.py", "head-sha")))
+        self.assertEqual(io_impl.load_text_calls.count(("sources/airflow/a.py", "base-sha")), 1)
+        self.assertEqual(io_impl.load_text_calls.count(("sources/airflow/a.py", "head-sha")), 1)
 
     def test_build_rule_diffs_missing_source_produces_placeholder_snippet(self) -> None:
         changed_file = (
@@ -453,10 +453,10 @@ class BuildRuleDiffsWithIOTest(unittest.TestCase):
 
         diffs = core.build_rule_diffs([changed_file], "base-sha", "head-sha", io_impl)
 
-        self.assertEqual(1, len(diffs[0].snippets))
+        self.assertEqual(len(diffs[0].snippets), 1)
         self.assertEqual(
-            "(source file not found at this revision: a.py)",
             diffs[0].snippets[0].body,
+            "(source file not found at this revision: a.py)",
         )
 
 
@@ -482,7 +482,7 @@ class SourceLoadingTest(unittest.TestCase):
             "private/its-enterprise/sources_ruling/project/foo.py", "deadbeef"
         )
 
-        self.assertEqual("print('from submodule')\n", content)
+        self.assertEqual(content, "print('from submodule')\n")
     @patch("ruling_diff_io.subprocess.run")
     def test_load_text_at_ref_warns_when_source_missing(self, mocked_run) -> None:
         mocked_run.return_value = subprocess.CompletedProcess(
@@ -509,19 +509,19 @@ class GitHubCommentLookupTest(unittest.TestCase):
             "895", "SonarSource/sonar-python-enterprise"
         )
 
-        self.assertEqual("2", comment_id)
+        self.assertEqual(comment_id, "2")
 
     def test_parse_json_documents_handles_multiple_arrays(self) -> None:
         documents = io.parse_json_documents('[{"a":1}]\n[{"b":2}]')
-        self.assertEqual(2, len(documents))
+        self.assertEqual(len(documents), 2)
 
 
 class GitHubActionIOTest(unittest.TestCase):
     def test_resolve_source_path_for_project_rulings_uses_path_directly(self) -> None:
         io_impl = io.GitHubActionIO()
         self.assertEqual(
-            "private/its-enterprise/sources_ruling/biopython/Bio/Nexus/Nexus.py",
             io_impl.resolve_source_path("project", "biopython/Bio/Nexus/Nexus.py"),
+            "private/its-enterprise/sources_ruling/biopython/Bio/Nexus/Nexus.py",
         )
 
     def test_resolve_source_path_for_project_rulings_falls_back_to_sources_internal(self) -> None:
@@ -544,7 +544,7 @@ class GitHubActionIOTest(unittest.TestCase):
                 ),
             ):
                 io_impl = io.GitHubActionIO(sources_root=sources_ruling)
-                self.assertEqual(target, io_impl.resolve_source_path("project", "foo.py"))
+                self.assertEqual(io_impl.resolve_source_path("project", "foo.py"), target)
 
     def test_resolve_source_path_for_project_rulings_falls_back_to_namespace_child(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -567,7 +567,7 @@ class GitHubActionIOTest(unittest.TestCase):
                 ),
             ):
                 io_impl = io.GitHubActionIO(sources_root=sources_ruling)
-                self.assertEqual(target, io_impl.resolve_source_path("project", "foo.py"))
+                self.assertEqual(io_impl.resolve_source_path("project", "foo.py"), target)
 
     def test_resolve_source_path_for_project_rulings_returns_primary_on_miss(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -588,20 +588,20 @@ class GitHubActionIOTest(unittest.TestCase):
                 ),
             ):
                 io_impl = io.GitHubActionIO(sources_root=sources_ruling)
-                self.assertEqual(primary, io_impl.resolve_source_path("project", "missing.py"))
+                self.assertEqual(io_impl.resolve_source_path("project", "missing.py"), primary)
 
     def test_resolve_source_path_uses_project_overrides(self) -> None:
         io_impl = io.GitHubActionIO()
         self.assertEqual(
-            "private/its-enterprise/sources_ruling/mypy-0.782/pkg/file.py",
             io_impl.resolve_source_path("mypy", "pkg/file.py"),
+            "private/its-enterprise/sources_ruling/mypy-0.782/pkg/file.py",
         )
 
     def test_resolve_source_path_uses_default_project_root(self) -> None:
         io_impl = io.GitHubActionIO()
         self.assertEqual(
-            "private/its-enterprise/sources_ruling/custom-project/pkg/file.py",
             io_impl.resolve_source_path("custom-project", "/pkg/file.py"),
+            "private/its-enterprise/sources_ruling/custom-project/pkg/file.py",
         )
 
 
