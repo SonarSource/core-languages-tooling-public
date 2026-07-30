@@ -51,20 +51,20 @@ class FakeRulingDiffIO:
 class ParsePathTest(unittest.TestCase):
     def test_parse_ruling_path(self) -> None:
         path = "private/its-enterprise/ruling/src/test/resources/expected_ruling/airflow/python-S1066.json"
-        self.assertEqual(("airflow", "python", "S1066"), core.parse_ruling_path(path))
+        self.assertEqual(core.parse_ruling_path(path), ("airflow", "python", "S1066"))
 
     def test_parse_ruling_path_with_pythonenterprise(self) -> None:
         path = "private/its-enterprise/ruling/src/test/resources/expected_ruling/specific-rules/pythonenterprise-S7471.json"
         self.assertEqual(
-            ("specific-rules", "pythonenterprise", "S7471"),
             core.parse_ruling_path(path),
+            ("specific-rules", "pythonenterprise", "S7471"),
         )
 
     def test_parse_ruling_path_with_legacy_key(self) -> None:
         path = "private/its-enterprise/ruling/src/test/resources/expected_ruling/scikit-learn/python-LineLength.json"
         self.assertEqual(
-            ("scikit-learn", "python", "LineLength"),
             core.parse_ruling_path(path),
+            ("scikit-learn", "python", "LineLength"),
         )
 
     def test_parse_rule_filename_rejects_empty_rule_key(self) -> None:
@@ -85,15 +85,15 @@ class ParsePathTest(unittest.TestCase):
     def test_strip_project_key_java_maven_format_commons_beanutils(self) -> None:
         # Java Maven format: groupId:artifactId:path
         self.assertEqual(
-            "src/main/java/org/apache/commons/beanutils2/LazyDynaList.java",
-            core.strip_project_key("commons-beanutils:commons-beanutils:src/main/java/org/apache/commons/beanutils2/LazyDynaList.java")
+            core.strip_project_key("commons-beanutils:commons-beanutils:src/main/java/org/apache/commons/beanutils2/LazyDynaList.java"),
+            "src/main/java/org/apache/commons/beanutils2/LazyDynaList.java"
         )
 
     def test_strip_project_key_java_maven_format_eclipse_jetty(self) -> None:
         # Java Maven format with module path: groupId:artifactId:module/path
         self.assertEqual(
-            "jetty-http/src/main/java/org/eclipse/jetty/http/QuotedCSVParser.java",
-            core.strip_project_key("org.eclipse.jetty:jetty-project:jetty-http/src/main/java/org/eclipse/jetty/http/QuotedCSVParser.java")
+            core.strip_project_key("org.eclipse.jetty:jetty-project:jetty-http/src/main/java/org/eclipse/jetty/http/QuotedCSVParser.java"),
+            "jetty-http/src/main/java/org/eclipse/jetty/http/QuotedCSVParser.java"
         )
 
     def test_strip_project_key_java_maven_format_test_file(self) -> None:
