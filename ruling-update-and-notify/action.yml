@@ -301,6 +301,21 @@ runs:
               continue
             fi
 
+            # Remove project subdirectories from ruling-root that exist in the
+            # artifact, so that files absent from actual results (e.g., a rule
+            # no longer flags any issues) are properly deleted rather than kept
+            # as stale expected results.
+            for project_dir in "$artifact_dir"/*/; do
+              if [ -d "$project_dir" ]; then
+                project_name=$(basename "$project_dir")
+                target_dir="${{ inputs.ruling-root }}/$project_name"
+                if [ -d "$target_dir" ]; then
+                  echo "  Cleaning existing project dir: $project_name"
+                  rm -rf "$target_dir"
+                fi
+              fi
+            done
+
             set +e
             COPY_OUTPUT=$(cp -rv "$artifact_dir"/* "${{ inputs.ruling-root }}/" 2>&1)
             COPY_EXIT_CODE=$?
