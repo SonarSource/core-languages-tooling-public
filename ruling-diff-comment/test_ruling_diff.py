@@ -484,6 +484,45 @@ class SourceLoadingTest(unittest.TestCase):
 
         self.assertEqual(content, "print('from submodule')\n")
     @patch("ruling_diff_io.subprocess.run")
+    def test_load_text_at_ref_reads_from_nested_submodule(self, mocked_run) -> None:
+        mocked_run.side_effect = [
+            # 1. get_submodule_commit_for_ref: resolve its/sources commit
+            subprocess.CompletedProcess(
+                args=["git", "rev-parse"],
+                returncode=0,
+                stdout="sources-sha\n",
+                stderr="",
+            ),
+            # 2. read_submodule_file_at_commit: git show in sources submodule fails (nested submodule)
+            subprocess.CompletedProcess(
+                args=["git", "-C", "its/sources", "show"],
+                returncode=128,
+                stdout="",
+                stderr="fatal: path 'eclipse-jetty/jetty-io/File.java' exists on disk, but not in 'sources-sha'",
+            ),
+            # 3. read_nested_submodule_file_at_commit: resolve nested submodule commit
+            subprocess.CompletedProcess(
+                args=["git", "-C", "its/sources", "rev-parse"],
+                returncode=0,
+                stdout="nested-sha\n",
+                stderr="",
+            ),
+            # 4. _read_file_at_commit: read file from nested submodule
+            subprocess.CompletedProcess(
+                args=["git", "-C", "its/sources/eclipse-jetty", "show"],
+                returncode=0,
+                stdout="class SelectorManager {}\n",
+                stderr="",
+            ),
+        ]
+
+        content = io.load_text_at_ref(
+            "its/sources/eclipse-jetty/jetty-io/File.java", "head-sha", sources_root="its/sources"
+        )
+
+        self.assertEqual(content, "class SelectorManager {}\n")
+
+    @patch("ruling_diff_io.subprocess.run")
     def test_load_text_at_ref_warns_when_source_missing(self, mocked_run) -> None:
         mocked_run.return_value = subprocess.CompletedProcess(
             args=["git"],
