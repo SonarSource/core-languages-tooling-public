@@ -45,6 +45,7 @@ PROJECT_SOURCE_OVERRIDES = {
     "sources_internal_ruling": "private/its-enterprise/sources_internal_ruling",
     "namespace_basic": "private/its-enterprise/sources_internal_namespace_ruling/basic_namespace",
     "namespace_mixed": "private/its-enterprise/sources_internal_namespace_ruling/mixed_namespace",
+    "sonar-server": "its/sources/sonarqube-6.5/server/sonar-server",
 }
 
 

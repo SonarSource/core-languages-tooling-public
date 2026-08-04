@@ -597,6 +597,13 @@ class GitHubActionIOTest(unittest.TestCase):
             "private/its-enterprise/sources_ruling/mypy-0.782/pkg/file.py",
         )
 
+    def test_resolve_source_path_uses_sonar_server_override(self) -> None:
+        io_impl = io.GitHubActionIO(sources_root="its/sources")
+        self.assertEqual(
+            io_impl.resolve_source_path("sonar-server", "src/test/java/org/sonar/server/issue/IssueDocTesting.java"),
+            "its/sources/sonarqube-6.5/server/sonar-server/src/test/java/org/sonar/server/issue/IssueDocTesting.java",
+        )
+
     def test_resolve_source_path_uses_default_project_root(self) -> None:
         io_impl = io.GitHubActionIO()
         self.assertEqual(
