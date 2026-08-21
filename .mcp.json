@@ -6,7 +6,7 @@
         "run",
         "mcp",
         "--project",
-        "SonarSource_dotnet-tooling-public"
+        "SonarSource_core-languages-tooling-public"
       ]
     }
   }
