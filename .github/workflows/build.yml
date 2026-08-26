@@ -30,3 +30,15 @@ jobs:
         run: |
           cd ruling-diff-comment
           uv run python -m unittest discover -v -s . -p "test_ruling_diff.py"
+
+  test-pvf-comment:
+    runs-on: ubuntu-latest
+    name: Test pvf-comment action
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Run unit tests
+        run: |
+          cd pvf-comment
+          python3 -m unittest discover -v -s . -p "test_pvf_comment_parser.py"

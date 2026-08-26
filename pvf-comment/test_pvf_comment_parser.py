@@ -1,0 +1,77 @@
+import os
+import pathlib
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+
+MODULE_DIR = pathlib.Path(__file__).parent
+if str(MODULE_DIR) not in sys.path:
+    sys.path.insert(0, str(MODULE_DIR))
+
+from pvf_comment_parser import _extract_pvf_payload, _parse_payload, main
+
+
+class PvfCommentParserTest(unittest.TestCase):
+    def test_parse_payload_rules_fps_and_languages(self):
+        payload = _parse_payload("fps vbnet csharp S123, S456")
+        self.assertEqual(payload.rules, ["S123", "S456"])
+        self.assertEqual(payload.languages, ["vbnet", "csharp"])
+        self.assertTrue(payload.fps)
+        self.assertFalse(payload.all_flag)
+
+    def test_parse_payload_lowercase_rule_ids(self):
+        payload = _parse_payload("s1234 S567")
+        self.assertEqual(payload.rules, ["S1234", "S567"])
+
+    def test_extract_rejects_pvfoobar(self):
+        self.assertIsNone(_extract_pvf_payload("/pvfoobar java"))
+
+    def test_parse_payload_language_tokens_with_special_chars(self):
+        payload = _parse_payload("c++ c# objective-c S123")
+        self.assertEqual(payload.languages, ["c++", "c#", "objective-c"])
+        self.assertEqual(payload.rules, ["S123"])
+
+    def test_main_bare_pvf_means_all_rules(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output_path = pathlib.Path(tmp_dir) / "output"
+            output_path.touch()
+            with patch.dict(os.environ, {"GITHUB_OUTPUT": str(output_path)}):
+                with patch("sys.argv", ["pvf_comment_parser.py", "--comment=/pvf"]):
+                    main()
+            text = output_path.read_text(encoding="utf-8")
+            self.assertIn("found=true", text)
+            self.assertIn("rules-request=", text)
+            self.assertNotIn("rules-request=S", text)
+
+    def test_main_accepts_hyphen_leading_body(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output_path = pathlib.Path(tmp_dir) / "output"
+            output_path.touch()
+            with patch.dict(os.environ, {"GITHUB_OUTPUT": str(output_path)}):
+                with patch("sys.argv", ["pvf_comment_parser.py", "--comment=-fps S123"]):
+                    main()
+            text = output_path.read_text(encoding="utf-8")
+            self.assertIn("found=false", text)
+
+    def test_main_uses_last_pvf_line(self):
+        payload_str: str | None = None
+        for line in "hello\n/pvf S123\n/pvf S456".splitlines():
+            extracted = _extract_pvf_payload(line)
+            if extracted is not None:
+                payload_str = extracted
+        payload = _parse_payload(payload_str)
+        self.assertEqual(payload.rules, ["S456"])
+
+    def test_main_writes_not_found_outputs(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output_path = pathlib.Path(tmp_dir) / "output"
+            output_path.touch()
+            with patch.dict(os.environ, {"GITHUB_OUTPUT": str(output_path)}):
+                with patch("sys.argv", ["pvf_comment_parser.py", "--comment=hello"]):
+                    main()
+            self.assertIn("found=false", output_path.read_text(encoding="utf-8"))
+
+
+if __name__ == "__main__":
+    unittest.main()
