@@ -54,10 +54,15 @@ def _extract_pvf_payload(line: str) -> str | None:
 
 
 def _parse_payload(payload: str) -> PvfCommentPayload:
-    rules = [rule.upper() for rule in rule_regex.findall(payload)]
     languages = language_regex.findall(payload)
     fps = fps_regex.findall(payload)
     all_flags = all_regex.findall(payload)
+
+    if all_flags:
+        rules = []
+    else :
+        rules = [rule.upper() for rule in rule_regex.findall(payload)]
+
     return PvfCommentPayload(
         rules=rules,
         languages=languages,
