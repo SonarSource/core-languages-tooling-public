@@ -10,9 +10,6 @@ outputs:
   found:
     description: 'true when a /pvf command was found; false when no /pvf line (callers skip PVF)'
     value: ${{ steps.parse.outputs.found }}
-  payload:
-    description: 'JSON object with rules, languages, fps, and all_flag'
-    value: ${{ steps.parse.outputs.payload }}
   rules-request:
     description: 'PVF rules-request when found=true. Empty means all rules. Unused when found=false.'
     value: ${{ steps.parse.outputs.rules-request }}

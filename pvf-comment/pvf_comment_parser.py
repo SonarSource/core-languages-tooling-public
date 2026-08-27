@@ -83,11 +83,9 @@ def _write_github_outputs(payload: PvfCommentPayload | None, output_path: str) -
             handle.write("languages=[]\n")
             return
 
-        payload_json = json.dumps(asdict(payload), separators=(",", ":"))
         rules_request = "" if payload.all_flag or not payload.rules else ",".join(payload.rules)
         languages_json = json.dumps(payload.languages, separators=(",", ":"))
         handle.write("found=true\n")
-        handle.write(f"payload={payload_json}\n")
         handle.write(f"rules-request={rules_request}\n")
         handle.write(f"fps={'true' if payload.fps else 'false'}\n")
         handle.write(f"languages={languages_json}\n")
