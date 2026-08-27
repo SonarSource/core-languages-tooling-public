@@ -6,33 +6,23 @@ from dataclasses import asdict
 
 from pvf_comment_payload import PvfCommentPayload
 
-PVF_PREFIX = '/pvf'
-PVF_COMMAND_REGEX = re.compile(rf"^{re.escape(PVF_PREFIX)}(?:\s+(?P<payload>.*))?$")
-
-# Primary patterns
-rule_regex = re.compile(r"\bS\d+\b", re.IGNORECASE)
-fps_regex = re.compile(r"\bfps\b", re.IGNORECASE)
-all_regex = re.compile(r"\ball\b|\*", re.IGNORECASE)
-
-# Construct language pattern excluding primary patterns
-rule_p = rule_regex.pattern
-fps_p = fps_regex.pattern
-language_regex = re.compile(
-    rf"(?!{rule_p})(?!{fps_p})(?!\ball\b)(?<![\w+#-])[a-zA-Z_][\w+#-]*(?![\w+#-])",
-    re.IGNORECASE
-)
+PVF_COMMAND_PREFIX = '/pvf'
+SEPARATORS = ' ', ',', '\t'
+ALL = "ALL", "all", '*'
+FPS = "FPS", "fps"
 
 
 def main():
     arg_parser = argparse.ArgumentParser()
     arg_parser.add_argument("--comment", required=True, help="Comment to parse")
+    arg_parser.add_argument("--rule-prefix", required=True, help="Prefix for rule keys (e.g., 'S')")
     args = arg_parser.parse_args()
 
     output_path = os.environ.get("GITHUB_OUTPUT")
 
     for line in args.comment.splitlines():
         if (extracted := _extract_pvf_payload(line)) is not None:
-            payload = _parse_payload(extracted)
+            payload = _parse_payload(extracted, args.rule_prefix)
             print(payload)
             _write_github_outputs(payload, output_path)
             return
@@ -40,28 +30,42 @@ def main():
     _write_github_outputs(None, output_path)
 
 
-def _extract_pvf_payload(line: str) -> str | None:
+def _extract_pvf_payload(line: str) -> list[str] | None:
     """
     Extract the /pvf command payload from a single line.
     :param line: One line of PR description or comment text.
     :return: Tokens after ``/pvf``, or ``""`` for a bare ``/pvf`` line; ``None`` if not a /pvf command.
     """
     stripped: str = line.lstrip(" \t")
-    match = PVF_COMMAND_REGEX.match(stripped)
-    if match is None:
-        return None
-    return (match.group("payload") or "").strip()
+
+    # python split doesn't accept multiple separators, so we normalize to the first separator
+    for sep in SEPARATORS[1:]:
+        stripped = stripped.replace(sep, SEPARATORS[0])
+
+    tokens = [t for t in stripped.split(SEPARATORS[0]) if t]
+
+    if tokens and tokens[0] == PVF_COMMAND_PREFIX:
+        return tokens[1:]
+    return None
 
 
-def _parse_payload(payload: str) -> PvfCommentPayload:
-    languages = language_regex.findall(payload)
-    fps = fps_regex.findall(payload)
-    all_flags = all_regex.findall(payload)
+def _parse_payload(payload: list[str], rule_prefix: str) -> PvfCommentPayload:
+    def has_flag(matchers: tuple[str]) -> bool:
+        return any(t in matchers for t in payload)
+
+    rule_prefix = rule_prefix.upper()
+
+    all_flags = has_flag(ALL)
+    fps = has_flag(FPS)
+    used = {*ALL, *FPS}
+    rules = [tu for t in payload if (tu := t.upper()).startswith(rule_prefix) and t not in used]
+    used = used | set(rules)
+    languages = [t for t in payload if t not in used]
 
     if all_flags:
         rules = []
-    else :
-        rules = [rule.upper() for rule in rule_regex.findall(payload)]
+    elif not rules:
+        all_flags = True
 
     return PvfCommentPayload(
         rules=rules,
@@ -69,6 +73,7 @@ def _parse_payload(payload: str) -> PvfCommentPayload:
         fps=bool(fps),
         all_flag=bool(all_flags)
     )
+
 
 
 def _write_github_outputs(payload: PvfCommentPayload | None, output_path: str | None) -> None:

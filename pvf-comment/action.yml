@@ -5,6 +5,10 @@ inputs:
   comment:
     description: 'PR description or comment body to scan for /pvf commands'
     required: true
+  rule-prefix:
+    description: 'Prefix for rule keys (e.g., "S" for most rules, "M23_" for some c-family rules).'
+    required: false
+    default: 'S'
 
 outputs:
   found:
@@ -28,4 +32,4 @@ runs:
       shell: bash
       env:
         COMMENT: ${{ inputs.comment }}
-      run: python3 "${{ github.action_path }}/pvf_comment_parser.py" --comment="$COMMENT"
+      run: python3 "${{ github.action_path }}/pvf_comment_parser.py" --comment="$COMMENT" --rule-prefix="${{ inputs.rule-prefix }}"
