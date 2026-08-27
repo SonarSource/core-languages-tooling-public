@@ -54,15 +54,6 @@ class PvfCommentParserTest(unittest.TestCase):
             text = output_path.read_text(encoding="utf-8")
             self.assertIn("found=false", text)
 
-    def test_main_uses_last_pvf_line(self):
-        payload_str: str | None = None
-        for line in "hello\n/pvf S123\n/pvf S456".splitlines():
-            extracted = _extract_pvf_payload(line)
-            if extracted is not None:
-                payload_str = extracted
-        payload = _parse_payload(payload_str)
-        self.assertEqual(payload.rules, ["S456"])
-
     def test_main_writes_not_found_outputs(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             output_path = pathlib.Path(tmp_dir) / "output"

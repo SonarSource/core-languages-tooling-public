@@ -27,19 +27,17 @@ def main():
     arg_parser = argparse.ArgumentParser()
     arg_parser.add_argument("--comment", required=True, help="Comment to parse")
     args = arg_parser.parse_args()
-    payload_str: str | None = None
-    for line in args.comment.splitlines():
-        extracted = _extract_pvf_payload(line)
-        if extracted is not None:
-            payload_str = extracted
+
     output_path = os.environ.get("GITHUB_OUTPUT")
-    if payload_str is not None:
-        payload = _parse_payload(payload_str)
-        print(payload)
-        if output_path:
+
+    for line in args.comment.splitlines():
+        if extracted := _extract_pvf_payload(line) is not None:
+            payload = _parse_payload(extracted)
+            print(payload)
             _write_github_outputs(payload, output_path)
-    elif output_path:
-        _write_github_outputs(None, output_path)
+            return
+
+    _write_github_outputs(None, output_path)
 
 
 def _extract_pvf_payload(line: str) -> str | None:
@@ -74,6 +72,9 @@ def _write_github_outputs(payload: PvfCommentPayload | None, output_path: str) -
     :param payload: Parsed payload, or ``None`` when no /pvf command was found.
     :param output_path: Path to the ``GITHUB_OUTPUT`` file.
     """
+    if not output_path:
+        return
+
     with open(output_path, "a", encoding="utf-8") as handle:
         if payload is None:
             handle.write("found=false\n")
