@@ -66,7 +66,7 @@ def _parse_payload(payload: str) -> PvfCommentPayload:
     )
 
 
-def _write_github_outputs(payload: PvfCommentPayload | None, output_path: str) -> None:
+def _write_github_outputs(payload: PvfCommentPayload | None, output_path: str | None) -> None:
     """
     Write composite-action outputs to ``GITHUB_OUTPUT``.
     :param payload: Parsed payload, or ``None`` when no /pvf command was found.
