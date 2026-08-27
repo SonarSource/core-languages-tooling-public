@@ -54,23 +54,23 @@ def _parse_payload(payload: list[str], rule_prefix: str) -> PvfCommentPayload:
 
     rule_prefix = rule_prefix.upper()
 
-    all_flags = has_flag(ALL)
+    all_flag = has_flag(ALL)
     fps = has_flag(FPS)
     used = {*ALL, *FPS}
     rules = [tu for t in payload if (tu := t.upper()).startswith(rule_prefix) and t not in used]
     used = used | set(rules)
     languages = [t for t in payload if t not in used]
 
-    if all_flags:
+    if all_flag:
         rules = []
     elif not rules:
-        all_flags = True
+        all_flag = True
 
     return PvfCommentPayload(
         rules=rules,
         languages=languages,
-        fps=bool(fps),
-        all_flag=bool(all_flags)
+        fps=fps,
+        all_flag=all_flag
     )
 
 
