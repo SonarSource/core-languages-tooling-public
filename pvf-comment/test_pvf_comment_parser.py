@@ -37,6 +37,13 @@ class PvfCommentParserTest(unittest.TestCase):
         self.assertEqual(payload.languages, ["c++", "c#", "objective-c"])
         self.assertEqual(payload.rules, ["S123"])
 
+    def test_parse_payload_all_flag_clears_rules(self):
+        for tokens in (["all", "S123", "java"], ["*", "S123"]):
+            with self.subTest(tokens=tokens):
+                payload = _parse_payload(tokens, 'S')
+                self.assertTrue(payload.all_flag)
+                self.assertEqual(payload.rules, [])
+
     def test_main_bare_pvf_means_all_rules(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             output_path = pathlib.Path(tmp_dir) / "output"
