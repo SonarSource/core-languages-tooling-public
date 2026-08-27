@@ -23,7 +23,6 @@ Parse `/pvf` activation comments from PR text into GitHub Action outputs.
 | Output | Description |
 |--------|-------------|
 | `found` | `true` when a `/pvf` command was found; callers should skip PVF when `false` |
-| `payload` | JSON object with `rules`, `languages`, `fps`, and `all_flag` |
 | `rules-request` | Rule keys for PVF `rules-request` when `found=true`; empty means all rules (e.g. bare `/pvf` or `/pvf all`) |
 | `fps` | Whether the `fps` flag was present |
 | `languages` | JSON array of language tokens from the comment |
