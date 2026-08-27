@@ -31,7 +31,7 @@ def main():
     output_path = os.environ.get("GITHUB_OUTPUT")
 
     for line in args.comment.splitlines():
-        if extracted := _extract_pvf_payload(line) is not None:
+        if (extracted := _extract_pvf_payload(line)) is not None:
             payload = _parse_payload(extracted)
             print(payload)
             _write_github_outputs(payload, output_path)
