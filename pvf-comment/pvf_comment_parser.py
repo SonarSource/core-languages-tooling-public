@@ -2,7 +2,6 @@ import argparse
 import json
 import os
 import re
-from dataclasses import asdict
 
 from pvf_comment_payload import PvfCommentPayload
 
@@ -88,7 +87,6 @@ def _write_github_outputs(payload: PvfCommentPayload | None, output_path: str | 
     with open(output_path, "a", encoding="utf-8") as handle:
         if payload is None:
             handle.write("found=false\n")
-            handle.write("payload={}\n")
             handle.write("rules-request=\n")
             handle.write("fps=false\n")
             handle.write("languages=[]\n")
