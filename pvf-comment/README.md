@@ -17,6 +17,7 @@ Parse `/pvf` activation comments from PR text into GitHub Action outputs.
 | Input | Description | Required |
 |-------|-------------|----------|
 | `comment` | PR description or comment body to scan for `/pvf` commands | Yes |
+| `rule-prefixes` | Space-separated prefixes for rule keys (e.g. `"S M23_"`); defaults to `S` | No |
 
 ## Outputs
 

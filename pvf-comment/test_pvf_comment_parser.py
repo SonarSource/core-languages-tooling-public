@@ -49,7 +49,7 @@ class PvfCommentParserTest(unittest.TestCase):
             output_path = pathlib.Path(tmp_dir) / "output"
             output_path.touch()
             with patch.dict(os.environ, {"GITHUB_OUTPUT": str(output_path)}):
-                with patch("sys.argv", ["pvf_comment_parser.py", "--comment=/pvf", "--rule-prefix=S"]):
+                with patch("sys.argv", ["pvf_comment_parser.py", "--comment=/pvf", "--rule-prefixes=S"]):
                     main()
             text = output_path.read_text(encoding="utf-8")
             self.assertIn("found=true", text)
@@ -61,7 +61,7 @@ class PvfCommentParserTest(unittest.TestCase):
             output_path = pathlib.Path(tmp_dir) / "output"
             output_path.touch()
             with patch.dict(os.environ, {"GITHUB_OUTPUT": str(output_path)}):
-                with patch("sys.argv", ["pvf_comment_parser.py", "--comment=-fps S123", "--rule-prefix=S"]):
+                with patch("sys.argv", ["pvf_comment_parser.py", "--comment=-fps S123", "--rule-prefixes=S"]):
                     main()
             text = output_path.read_text(encoding="utf-8")
             self.assertIn("found=false", text)
@@ -71,9 +71,23 @@ class PvfCommentParserTest(unittest.TestCase):
             output_path = pathlib.Path(tmp_dir) / "output"
             output_path.touch()
             with patch.dict(os.environ, {"GITHUB_OUTPUT": str(output_path)}):
-                with patch("sys.argv", ["pvf_comment_parser.py", "--comment=hello", "--rule-prefix=S"]):
+                with patch("sys.argv", ["pvf_comment_parser.py", "--comment=hello", "--rule-prefixes=S"]):
                     main()
             self.assertIn("found=false", output_path.read_text(encoding="utf-8"))
+
+    def test_main_rule_prefixes_multiple_values(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output_path = pathlib.Path(tmp_dir) / "output"
+            output_path.touch()
+            with patch.dict(os.environ, {"GITHUB_OUTPUT": str(output_path)}):
+                with patch(
+                    "sys.argv",
+                    ["pvf_comment_parser.py", "--comment=/pvf S123 M23_042", "--rule-prefixes=S M23_"],
+                ):
+                    main()
+            text = output_path.read_text(encoding="utf-8")
+            self.assertIn("found=true", text)
+            self.assertIn("rules-request=S123,M23_042", text)
 
 
 if __name__ == "__main__":
