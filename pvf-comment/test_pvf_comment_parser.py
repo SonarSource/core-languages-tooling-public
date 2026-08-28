@@ -37,6 +37,11 @@ class PvfCommentParserTest(unittest.TestCase):
         self.assertEqual(payload.languages, ["c++", "c#", "objective-c"])
         self.assertEqual(payload.rules, ["S123"])
 
+    def test_parse_payload_language_starting_with_rule_prefix(self):
+        payload = _parse_payload(["swift", "sql", "S123"], ['S'])
+        self.assertEqual(payload.languages, ["swift", "sql"])
+        self.assertEqual(payload.rules, ["S123"])
+
     def test_parse_payload_all_flag_clears_rules(self):
         for tokens in (["all", "S123", "java"], ["*", "S123"]):
             with self.subTest(tokens=tokens):
