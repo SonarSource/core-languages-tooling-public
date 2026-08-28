@@ -16,7 +16,7 @@ concurrency:
 jobs:
   run-python-tests:
     runs-on: ubuntu-latest
-    name: Test python scripts
+    name: Test ruling-diff-comment action # FIXME: "Test ruling-diff-comment action" -> "Test python scripts"
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 #TODO: update to the last version
