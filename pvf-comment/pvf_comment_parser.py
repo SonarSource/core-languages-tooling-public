@@ -22,7 +22,7 @@ def main():
     rule_prefixes = [p for p in args.rule_prefixes.split() if p]
     for line in args.comment.splitlines():
         if (extracted := _extract_pvf_payload(line)) is not None:
-            payload = _parse_payload(extracted, args.rule_prefixes)
+            payload = _parse_payload(extracted, rule_prefixes)
             print(payload)
             _write_github_outputs(payload, output_path)
             return
