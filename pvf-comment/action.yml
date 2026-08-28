@@ -1,0 +1,36 @@
+name: 'PVF Comment Parser'
+description: 'Parse /pvf activation comments from PR text into structured outputs'
+
+inputs:
+  comment:
+    description: 'PR description or comment body to scan for /pvf commands'
+    required: true
+  rule-prefixes:
+    description: 'Space-separated prefixes for rule keys (e.g., "S M23_")'
+    required: false
+    default: 'S'
+
+outputs:
+  found:
+    description: 'true when a /pvf command was found; false when no /pvf line (callers skip PVF)'
+    value: ${{ steps.parse.outputs.found }}
+  rules-request:
+    description: 'PVF rules-request when found=true. Empty means all rules. Unused when found=false.'
+    value: ${{ steps.parse.outputs.rules-request }}
+  fps:
+    description: 'Whether the fps flag was present (true or false)'
+    value: ${{ steps.parse.outputs.fps }}
+  languages:
+    description: 'JSON array of language tokens from the comment'
+    value: ${{ steps.parse.outputs.languages }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Parse /pvf comment
+      id: parse
+      shell: bash
+      env:
+        COMMENT: ${{ inputs.comment }}
+        RULE_PREFIXES: ${{ inputs.rule-prefixes }}
+      run: python3 "${{ github.action_path }}/pvf_comment_parser.py" --comment="$COMMENT" --rule-prefixes="$RULE_PREFIXES"
