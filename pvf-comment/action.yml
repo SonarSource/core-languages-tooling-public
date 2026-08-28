@@ -32,4 +32,5 @@ runs:
       shell: bash
       env:
         COMMENT: ${{ inputs.comment }}
-      run: python3 "${{ github.action_path }}/pvf_comment_parser.py" --comment="$COMMENT" --rule-prefixes="${{ inputs.rule-prefixes }}"
+        RULE_PREFIXES: ${{ inputs.rule-prefixes }}
+      run: python3 "${{ github.action_path }}/pvf_comment_parser.py" --comment="$COMMENT" --rule-prefixes="$RULE_PREFIXES"

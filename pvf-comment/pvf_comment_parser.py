@@ -14,16 +14,12 @@ FPS = "FPS", "fps"
 def main():
     arg_parser = argparse.ArgumentParser()
     arg_parser.add_argument("--comment", required=True, help="Comment to parse")
-    arg_parser.add_argument(
-        "--rule-prefixes",
-        nargs="+",
-        required=True,
-        help="Prefixes for rule keys (e.g., 'S' 'A')"
-    )
+    arg_parser.add_argument("--rule-prefixes", default="S", help="Space-separated prefixes")
     args = arg_parser.parse_args()
 
     output_path = os.environ.get("GITHUB_OUTPUT")
 
+    rule_prefixes = [p for p in args.rule_prefixes.split() if p]
     for line in args.comment.splitlines():
         if (extracted := _extract_pvf_payload(line)) is not None:
             payload = _parse_payload(extracted, args.rule_prefixes)
