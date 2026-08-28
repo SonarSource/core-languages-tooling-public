@@ -54,7 +54,15 @@ def _parse_payload(payload: list[str], rule_prefixes: list[str]) -> PvfCommentPa
         return any(t in matchers for t in payload)
 
     def is_rule(token: str) -> bool:
-        return any(token.startswith(rp) for rp in rule_prefixes)
+        for rp in rule_prefixes:
+            if token.startswith(rp):
+                try:
+                    # raise if token doesn't match "<prefix>%d"
+                    int(token[len(rp):])
+                    return True
+                except:
+                    pass
+        return False
 
     rule_prefixes = [rp.upper() for rp in rule_prefixes]
 
