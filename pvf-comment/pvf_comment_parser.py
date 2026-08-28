@@ -14,14 +14,19 @@ FPS = "FPS", "fps"
 def main():
     arg_parser = argparse.ArgumentParser()
     arg_parser.add_argument("--comment", required=True, help="Comment to parse")
-    arg_parser.add_argument("--rule-prefix", required=True, help="Prefix for rule keys (e.g., 'S')")
+    arg_parser.add_argument(
+        "--rule-prefixes",
+        nargs="+",
+        required=True,
+        help="Prefixes for rule keys (e.g., 'S' 'A')"
+    )
     args = arg_parser.parse_args()
 
     output_path = os.environ.get("GITHUB_OUTPUT")
 
     for line in args.comment.splitlines():
         if (extracted := _extract_pvf_payload(line)) is not None:
-            payload = _parse_payload(extracted, args.rule_prefix)
+            payload = _parse_payload(extracted, args.rule_prefixes)
             print(payload)
             _write_github_outputs(payload, output_path)
             return
@@ -48,16 +53,19 @@ def _extract_pvf_payload(line: str) -> list[str] | None:
     return None
 
 
-def _parse_payload(payload: list[str], rule_prefix: str) -> PvfCommentPayload:
+def _parse_payload(payload: list[str], rule_prefixes: list[str]) -> PvfCommentPayload:
     def has_flag(matchers: tuple[str]) -> bool:
         return any(t in matchers for t in payload)
 
-    rule_prefix = rule_prefix.upper()
+    def is_rule(token: str) -> bool:
+        return any(token.startswith(rp) for rp in rule_prefixes)
+
+    rule_prefixes = [rp.upper() for rp in rule_prefixes]
 
     all_flag = has_flag(ALL)
     fps = has_flag(FPS)
     used = {*ALL, *FPS}
-    rules = [tu for t in payload if (tu := t.upper()).startswith(rule_prefix) and t not in used]
+    rules = [tu for t in payload if is_rule(tu := t.upper()) and t not in used]
     used = used | set(rules)
     languages = [t for t in payload if t not in used]
 
@@ -72,7 +80,6 @@ def _parse_payload(payload: list[str], rule_prefix: str) -> PvfCommentPayload:
         fps=fps,
         all_flag=all_flag
     )
-
 
 
 def _write_github_outputs(payload: PvfCommentPayload | None, output_path: str | None) -> None:
