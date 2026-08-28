@@ -60,7 +60,7 @@ def _parse_payload(payload: list[str], rule_prefixes: list[str]) -> PvfCommentPa
                     # raise if token doesn't match "<prefix>%d"
                     int(token[len(rp):])
                     return True
-                except:
+                finally:
                     pass
         return False
 
