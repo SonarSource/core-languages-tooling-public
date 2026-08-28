@@ -61,7 +61,7 @@ def _parse_payload(payload: list[str], rule_prefixes: list[str]) -> PvfCommentPa
                     int(token[len(rp):])
                     return True
                 finally:
-                    pass
+                    "Parsing failed. Continue with other prefixes."
         return False
 
     rule_prefixes = [rp.upper() for rp in rule_prefixes]
