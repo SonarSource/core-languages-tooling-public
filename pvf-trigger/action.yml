@@ -41,9 +41,11 @@ runs:
         head_ref="$(jq -r .head.ref <<<"$pull")"
         head_sha="$(jq -r .head.sha <<<"$pull")"
         title="$(jq -r .title <<<"$pull")"
-        for run_id in $(gh api \
+        run_ids="$(gh api \
           "repos/${GITHUB_REPOSITORY}/actions/workflows/${BUILD_WORKFLOW}/runs?head_sha=${head_sha}&event=pull_request&per_page=10" \
-          --jq '.workflow_runs[].id'); do
+          --jq '.workflow_runs[].id')"
+
+        for run_id in $run_ids; do
           if gh run download "$run_id" --repo "$GITHUB_REPOSITORY" -n candidate-version; then
             break
           fi
