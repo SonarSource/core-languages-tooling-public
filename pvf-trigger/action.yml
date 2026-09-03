@@ -1,0 +1,63 @@
+name: 'PVF Trigger'
+description: 'On a /pvf PR comment, resolve the candidate plugin version from the latest Build run and dispatch performance-validation.yml'
+
+inputs:
+  comment:
+    description: 'Comment body to scan for a /pvf command'
+    required: true
+  pr-number:
+    description: 'Pull request number the comment was posted on'
+    required: true
+  build-workflow:
+    description: 'Filename of the build workflow that uploads the candidate-version artifact'
+    required: false
+    default: build.yml
+  rule-prefixes:
+    description: 'Space-separated rule-key prefixes passed to the /pvf comment parser'
+    required: false
+    default: 'S'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Parse /pvf comment
+      id: pvf
+      uses: SonarSource/core-languages-tooling-public/pvf-comment@master
+      with:
+        comment: ${{ inputs.comment }}
+        rule-prefixes: ${{ inputs.rule-prefixes }}
+
+    - name: Trigger performance validation
+      if: steps.pvf.outputs.found == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        PR_NUMBER: ${{ inputs.pr-number }}
+        RULES_REQUEST: ${{ steps.pvf.outputs.rules-request }}
+        BUILD_WORKFLOW: ${{ inputs.build-workflow }}
+      run: |
+        set -euo pipefail
+        pull="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")"
+        head_ref="$(jq -r .head.ref <<<"$pull")"
+        head_sha="$(jq -r .head.sha <<<"$pull")"
+        title="$(jq -r .title <<<"$pull")"
+        run_ids="$(gh api \
+          "repos/${GITHUB_REPOSITORY}/actions/workflows/${BUILD_WORKFLOW}/runs?head_sha=${head_sha}&event=pull_request&per_page=10" \
+          --jq '.workflow_runs[].id')"
+
+        for run_id in $run_ids; do
+          if gh run download "$run_id" --repo "$GITHUB_REPOSITORY" -n candidate-version; then
+            break
+          fi
+        done
+        if [ ! -f candidate-version.txt ]; then
+          echo "No candidate-version artifact for ${head_sha}; wait for Build to finish" >&2
+          exit 1
+        fi
+        gh workflow run performance-validation.yml \
+          --repo "$GITHUB_REPOSITORY" \
+          --ref "$head_ref" \
+          -f "candidate-version=$(cat candidate-version.txt)" \
+          -f "rules-request=${RULES_REQUEST}" \
+          -f "pr-number=${PR_NUMBER}" \
+          -f "run-description=${title}"
