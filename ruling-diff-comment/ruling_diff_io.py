@@ -327,6 +327,50 @@ def read_submodule_file_at_commit(commit: str, relative_path: str, sources_root:
     )
     if result.returncode == 0:
         return result.stdout
+    return read_nested_submodule_file_at_commit(commit, relative_path, sources_root)
+
+
+def read_nested_submodule_file_at_commit(commit: str, relative_path: str, sources_root: str) -> str | None:
+    """Try reading a file from a nested submodule within the sources submodule.
+
+    Some projects (e.g. eclipse-jetty) are nested submodules inside the
+    sources submodule.  When ``git show <commit>:<path>`` fails because
+    the first path component is itself a submodule, resolve the nested
+    submodule commit and read the file from there.
+    """
+    parts = relative_path.split("/", 1)
+    if len(parts) != 2:
+        return None
+    nested_submodule, nested_path = parts
+
+    # Resolve the nested submodule commit from the parent submodule commit
+    result = subprocess.run(
+        ["git", "-C", sources_root, "rev-parse", f"{commit}:{nested_submodule}"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return None
+    nested_commit = result.stdout.strip()
+
+    nested_root = f"{sources_root}/{nested_submodule}"
+    content = _read_file_at_commit(nested_root, nested_commit, nested_path)
+    if content is not None:
+        return content
+
+    # Fetch the nested submodule commit if not available locally
+    fetch_submodule_commit(nested_commit, nested_root)
+    return _read_file_at_commit(nested_root, nested_commit, nested_path)
+
+
+def _read_file_at_commit(repo_dir: str, commit: str, path: str) -> str | None:
+    result = subprocess.run(
+        ["git", "-C", repo_dir, "show", f"{commit}:{path}"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        return result.stdout
     return None
 
 
