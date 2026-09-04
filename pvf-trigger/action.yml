@@ -1,5 +1,5 @@
 name: 'PVF Trigger'
-description: 'On a /pvf PR comment, resolve the candidate plugin version from the latest Build run and dispatch performance-validation.yml'
+description: 'On a /pvf PR comment, resolve the candidate plugin version from the latest Build run and dispatch performance-validation.yml (in this repo or a separate dashboard-host repo)'
 
 inputs:
   comment:
@@ -16,6 +16,18 @@ inputs:
     description: 'Space-separated rule-key prefixes passed to the /pvf comment parser'
     required: false
     default: 'S'
+  target-repo:
+    description: 'owner/name of the repo that hosts performance-validation.yml. Defaults to the current repo (same-repo dispatch). Set to a separate private/internal repo to publish an SSO-gated dashboard while this repo stays public.'
+    required: false
+    default: ${{ github.repository }}
+  target-ref:
+    description: 'Git ref to dispatch performance-validation.yml on in target-repo. Empty falls back to the PR head ref (same-repo behaviour); set to the target repo default branch (e.g. master) for cross-repo dispatch.'
+    required: false
+    default: ''
+  dispatch-token:
+    description: 'Token used ONLY for the cross-repo workflow dispatch (needs actions:write on target-repo). Empty falls back to github.token, which only works for same-repo dispatch.'
+    required: false
+    default: ''
 
 runs:
   using: 'composite'
@@ -35,6 +47,9 @@ runs:
         PR_NUMBER: ${{ inputs.pr-number }}
         RULES_REQUEST: ${{ steps.pvf.outputs.rules-request }}
         BUILD_WORKFLOW: ${{ inputs.build-workflow }}
+        TARGET_REPO: ${{ inputs.target-repo }}
+        TARGET_REF: ${{ inputs.target-ref }}
+        DISPATCH_TOKEN: ${{ inputs.dispatch-token }}
       run: |
         set -euo pipefail
         pull="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")"
@@ -45,6 +60,8 @@ runs:
           "repos/${GITHUB_REPOSITORY}/actions/workflows/${BUILD_WORKFLOW}/runs?head_sha=${head_sha}&event=pull_request&per_page=10" \
           --jq '.workflow_runs[].id')"
 
+        # The candidate-version artifact always lives in THIS (analyzer) repo's build run,
+        # so it is downloaded with github.token regardless of where the benchmark runs.
         for run_id in $run_ids; do
           if gh run download "$run_id" --repo "$GITHUB_REPOSITORY" -n candidate-version; then
             break
@@ -54,10 +71,25 @@ runs:
           echo "No candidate-version artifact for ${head_sha}; wait for Build to finish" >&2
           exit 1
         fi
-        gh workflow run performance-validation.yml \
-          --repo "$GITHUB_REPOSITORY" \
-          --ref "$head_ref" \
+
+        # Cross-repo dispatch needs a token with actions:write on target-repo; same-repo falls
+        # back to github.token. Ref defaults to the PR head ref for same-repo dispatch.
+        ref="${TARGET_REF:-$head_ref}"
+        token="${DISPATCH_TOKEN:-$GH_TOKEN}"
+
+        # analyzer-repo lets a separate dashboard host post its results back onto this PR. Only
+        # sent on cross-repo dispatch so same-repo callers (whose performance-validation.yml has
+        # no analyzer-repo input) keep working unchanged.
+        extra_args=()
+        if [ "$TARGET_REPO" != "$GITHUB_REPOSITORY" ]; then
+          extra_args+=(-f "analyzer-repo=${GITHUB_REPOSITORY}")
+        fi
+
+        GH_TOKEN="$token" gh workflow run performance-validation.yml \
+          --repo "$TARGET_REPO" \
+          --ref "$ref" \
           -f "candidate-version=$(cat candidate-version.txt)" \
           -f "rules-request=${RULES_REQUEST}" \
           -f "pr-number=${PR_NUMBER}" \
-          -f "run-description=${title}"
+          -f "run-description=${title}" \
+          "${extra_args[@]}"
