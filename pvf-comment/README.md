@@ -17,7 +17,35 @@ Parse `/pvf` activation comments from PR text into GitHub Action outputs.
 | Input | Description | Required |
 |-------|-------------|----------|
 | `comment` | PR description or comment body to scan for `/pvf` commands | Yes |
-| `rule-prefixes` | Space-separated prefixes for rule keys (e.g. `"S M23_"`); defaults to `S` | No |
+| `rule-prefixes` | Space-separated literal prefixes for rule keys (e.g. `"S M23_"`); defaults to `S` | No |
+
+## Rule Keys
+
+Rule keys match a configured prefix followed by one or more digits, optionally
+followed by dot-separated digit segments. Matching is case-insensitive and covers
+the entire token. Recognized keys are emitted in uppercase, in input order, as
+comma-separated `rules-request` values and are not included in `languages`.
+Prefixes are literal strings, not regular expressions.
+
+For example, callers can enable MISRA keys with:
+
+```yaml
+    rule-prefixes: 'S M23_ MC-2012_ MC-2023_ MC-2025_ MC-AMD1_ MC-AMD2_ MC-AMD3_'
+```
+
+With those prefixes, `/pvf MC-2012_17.3 MC-AMD1_17.3` produces
+`rules-request=MC-2012_17.3,MC-AMD1_17.3` and `languages=[]`.
+Existing keys such as `S123` and `M23_042` remain valid. Dotted suffixes are
+accepted for every configured prefix, not only MISRA prefixes.
+
+Unrecognized tokens retain their original spelling in `languages`, including
+unconfigured rule prefixes and malformed suffixes such as `MC-2012_17.`,
+`MC-2012_17..3`, or `MC-2012_17.3x`. Signed and underscore-separated suffixes
+(previously accepted by integer parsing) are no longer recognized as rule keys.
+
+Flag behavior is unchanged: `all`, `ALL`, or `*` clears the requested rules;
+`fps` or `FPS` enables FPS. A bare `/pvf`, or a command with no recognized rules,
+requests all rules. Other flag casing is treated as language tokens.
 
 ## Outputs
 

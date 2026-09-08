@@ -55,13 +55,8 @@ def _parse_payload(payload: list[str], rule_prefixes: list[str]) -> PvfCommentPa
 
     def is_rule(token: str) -> bool:
         for rp in rule_prefixes:
-            if token.startswith(rp):
-                try:
-                    # raise if token doesn't match "<prefix>%d"
-                    int(token[len(rp):])
-                    return True
-                except ValueError:
-                    "Parsing failed. Continue with other prefixes."
+            if token.startswith(rp) and re.fullmatch(r"\d+(?:\.\d+)*", token[len(rp):]):
+                return True
         return False
 
     rule_prefixes = [rp.upper() for rp in rule_prefixes]
@@ -70,8 +65,8 @@ def _parse_payload(payload: list[str], rule_prefixes: list[str]) -> PvfCommentPa
     fps = has_flag(FPS)
     used = {*ALL, *FPS}
     rules = [tu for t in payload if is_rule(tu := t.upper()) and t not in used]
-    used = used | set(rules)
-    languages = [t for t in payload if t not in used]
+    used_rules = set(rules)
+    languages = [t for t in payload if t not in used and t.upper() not in used_rules]
 
     if all_flag:
         rules = []
