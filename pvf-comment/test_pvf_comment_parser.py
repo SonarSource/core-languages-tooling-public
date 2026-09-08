@@ -23,6 +23,39 @@ class PvfCommentParserTest(unittest.TestCase):
     def test_parse_payload_lowercase_rule_ids(self):
         payload = _parse_payload(["s1234", "S567"], ['S'])
         self.assertEqual(payload.rules, ["S1234", "S567"])
+        self.assertEqual(payload.languages, [])
+
+    def test_parse_payload_dotted_rule_prefixes(self):
+        prefixes = ['S', 'M23_', 'MC-2012_', 'MC-2023_', 'MC-2025_',
+                    'MC-AMD1_', 'MC-AMD2_', 'MC-AMD3_']
+        for prefix in prefixes:
+            with self.subTest(prefix=prefix):
+                payload = _parse_payload([prefix.lower() + "17.3.1", "FPS", "c++"], [prefix.lower()])
+                self.assertEqual(payload.rules, [prefix + "17.3.1"])
+                self.assertEqual(payload.languages, ["c++"])
+                self.assertTrue(payload.fps)
+                self.assertFalse(payload.all_flag)
+
+    def test_parse_payload_rejects_malformed_rule_suffixes(self):
+        for suffix in ("", ".3", "17.", "17..3", "17.3x", "17.3\n", "+17", "-17", "1_7"):
+            with self.subTest(suffix=suffix):
+                token = "MC-2012_" + suffix
+                payload = _parse_payload([token, "S123"], ['MC-2012_', 'S'])
+                self.assertEqual(payload.rules, ["S123"])
+                self.assertEqual(payload.languages, [token])
+                self.assertFalse(payload.all_flag)
+
+    def test_parse_payload_preserves_flags_and_unknown_tokens(self):
+        for flag in ("ALL", "all", "*"):
+            with self.subTest(flag=flag):
+                payload = _parse_payload(
+                    [flag, "fps", "mc-2012_17.3", "c++", "All", "Fps", "MC-AMD1_17.3"],
+                    ['MC-2012_'],
+                )
+                self.assertEqual(payload.rules, [])
+                self.assertEqual(payload.languages, ["c++", "All", "Fps", "MC-AMD1_17.3"])
+                self.assertTrue(payload.fps)
+                self.assertTrue(payload.all_flag)
 
     def test_parse_payload_m23_prefix(self):
         payload = _parse_payload(["c++", "c#", "M23_042", "S1234"], ['M23_', 'S'])
@@ -93,6 +126,26 @@ class PvfCommentParserTest(unittest.TestCase):
             text = output_path.read_text(encoding="utf-8")
             self.assertIn("found=true", text)
             self.assertIn("rules-request=S123,M23_042", text)
+
+    def test_main_dotted_rules_outputs(self):
+        for comment, expected_rules, expected_fps, expected_languages in (
+            ("/pvf MC-2012_17.3 MC-AMD1_17.3", "MC-2012_17.3,MC-AMD1_17.3", "false", "[]"),
+            ("/pvf mc-2012_17.3 Mc-AmD1_17.3 s123 m23_042 fps c++",
+             "MC-2012_17.3,MC-AMD1_17.3,S123,M23_042", "true", '["c++"]'),
+        ):
+            with self.subTest(comment=comment), tempfile.TemporaryDirectory() as tmp_dir:
+                output_path = pathlib.Path(tmp_dir) / "output"
+                with patch.dict(os.environ, {"GITHUB_OUTPUT": str(output_path)}):
+                    with patch("sys.argv", [
+                        "pvf_comment_parser.py", "--comment=" + comment,
+                        "--rule-prefixes=S M23_ MC-2012_ MC-AMD1_",
+                    ]):
+                        main()
+                self.assertEqual(
+                    output_path.read_text(encoding="utf-8"),
+                    f"found=true\nrules-request={expected_rules}\nfps={expected_fps}\n"
+                    f"languages={expected_languages}\n",
+                )
 
 
 if __name__ == "__main__":
