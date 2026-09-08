@@ -1,5 +1,5 @@
 name: 'PVF Trigger'
-description: 'On a /pvf PR comment, resolve the candidate plugin version from the latest Build run and dispatch performance-validation.yml (in this repo or a separate dashboard-host repo)'
+description: 'On a /pvf PR comment, resolve the candidate plugin version from the latest Build run and dispatch the host workflow (performance-validation.yml by default) (in this repo or a separate dashboard-host repo)'
 
 inputs:
   comment:
