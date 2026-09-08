@@ -28,6 +28,10 @@ inputs:
     description: 'Token used ONLY for the cross-repo workflow dispatch (needs actions:write on target-repo). Empty falls back to github.token, which only works for same-repo dispatch.'
     required: false
     default: ''
+  target-workflow:
+    description: 'Filename of the workflow to dispatch in target-repo. Lets one host repo serve several analyzers via per-analyzer host workflows. Empty falls back to performance-validation.yml.'
+    required: false
+    default: performance-validation.yml
 
 runs:
   using: 'composite'
@@ -50,6 +54,7 @@ runs:
         TARGET_REPO: ${{ inputs.target-repo }}
         TARGET_REF: ${{ inputs.target-ref }}
         DISPATCH_TOKEN: ${{ inputs.dispatch-token }}
+        TARGET_WORKFLOW: ${{ inputs.target-workflow }}
       run: |
         set -euo pipefail
         pull="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")"
@@ -72,6 +77,7 @@ runs:
 
         TARGET_REPO="${TARGET_REPO:-$GITHUB_REPOSITORY}"
         token="${DISPATCH_TOKEN:-$GH_TOKEN}"
+        workflow="${TARGET_WORKFLOW:-performance-validation.yml}"
 
         extra_args=()
         if [ "$TARGET_REPO" != "$GITHUB_REPOSITORY" ]; then
@@ -86,7 +92,7 @@ runs:
           ref="${TARGET_REF:-$head_ref}"
         fi
 
-        GH_TOKEN="$token" gh workflow run performance-validation.yml \
+        GH_TOKEN="$token" gh workflow run "$workflow" \
           --repo "$TARGET_REPO" \
           --ref "$ref" \
           -f "candidate-version=$(cat candidate-version.txt)" \

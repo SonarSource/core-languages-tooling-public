@@ -29,6 +29,7 @@ it invokes `performance-validation.yml` in the target-repo (caller by default).
 | `target-repo` | `owner/name` of the repo hosting `performance-validation.yml`. Cross-repo target for a gated dashboard. | No | current repo |
 | `target-ref` | Ref to dispatch on in `target-repo`. Empty ⇒ the PR head ref (same-repo). Set to the target's default branch (e.g. `master`) for cross-repo. | No | `''` |
 | `dispatch-token` | Token used **only** for the cross-repo dispatch (needs `actions:write` on `target-repo`). Empty ⇒ `github.token` (same-repo only). | No | `''` |
+| `target-workflow` | Filename of the host workflow to dispatch in `target-repo`. Lets one host repo serve several analyzers via per-analyzer host workflows (e.g. `performance-validation-html.yml`). | No | `performance-validation.yml` |
 
 On cross-repo dispatch the action additionally passes `-f analyzer-repo=<caller repo>` so the host
 can post the dashboard link back onto the analyzer PR.
