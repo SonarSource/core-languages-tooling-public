@@ -1,0 +1,133 @@
+name: 'Slack Notification'
+description: 'Sends a Slack notification summarizing failed check runs'
+author: 'SonarSource'
+
+inputs:
+  slack-channel:
+    description: 'Slack channel to post the notification to'
+    required: true
+  branch-patterns:
+    description: >-
+      Comma-separated list of branch names/patterns to notify for. A trailing '*' matches
+      as a prefix (e.g. 'dogfood-*'), otherwise an exact match is required.
+    required: false
+    default: 'main,master'
+  github-token:
+    description: 'GitHub token used to query check run details via the GitHub API'
+    required: true
+  slack-title:
+    description: 'Title shown on the Slack notification'
+    required: false
+    default: 'Build failed'
+  branch:
+    description: 'Branch to check against branch-patterns (e.g. github.event.check_suite.head_branch)'
+    required: true
+  conclusion:
+    description: 'Conclusion to check for failure (e.g. github.event.check_suite.conclusion)'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Determine if notification should be sent
+      id: check
+      shell: bash
+      env:
+        BRANCH: ${{ inputs.branch }}
+        CONCLUSION: ${{ inputs.conclusion }}
+        BRANCH_PATTERNS: ${{ inputs.branch-patterns }}
+      run: |
+        # Returns success (0) if $1 matches one of the comma-separated branch-patterns.
+        # A trailing '*' in a pattern means prefix match; otherwise it's an exact match.
+        branch_matches() {
+          local branch="$1" pattern patterns
+          IFS=',' read -ra patterns <<< "$BRANCH_PATTERNS"
+          for pattern in "${patterns[@]}"; do
+            pattern="$(echo "$pattern" | xargs)" # trim whitespace
+            if [[ "$pattern" == *'*' ]]; then
+              [[ "$branch" == "${pattern%\*}"* ]] && return 0
+            elif [[ "$branch" == "$pattern" ]]; then
+              return 0
+            fi
+          done
+          return 1
+        }
+
+        NON_FAILURE_CONCLUSIONS=("success" "neutral" "skipped")
+
+        SHOULD_NOTIFY=false
+        if branch_matches "$BRANCH" && [[ ! " ${NON_FAILURE_CONCLUSIONS[*]} " =~ " ${CONCLUSION} " ]]; then
+          SHOULD_NOTIFY=true
+        fi
+        echo "should-notify=$SHOULD_NOTIFY" >> "$GITHUB_OUTPUT"
+
+    - name: Vault Secrets
+      id: secrets
+      if: steps.check.outputs.should-notify == 'true'
+      uses: SonarSource/vault-action-wrapper@v3
+      with:
+        secrets: development/kv/data/slack token | SLACK_TOKEN;
+
+    - name: Check run details
+      id: failedRun
+      if: steps.check.outputs.should-notify == 'true'
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        BRANCH: ${{ inputs.branch }}
+        CONCLUSION: ${{ inputs.conclusion }}
+      shell: pwsh
+      run: |
+        # Conclusions that don't count as a failure when listing failed check runs.
+        $NonFailureConclusions = @("success", "neutral", "skipped")
+
+        $Branch = $env:BRANCH
+        $Conclusion = $env:CONCLUSION
+        $Event = Get-Content -Path $env:GITHUB_EVENT_PATH | ConvertFrom-Json -Depth 100
+
+        if ($Event.check_suite) {
+          # Real check_suite completion - pull the failed check runs from the GitHub API.
+          # --paginate follows every page so suites with >30 check runs aren't truncated.
+          $CheckRuns = gh api --paginate --jq '.check_runs[]' $Event.check_suite.check_runs_url |
+            ForEach-Object { $_ | ConvertFrom-Json }
+          $FailedCheckRuns = $CheckRuns |
+            Where-Object { $NonFailureConclusions -NotContains $_.conclusion } |
+            ForEach-Object { "* [$($_.name)]($($_.details_url))" }
+
+          $PipelineName = $Event.check_suite.app.name ?? 'Pipeline'
+          $RepoName = $Event.repository.name
+          $RepoUrl = $Event.repository.html_url
+          $CommitSummary = $Event.check_suite.head_commit.message -replace '[\n\r].*'
+          $Summary = "$PipelineName in [$RepoName]($RepoUrl) failed ($Conclusion) on ${Branch}: $CommitSummary"
+        } else {
+          # Manual/workflow_dispatch test run - no check_suite payload to pull check run details from.
+          $FailedCheckRuns = @("_(manual test run - no check run details available)_")
+          $Summary = "Manual test notification for branch ${Branch} (conclusion: $Conclusion)"
+        }
+
+        $OFS = [Environment]::NewLine # join $FailedCheckRuns entries with newlines when interpolated below
+        $EOF = (New-Guid).Guid        # unique delimiter required for a multiline GITHUB_OUTPUT value
+
+        $Message = @"
+        message<<$EOF
+        $Summary
+        $FailedCheckRuns
+        $EOF
+        "@
+        $Message
+
+        $Message >> $env:GITHUB_OUTPUT
+
+    - name: Slack Notification
+      if: success() && steps.check.outputs.should-notify == 'true'
+      uses: rtCamp/action-slack-notify@33ca3be66c6f378fe1610fd1d5258632dbed5e58 # v2.4.0
+      env:
+        SLACK_TOKEN: ${{ fromJSON(steps.secrets.outputs.vault).SLACK_TOKEN }}
+        SLACK_CHANNEL: ${{ inputs.slack-channel }}
+        SLACK_TITLE: ${{ inputs.slack-title }}
+        SLACK_MESSAGE: ${{ steps.failedRun.outputs.message }}
+        SLACK_USERNAME: NotifierBot
+        MSG_MINIMAL: true
+        SLACKIFY_MARKDOWN: true
+        SLACK_FOOTER: ' '
+        SLACK_MSG_AUTHOR: ' '
+        SLACK_ICON_EMOJI: x
