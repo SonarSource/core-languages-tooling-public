@@ -1,0 +1,54 @@
+name: 'PVF Result Comment'
+description: 'Posts the Performance Validation result (dashboard link + new/lost issue counts) as a PR comment; falls back to a run-logs link when no dashboard was published. Works same-repo or cross-repo (analyzer PR).'
+
+inputs:
+  pr-number:
+    description: 'Pull request number to comment on'
+    required: true
+  repository:
+    description: 'owner/name of the repo whose PR to comment on. Defaults to the current repo (same-repo). Set to the analyzer repo for cross-repo dashboards.'
+    required: false
+    default: ${{ github.repository }}
+  dashboard-url:
+    description: 'Published dashboard URL (the validate job pages-url). Empty ⇒ posts the no-dashboard fallback comment.'
+    required: false
+    default: ''
+  new-issues:
+    description: 'Number of new issues found'
+    required: false
+    default: '0'
+  lost-issues:
+    description: 'Number of lost issues'
+    required: false
+    default: '0'
+  run-url:
+    description: 'URL to the workflow run logs (used in the fallback comment). Defaults to this run.'
+    required: false
+    default: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+  token:
+    description: 'Token with pull-requests:write on `repository`. Defaults to github.token (same-repo only). For cross-repo, pass a token that can comment on the analyzer repo (e.g. from Vault).'
+    required: false
+    default: ${{ github.token }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Post PVF result on PR
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        GH_REPO: ${{ inputs.repository }}
+        PR: ${{ inputs.pr-number }}
+        URL: ${{ inputs.dashboard-url }}
+        NEW: ${{ inputs.new-issues }}
+        LOST: ${{ inputs.lost-issues }}
+        RUN_URL: ${{ inputs.run-url }}
+      run: |
+        set -euo pipefail
+        if [ -n "$URL" ]; then
+          gh pr comment "$PR" --body "📊 **Performance Validation** complete
+        🆕 ${NEW:-0} new · 🗑️ ${LOST:-0} lost issues
+        [View dashboard](${URL})"
+        else
+          gh pr comment "$PR" --body "⚠️ **Performance Validation** finished without publishing a dashboard. [See run logs](${RUN_URL})."
+        fi
