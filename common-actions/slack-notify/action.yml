@@ -89,7 +89,7 @@ runs:
         $Branch = $env:BRANCH
         $Conclusion = $env:CONCLUSION
         $Title = $env:TITLE
-        $NonFailureConclusions = $env:NON_FAILURE_CONCLUSIONS_CSV -split ','
+        $NonFailureConclusions = $env:NON_FAILURE_CONCLUSIONS_CSV -split ',' | ForEach-Object { $_.Trim() }
 
         try {
           $Event = Get-Content -Path $env:GITHUB_EVENT_PATH | ConvertFrom-Json -Depth 100
@@ -116,8 +116,9 @@ runs:
         } catch {
           # Never let a broken API call/response silently suppress the one alert this action
           # exists to send - fall back to a degraded message instead of throwing.
+          $global:LASTEXITCODE = 0 # the runner appends `exit $LASTEXITCODE`, which would fail the step
           $FailedCheckRuns = @("_(failed to fetch check run details: $($_.Exception.Message))_")
-          $Summary = "failed ($Conclusion) on ${Branch}"
+          $Summary = "Pipeline in [$env:GITHUB_REPOSITORY]($env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY) failed ($Conclusion) on ${Branch}"
         }
 
         $OFS = [Environment]::NewLine # join $FailedCheckRuns entries with newlines when interpolated below
