@@ -1,0 +1,30 @@
+name: 'Prepare PVF'
+description: 'Write the candidate plugin version to candidate-version.txt and upload it as the candidate-version artifact consumed by PVF validation'
+
+inputs:
+  build-version:
+    description: 'Candidate plugin build version to record for PVF validation'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Write candidate version
+      shell: bash
+      env:
+        BUILD_VERSION: ${{ inputs.build-version }}
+      run: |
+        set -euo pipefail
+        if [ -z "${BUILD_VERSION//[[:space:]]/}" ]; then
+          echo "::error::build-version input is empty" >&2
+          exit 1
+        fi
+        printf '%s\n' "$BUILD_VERSION" > candidate-version.txt
+
+    # Used by PVF validation
+    - name: Upload candidate version
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: candidate-version
+        path: candidate-version.txt
+        overwrite: true
