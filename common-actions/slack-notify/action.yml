@@ -25,6 +25,12 @@ inputs:
   conclusion:
     description: 'Conclusion to check for failure (e.g. github.event.check_suite.conclusion)'
     required: true
+  test-check-runs-url:
+    description: >-
+      TEMP/test-only: overrides the check_runs_url used to build the message, for exercising
+      real failure data via workflow_dispatch instead of the manual-test placeholder.
+    required: false
+    default: ''
 
 runs:
   using: 'composite'
@@ -75,6 +81,7 @@ runs:
         GH_TOKEN: ${{ inputs.github-token }}
         BRANCH: ${{ inputs.branch }}
         CONCLUSION: ${{ inputs.conclusion }}
+        TEST_CHECK_RUNS_URL: ${{ inputs.test-check-runs-url }}
       shell: pwsh
       run: |
         # Conclusions that don't count as a failure when listing failed check runs.
@@ -84,20 +91,26 @@ runs:
         $Conclusion = $env:CONCLUSION
         $Event = Get-Content -Path $env:GITHUB_EVENT_PATH | ConvertFrom-Json -Depth 100
 
-        if ($Event.check_suite) {
-          # Real check_suite completion - pull the failed check runs from the GitHub API.
+        $CheckRunsUrl = if ($Event.check_suite) { $Event.check_suite.check_runs_url } else { $env:TEST_CHECK_RUNS_URL }
+
+        if ($CheckRunsUrl) {
+          # Real check_suite completion (or a test override) - pull the failed check runs from the GitHub API.
           # --paginate follows every page so suites with >30 check runs aren't truncated.
-          $CheckRuns = gh api --paginate --jq '.check_runs[]' $Event.check_suite.check_runs_url |
+          $CheckRuns = gh api --paginate --jq '.check_runs[]' $CheckRunsUrl |
             ForEach-Object { $_ | ConvertFrom-Json }
           $FailedCheckRuns = $CheckRuns |
             Where-Object { $NonFailureConclusions -NotContains $_.conclusion } |
             ForEach-Object { "* [$($_.name)]($($_.details_url))" }
 
-          $PipelineName = $Event.check_suite.app.name ?? 'Pipeline'
-          $RepoName = $Event.repository.name
-          $RepoUrl = $Event.repository.html_url
-          $CommitSummary = $Event.check_suite.head_commit.message -replace '[\n\r].*'
-          $Summary = "$PipelineName in [$RepoName]($RepoUrl) failed ($Conclusion) on ${Branch}: $CommitSummary"
+          if ($Event.check_suite) {
+            $PipelineName = $Event.check_suite.app.name ?? 'Pipeline'
+            $RepoName = $Event.repository.name
+            $RepoUrl = $Event.repository.html_url
+            $CommitSummary = $Event.check_suite.head_commit.message -replace '[\n\r].*'
+            $Summary = "$PipelineName in [$RepoName]($RepoUrl) failed ($Conclusion) on ${Branch}: $CommitSummary"
+          } else {
+            $Summary = "TEST (real check-run data) notification for branch ${Branch} (conclusion: $Conclusion)"
+          }
         } else {
           # Manual/workflow_dispatch test run - no check_suite payload to pull check run details from.
           $FailedCheckRuns = @("_(manual test run - no check run details available)_")
