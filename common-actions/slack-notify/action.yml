@@ -122,7 +122,7 @@ runs:
 
         $Message = @"
         message<<$EOF
-        $Summary
+        ❌ $Summary
         $FailedCheckRuns
         $EOF
         "@
@@ -136,7 +136,7 @@ runs:
       env:
         SLACK_TOKEN: ${{ fromJSON(steps.secrets.outputs.vault).SLACK_TOKEN }}
         SLACK_CHANNEL: ${{ inputs.slack-channel }}
-        SLACK_TITLE: ❌ ${{ inputs.slack-title }}
+        SLACK_TITLE: ${{ inputs.slack-title }} # not rendered - MSG_MINIMAL strips the title field entirely
         SLACK_MESSAGE: ${{ steps.failedRun.outputs.message }}
         SLACK_USERNAME: NotifierBot
         MSG_MINIMAL: true
