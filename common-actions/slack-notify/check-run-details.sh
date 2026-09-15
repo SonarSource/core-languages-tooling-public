@@ -5,10 +5,14 @@
 # are set automatically by the runner).
 set -uo pipefail
 
-if ! command -v jq >/dev/null 2>&1; then
+if [[ -n "${CUSTOM_MESSAGE:-}" ]]; then
+  summary="$CUSTOM_MESSAGE"
+  failed_check_runs=""
+  degraded=true # skip the check_suite/jq lookups below entirely
+elif ! command -v jq >/dev/null 2>&1; then
   # No jq: don't pretend this is a manual test run - degrade with repo context.
   failed_check_runs="_(failed to read event payload: jq is not available on this runner)_"
-  summary="Pipeline in [$GITHUB_REPOSITORY]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY) failed ($CONCLUSION) on $BRANCH"
+  summary="Pipeline in <$GITHUB_SERVER_URL/$GITHUB_REPOSITORY|$GITHUB_REPOSITORY> failed ($CONCLUSION) on $BRANCH"
   check_runs_url=""
   degraded=true
 else
@@ -22,7 +26,7 @@ elif [[ -n "$check_runs_url" ]]; then
     failed_check_runs=$(printf '%s\n' "$check_runs" | jq -r --arg success_csv "$SUCCESS_CONCLUSIONS_CSV" '
       ($success_csv | split(",") | map(gsub("^\\s+|\\s+$"; ""))) as $success
       | select(($success | index(.conclusion)) | not)
-      | "* [\(.name)](\(.details_url))"
+      | "• <\(.details_url)|\(.name)>"
     ')
     [[ -z "$failed_check_runs" ]] && failed_check_runs="_(no failing check runs found)_"
 
@@ -30,10 +34,10 @@ elif [[ -n "$check_runs_url" ]]; then
     repo_name=$(jq -r '.repository.name' "$GITHUB_EVENT_PATH")
     repo_url=$(jq -r '.repository.html_url' "$GITHUB_EVENT_PATH")
     commit_summary=$(jq -r '.check_suite.head_commit.message' "$GITHUB_EVENT_PATH" | head -n1)
-    summary="$pipeline_name in [$repo_name]($repo_url) failed ($CONCLUSION) on $BRANCH: $commit_summary"
+    summary="$pipeline_name in <$repo_url|$repo_name> failed ($CONCLUSION) on $BRANCH: $commit_summary"
   else
     failed_check_runs="_(failed to fetch check run details: $(tr -s '\n' ' ' < /tmp/gh-api-error.log))_"
-    summary="Pipeline in [$GITHUB_REPOSITORY]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY) failed ($CONCLUSION) on $BRANCH"
+    summary="Pipeline in <$GITHUB_SERVER_URL/$GITHUB_REPOSITORY|$GITHUB_REPOSITORY> failed ($CONCLUSION) on $BRANCH"
   fi
 else
   failed_check_runs="_(manual test run - no check run details available)_"
