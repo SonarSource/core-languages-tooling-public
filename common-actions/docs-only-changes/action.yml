@@ -8,10 +8,12 @@ author: 'SonarSource'
 inputs:
   doc-patterns:
     description: >-
-      Comma-separated list of glob patterns matched against each changed file path, using
-      .gitignore-style semantics: '**' matches any sequence of characters including '/',
-      while '*' and '?' never match '/'. A change is considered docs-only when every changed
-      file matches at least one pattern.
+      Comma-separated list of path glob patterns matched against each changed file path. '**'
+      matches any sequence of characters, including '/', at the exact position where it
+      appears in the pattern - write 'docs/**' to match every file under a directory at any
+      depth, or '**/*.md' to match files with a given extension at any depth (including the
+      top level). '*' and '?' match within a single path segment and never match '/'. A
+      change is considered docs-only when every changed file matches at least one pattern.
     required: false
     default: '*.md,**/*.md,docs/**,LICENSE,LICENSE.*,NOTICE,NOTICE.*,CONTRIBUTING,CONTRIBUTING.*,CODEOWNERS'
   github-token:
@@ -110,15 +112,19 @@ runs:
         fi
 
         IFS=',' read -ra patterns <<< "$DOC_PATTERNS"
+        regexes=()
+        for pattern in "${patterns[@]}"; do
+          pattern="${pattern#"${pattern%%[![:space:]]*}"}"   # strip leading whitespace
+          pattern="${pattern%"${pattern##*[![:space:]]}"}"   # strip trailing whitespace
+          [ -z "$pattern" ] && continue
+          regexes+=("$(glob_to_regex "$pattern")")
+        done
+
         docs_only=true
         while IFS= read -r file; do
           [ -z "$file" ] && continue
           matched=false
-          for pattern in "${patterns[@]}"; do
-            pattern="${pattern#"${pattern%%[![:space:]]*}"}"   # strip leading whitespace
-            pattern="${pattern%"${pattern##*[![:space:]]}"}"   # strip trailing whitespace
-            [ -z "$pattern" ] && continue
-            regex="$(glob_to_regex "$pattern")"
+          for regex in "${regexes[@]}"; do
             if [[ "$file" =~ ^${regex}$ ]]; then
               matched=true
               break

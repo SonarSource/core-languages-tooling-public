@@ -74,7 +74,7 @@ With this setup:
 
 | Input | Description | Required | Default |
 |-------|-------------|----------|---------|
-| `doc-patterns` | Comma-separated glob patterns (`.gitignore`-style: `**` matches any sequence including `/`, `*`/`?` never match `/`) matched against each changed file path. A change is docs-only when every changed file matches at least one pattern. | No | `*.md,**/*.md,docs/**,LICENSE,LICENSE.*,NOTICE,NOTICE.*,CONTRIBUTING,CONTRIBUTING.*,CODEOWNERS` |
+| `doc-patterns` | Comma-separated path glob patterns matched against each changed file path, following the grammar described in [Behavior notes](#behavior-notes) below. A change is docs-only when every changed file matches at least one pattern. | No | `*.md,**/*.md,docs/**,LICENSE,LICENSE.*,NOTICE,NOTICE.*,CONTRIBUTING,CONTRIBUTING.*,CODEOWNERS` |
 | `github-token` | GitHub token used to list changed files via the GitHub API | Yes | |
 
 ## Outputs
@@ -92,10 +92,14 @@ With this setup:
   determined from the event payload.
 - A `push` to a brand-new branch (no previous commit to diff against) also reports
   `docs-only=false` for the same reason.
-- Patterns follow `.gitignore`/GitHub `paths-ignore`-style semantics: `**` matches any
-  sequence of characters including `/` (so `docs/**` matches everything under `docs/`, at
-  any depth), while a bare `*` or `?` matches within a single path segment only (so
-  `docs/*` matches `docs/CHANGELOG.md` but not `docs/sub/CHANGELOG.md` - use `docs/**` for
-  that). This is a deliberate string-matching implementation, not bash's own `[[ == ]]`
-  pattern matching, where a lone `*` already matches `/` regardless of `globstar`.
-  Character classes (e.g. `[abc]`) are not supported and are matched literally.
+- Pattern grammar:
+  - `**` matches any sequence of characters, including `/`, at the exact position where it
+    appears in the pattern. Write `docs/**` to match every file under a directory at any
+    depth, or `**/*.md` to match files with a given extension at any depth (including the
+    top level).
+  - A bare `*` or `?` matches within a single path segment only and never matches `/` - so
+    `docs/*` matches `docs/CHANGELOG.md`, while `docs/**` matches `docs/sub/CHANGELOG.md`.
+  - To match everything under a directory, list it with a trailing `/**`, e.g. `docs/**` -
+    a bare `docs` pattern matches only the literal path `docs`.
+  - Square brackets (e.g. `[abc]`) are treated as literal characters in the pattern.
+  - Patterns are translated into an anchored regular expression for matching.
