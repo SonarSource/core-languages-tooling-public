@@ -58,13 +58,15 @@ runs:
             if [ -z "${PR_NUMBER:-}" ]; then
               not_docs_only "pull_request event without a PR number; cannot list changed files"
             fi
-            changed_files="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate --jq '.[].filename')"
+            changed_files="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate --jq '.[].filename')" \
+              || not_docs_only "Failed to list PR files via the GitHub API; running the full pipeline"
             ;;
           push)
             if [ -z "${BEFORE_SHA:-}" ] || [[ "$BEFORE_SHA" =~ ^0+$ ]]; then
               not_docs_only "New branch or unknown base commit; can't compute a diff"
             fi
-            changed_files="$(gh api "repos/${REPOSITORY}/compare/${BEFORE_SHA}...${AFTER_SHA}" --jq '.files[].filename')"
+            changed_files="$(gh api "repos/${REPOSITORY}/compare/${BEFORE_SHA}...${AFTER_SHA}" --jq '.files[].filename')" \
+              || not_docs_only "Failed to compare ${BEFORE_SHA}...${AFTER_SHA}; running the full pipeline"
             ;;
           *)
             not_docs_only "Unsupported event '$EVENT_NAME' for docs-only detection"
