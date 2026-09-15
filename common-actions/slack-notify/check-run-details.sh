@@ -5,9 +5,19 @@
 # are set automatically by the runner).
 set -uo pipefail
 
-check_runs_url=$(jq -r '.check_suite.check_runs_url // empty' "$GITHUB_EVENT_PATH")
+if ! command -v jq >/dev/null 2>&1; then
+  # No jq: don't pretend this is a manual test run - degrade with repo context.
+  failed_check_runs="_(failed to read event payload: jq is not available on this runner)_"
+  summary="Pipeline in [$GITHUB_REPOSITORY]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY) failed ($CONCLUSION) on $BRANCH"
+  check_runs_url=""
+  degraded=true
+else
+  check_runs_url=$(jq -r '.check_suite.check_runs_url // empty' "$GITHUB_EVENT_PATH")
+fi
 
-if [[ -n "$check_runs_url" ]]; then
+if [[ "${degraded:-false}" == "true" ]]; then
+  : # message already built above
+elif [[ -n "$check_runs_url" ]]; then
   if check_runs=$(gh api --paginate --jq '.check_runs[]' "$check_runs_url" 2>/tmp/gh-api-error.log); then
     failed_check_runs=$(printf '%s\n' "$check_runs" | jq -r --arg success_csv "$SUCCESS_CONCLUSIONS_CSV" '
       ($success_csv | split(",") | map(gsub("^\\s+|\\s+$"; ""))) as $success
