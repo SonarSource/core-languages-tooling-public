@@ -83,7 +83,8 @@ runs:
           [ -z "$file" ] && continue
           matched=false
           for pattern in "${patterns[@]}"; do
-            pattern="$(echo "$pattern" | xargs)"
+            pattern="${pattern#"${pattern%%[![:space:]]*}"}"   # strip leading whitespace
+            pattern="${pattern%"${pattern##*[![:space:]]}"}"   # strip trailing whitespace
             [ -z "$pattern" ] && continue
             # Intentionally unquoted: lets $pattern act as a glob against $file.
             # shellcheck disable=SC2053
