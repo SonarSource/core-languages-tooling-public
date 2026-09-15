@@ -16,7 +16,7 @@ inputs:
     description: 'GitHub token used to query check run details via the GitHub API'
     required: true
   slack-title:
-    description: 'Title shown on the Slack notification'
+    description: 'Title shown on the Slack failure notification'
     required: false
     default: 'Build failed'
   branch:
@@ -25,9 +25,9 @@ inputs:
   conclusion:
     description: 'Conclusion to check for failure (e.g. github.event.check_suite.conclusion)'
     required: true
-  non-failure-conclusions:
+  success-conclusions:
     description: >-
-      Comma-separated conclusions that don't count as a failure - shared by the
+      Comma-separated conclusions that count as a success/non-failure - shared by the
       notify-gate check and the failed-check-run filter, so they can't drift apart.
     required: false
     default: 'success,neutral,skipped'
@@ -42,7 +42,7 @@ runs:
         BRANCH: ${{ inputs.branch }}
         CONCLUSION: ${{ inputs.conclusion }}
         BRANCH_PATTERNS: ${{ inputs.branch-patterns }}
-        NON_FAILURE_CONCLUSIONS_CSV: ${{ inputs.non-failure-conclusions }}
+        SUCCESS_CONCLUSIONS_CSV: ${{ inputs.success-conclusions }}
       run: |
         # Returns success (0) if $1 matches one of the comma-separated branch-patterns.
         # A trailing '*' in a pattern means prefix match; otherwise it's an exact match.
@@ -60,10 +60,10 @@ runs:
           return 1
         }
 
-        IFS=',' read -ra NON_FAILURE_CONCLUSIONS <<< "$NON_FAILURE_CONCLUSIONS_CSV"
+        IFS=',' read -ra SUCCESS_CONCLUSIONS <<< "$SUCCESS_CONCLUSIONS_CSV"
 
         SHOULD_NOTIFY=false
-        if branch_matches "$BRANCH" && [[ ! " ${NON_FAILURE_CONCLUSIONS[*]} " =~ " ${CONCLUSION} " ]]; then
+        if branch_matches "$BRANCH" && [[ ! " ${SUCCESS_CONCLUSIONS[*]} " =~ " ${CONCLUSION} " ]]; then
           SHOULD_NOTIFY=true
         fi
         echo "should-notify=$SHOULD_NOTIFY" >> "$GITHUB_OUTPUT"
@@ -83,57 +83,9 @@ runs:
         BRANCH: ${{ inputs.branch }}
         CONCLUSION: ${{ inputs.conclusion }}
         TITLE: ${{ inputs.slack-title }}
-        NON_FAILURE_CONCLUSIONS_CSV: ${{ inputs.non-failure-conclusions }}
-      shell: pwsh
-      run: |
-        $Branch = $env:BRANCH
-        $Conclusion = $env:CONCLUSION
-        $Title = $env:TITLE
-        $NonFailureConclusions = $env:NON_FAILURE_CONCLUSIONS_CSV -split ',' | ForEach-Object { $_.Trim() }
-
-        try {
-          $Event = Get-Content -Path $env:GITHUB_EVENT_PATH | ConvertFrom-Json -Depth 100
-
-          if ($Event.check_suite) {
-            # Real check_suite completion - pull the failed check runs from the GitHub API.
-            # --paginate follows every page so suites with >30 check runs aren't truncated.
-            $CheckRuns = gh api --paginate --jq '.check_runs[]' $Event.check_suite.check_runs_url |
-              ForEach-Object { $_ | ConvertFrom-Json }
-            $FailedCheckRuns = $CheckRuns |
-              Where-Object { $NonFailureConclusions -NotContains $_.conclusion } |
-              ForEach-Object { "* [$($_.name)]($($_.details_url))" }
-
-            $PipelineName = $Event.check_suite.app.name ?? 'Pipeline'
-            $RepoName = $Event.repository.name
-            $RepoUrl = $Event.repository.html_url
-            $CommitSummary = $Event.check_suite.head_commit.message -replace '[\n\r].*'
-            $Summary = "$PipelineName in [$RepoName]($RepoUrl) failed ($Conclusion) on ${Branch}: $CommitSummary"
-          } else {
-            # Manual/workflow_dispatch test run - no check_suite payload to pull check run details from.
-            $FailedCheckRuns = @("_(manual test run - no check run details available)_")
-            $Summary = "Manual test notification for branch ${Branch} (conclusion: $Conclusion)"
-          }
-        } catch {
-          # Never let a broken API call/response silently suppress the one alert this action
-          # exists to send - fall back to a degraded message instead of throwing.
-          $global:LASTEXITCODE = 0 # the runner appends `exit $LASTEXITCODE`, which would fail the step
-          $FailedCheckRuns = @("_(failed to fetch check run details: $($_.Exception.Message))_")
-          $Summary = "Pipeline in [$env:GITHUB_REPOSITORY]($env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY) failed ($Conclusion) on ${Branch}"
-        }
-
-        $OFS = [Environment]::NewLine # join $FailedCheckRuns entries with newlines when interpolated below
-        $EOF = (New-Guid).Guid        # unique delimiter required for a multiline GITHUB_OUTPUT value
-
-        $Message = @"
-        message<<$EOF
-        ❌ *$Title*
-        $Summary
-        $FailedCheckRuns
-        $EOF
-        "@
-        $Message
-
-        $Message >> $env:GITHUB_OUTPUT
+        SUCCESS_CONCLUSIONS_CSV: ${{ inputs.success-conclusions }}
+      shell: bash
+      run: bash "${{ github.action_path }}/check-run-details.sh"
 
     - name: Slack Notification
       if: always() && steps.check.outputs.should-notify == 'true'
