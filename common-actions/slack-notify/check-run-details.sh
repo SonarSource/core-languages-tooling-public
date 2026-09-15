@@ -5,7 +5,11 @@
 # are set automatically by the runner).
 set -uo pipefail
 
-if ! command -v jq >/dev/null 2>&1; then
+if [[ -n "${CUSTOM_MESSAGE:-}" ]]; then
+  summary="$CUSTOM_MESSAGE"
+  failed_check_runs=""
+  degraded=true # skip the check_suite/jq lookups below entirely
+elif ! command -v jq >/dev/null 2>&1; then
   # No jq: don't pretend this is a manual test run - degrade with repo context.
   failed_check_runs="_(failed to read event payload: jq is not available on this runner)_"
   summary="Pipeline in [$GITHUB_REPOSITORY]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY) failed ($CONCLUSION) on $BRANCH"
