@@ -93,8 +93,12 @@ runs:
             if [ -z "${BEFORE_SHA:-}" ] || [[ "$BEFORE_SHA" =~ ^0+$ ]]; then
               not_docs_only "New branch or unknown base commit; can't compute a diff"
             fi
-            changed_files="$(gh api "repos/${REPOSITORY}/compare/${BEFORE_SHA}...${AFTER_SHA}" --jq '.files[].filename')" \
-              || not_docs_only "Failed to compare ${BEFORE_SHA}...${AFTER_SHA}; running the full pipeline"
+            compare_json="$(gh api "repos/${REPOSITORY}/compare/${BEFORE_SHA}...${AFTER_SHA}")" \
+              || not_docs_only "Failed to compare ${BEFORE_SHA}...${AFTER_SHA}"
+            if [ "$(jq '.files | length' <<< "$compare_json")" -ge 300 ]; then
+              not_docs_only "Compare API truncated the file list (>=300 files); can't decide docs-only"
+            fi
+            changed_files="$(jq -r '.files[].filename' <<< "$compare_json")"
             ;;
           *)
             not_docs_only "Unsupported event '$EVENT_NAME' for docs-only detection"
