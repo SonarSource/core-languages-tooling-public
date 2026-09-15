@@ -1,0 +1,37 @@
+name: 'Required Checks Gate'
+description: >-
+  Always-running gate to pair with conditional/path-filtered jobs (e.g. docs-only-changes),
+  so a single, always-reporting job can be set as the branch-protection required check.
+
+inputs:
+  needs-context:
+    description: >-
+      JSON-encoded `needs` context from the calling workflow, passed as
+      toJSON(needs) wrapped in the workflow's own expression syntax (this value must not
+      be written literally in this file: the action-manifest parser evaluates any
+      expression syntax it finds anywhere in action.yml, and `needs` isn't a valid context
+      at that point). The gate fails if any job in it has result 'failure' or 'cancelled';
+      'success' and 'skipped' are both treated as passing.
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Evaluate upstream job results
+      shell: bash
+      env:
+        NEEDS_CONTEXT: ${{ inputs.needs-context }}
+      run: |
+        set -euo pipefail
+        failed="$(jq -r '
+          to_entries
+          | map(select(.value.result == "failure" or .value.result == "cancelled"))
+          | map(.key)
+          | join(", ")
+        ' <<< "$NEEDS_CONTEXT")"
+
+        if [ -n "$failed" ]; then
+          echo "::error::Required job(s) did not pass: $failed"
+          exit 1
+        fi
+        echo "All required jobs passed or were skipped."

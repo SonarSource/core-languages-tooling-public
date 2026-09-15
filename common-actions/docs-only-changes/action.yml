@@ -1,0 +1,145 @@
+name: 'Docs-Only Changes'
+description: >-
+  Detects whether every file changed by a pull request or push matches a set of
+  documentation path patterns, so callers can skip the full build+test+scan pipeline
+  on docs-only changes.
+author: 'SonarSource'
+
+inputs:
+  doc-patterns:
+    description: >-
+      Comma-separated list of path glob patterns matched against each changed file path. '**'
+      matches any sequence of characters, including '/', at the exact position where it
+      appears in the pattern - write 'docs/**' to match every file under a directory at any
+      depth, or '**/*.md' to match files with a given extension at any depth (including the
+      top level). '*' and '?' match within a single path segment and never match '/'. A
+      change is considered docs-only when every changed file matches at least one pattern.
+    required: false
+    default: '*.md,**/*.md,docs/**,LICENSE,LICENSE.*,NOTICE,NOTICE.*,CONTRIBUTING,CONTRIBUTING.*,CODEOWNERS'
+  github-token:
+    description: 'GitHub token used to list changed files via the GitHub API'
+    required: true
+
+outputs:
+  docs-only:
+    description: >-
+      'true' when every changed file matches doc-patterns, 'false' otherwise - including
+      when the change set can't be determined (safe default: run the full pipeline).
+    value: ${{ steps.detect.outputs.docs-only }}
+  changed-files:
+    description: 'Newline-separated list of files used for the docs-only decision'
+    value: ${{ steps.detect.outputs.changed-files }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Detect docs-only change set
+      id: detect
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        DOC_PATTERNS: ${{ inputs.doc-patterns }}
+        REPOSITORY: ${{ github.repository }}
+        EVENT_NAME: ${{ github.event_name }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        BEFORE_SHA: ${{ github.event.before }}
+        AFTER_SHA: ${{ github.event.after }}
+      run: |
+        set -euo pipefail
+
+        # Converts a glob to an anchored POSIX ERE, with .gitignore-style semantics:
+        # '**' matches any sequence of characters including '/' (crosses path segments);
+        # '*' and '?' match within a single path segment only (never match '/'). This is
+        # deliberately NOT bash's own [[ == ]] pattern matching: there, a lone '*' already
+        # matches '/' and `shopt -s globstar` has no effect at all (globstar only affects
+        # filesystem glob *expansion*, not [[ ]] string matching), which made patterns far
+        # broader than the paths-ignore-like semantics callers would expect.
+        glob_to_regex() {
+          local glob="$1" regex='' i=0 len c
+          len=${#glob}
+          while (( i < len )); do
+            c="${glob:i:1}"
+            if [[ "$c" == '*' && "${glob:i:2}" == '**' ]]; then
+              regex+='.*'
+              i=$((i + 2))
+              continue
+            fi
+            case "$c" in
+              '*') regex+='[^/]*' ;;
+              '?') regex+='[^/]' ;;
+              '.'|'+'|'('|')'|'{'|'}'|'|'|'^'|'$'|'['|']'|'\') regex+="\\${c}" ;;
+              *) regex+="$c" ;;
+            esac
+            i=$((i + 1))
+          done
+          printf '%s' "$regex"
+        }
+
+        not_docs_only() {
+          echo "$1" >&2
+          echo "docs-only=false" >> "$GITHUB_OUTPUT"
+          echo "changed-files=" >> "$GITHUB_OUTPUT"
+          exit 0
+        }
+
+        changed_files=""
+        case "$EVENT_NAME" in
+          pull_request|pull_request_target)
+            if [ -z "${PR_NUMBER:-}" ]; then
+              not_docs_only "pull_request event without a PR number; cannot list changed files"
+            fi
+            changed_files="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate --jq '.[].filename')" \
+              || not_docs_only "Failed to list PR files via the GitHub API; running the full pipeline"
+            ;;
+          push)
+            if [ -z "${BEFORE_SHA:-}" ] || [[ "$BEFORE_SHA" =~ ^0+$ ]]; then
+              not_docs_only "New branch or unknown base commit; can't compute a diff"
+            fi
+            compare_json="$(gh api "repos/${REPOSITORY}/compare/${BEFORE_SHA}...${AFTER_SHA}")" \
+              || not_docs_only "Failed to compare ${BEFORE_SHA}...${AFTER_SHA}"
+            if [ "$(jq '.files | length' <<< "$compare_json")" -ge 300 ]; then
+              not_docs_only "Compare API truncated the file list (>=300 files); can't decide docs-only"
+            fi
+            changed_files="$(jq -r '.files[].filename' <<< "$compare_json")"
+            ;;
+          *)
+            not_docs_only "Unsupported event '$EVENT_NAME' for docs-only detection"
+            ;;
+        esac
+
+        if [ -z "$changed_files" ]; then
+          not_docs_only "No changed files reported by the GitHub API"
+        fi
+
+        IFS=',' read -ra patterns <<< "$DOC_PATTERNS"
+        regexes=()
+        for pattern in "${patterns[@]}"; do
+          pattern="${pattern#"${pattern%%[![:space:]]*}"}"   # strip leading whitespace
+          pattern="${pattern%"${pattern##*[![:space:]]}"}"   # strip trailing whitespace
+          [ -z "$pattern" ] && continue
+          regexes+=("$(glob_to_regex "$pattern")")
+        done
+
+        docs_only=true
+        while IFS= read -r file; do
+          [ -z "$file" ] && continue
+          matched=false
+          for regex in "${regexes[@]}"; do
+            if [[ "$file" =~ ^${regex}$ ]]; then
+              matched=true
+              break
+            fi
+          done
+          if [ "$matched" = false ]; then
+            docs_only=false
+            break
+          fi
+        done <<< "$changed_files"
+
+        echo "docs-only=$docs_only" >> "$GITHUB_OUTPUT"
+        delimiter="EOF_${GITHUB_RUN_ID:-0}_${RANDOM}_${RANDOM}"
+        {
+          echo "changed-files<<${delimiter}"
+          echo "$changed_files"
+          echo "${delimiter}"
+        } >> "$GITHUB_OUTPUT"
