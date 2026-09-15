@@ -8,9 +8,10 @@ author: 'SonarSource'
 inputs:
   doc-patterns:
     description: >-
-      Comma-separated list of bash glob patterns (globstar/extglob enabled) matched against
-      each changed file path. A change is considered docs-only when every changed file
-      matches at least one pattern.
+      Comma-separated list of glob patterns matched against each changed file path, using
+      .gitignore-style semantics: '**' matches any sequence of characters including '/',
+      while '*' and '?' never match '/'. A change is considered docs-only when every changed
+      file matches at least one pattern.
     required: false
     default: '*.md,**/*.md,docs/**,LICENSE,LICENSE.*,NOTICE,NOTICE.*,CONTRIBUTING,CONTRIBUTING.*,CODEOWNERS'
   github-token:
@@ -43,7 +44,34 @@ runs:
         AFTER_SHA: ${{ github.event.after }}
       run: |
         set -euo pipefail
-        shopt -s globstar extglob
+
+        # Converts a glob to an anchored POSIX ERE, with .gitignore-style semantics:
+        # '**' matches any sequence of characters including '/' (crosses path segments);
+        # '*' and '?' match within a single path segment only (never match '/'). This is
+        # deliberately NOT bash's own [[ == ]] pattern matching: there, a lone '*' already
+        # matches '/' and `shopt -s globstar` has no effect at all (globstar only affects
+        # filesystem glob *expansion*, not [[ ]] string matching), which made patterns far
+        # broader than the paths-ignore-like semantics callers would expect.
+        glob_to_regex() {
+          local glob="$1" regex='' i=0 len c
+          len=${#glob}
+          while (( i < len )); do
+            c="${glob:i:1}"
+            if [[ "$c" == '*' && "${glob:i:2}" == '**' ]]; then
+              regex+='.*'
+              i=$((i + 2))
+              continue
+            fi
+            case "$c" in
+              '*') regex+='[^/]*' ;;
+              '?') regex+='[^/]' ;;
+              '.'|'+'|'('|')'|'{'|'}'|'|'|'^'|'$'|'['|']'|'\') regex+="\\${c}" ;;
+              *) regex+="$c" ;;
+            esac
+            i=$((i + 1))
+          done
+          printf '%s' "$regex"
+        }
 
         not_docs_only() {
           echo "$1" >&2
@@ -86,9 +114,8 @@ runs:
             pattern="${pattern#"${pattern%%[![:space:]]*}"}"   # strip leading whitespace
             pattern="${pattern%"${pattern##*[![:space:]]}"}"   # strip trailing whitespace
             [ -z "$pattern" ] && continue
-            # Intentionally unquoted: lets $pattern act as a glob against $file.
-            # shellcheck disable=SC2053
-            if [[ "$file" == $pattern ]]; then
+            regex="$(glob_to_regex "$pattern")"
+            if [[ "$file" =~ ^${regex}$ ]]; then
               matched=true
               break
             fi

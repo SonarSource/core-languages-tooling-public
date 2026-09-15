@@ -6,9 +6,12 @@ description: >-
 inputs:
   needs-context:
     description: >-
-      JSON-encoded `needs` context from the calling workflow. Pass `${{ toJSON(needs) }}`.
-      The gate fails if any job in it has result 'failure' or 'cancelled'; 'success' and
-      'skipped' are both treated as passing.
+      JSON-encoded `needs` context from the calling workflow, passed as
+      toJSON(needs) wrapped in the workflow's own expression syntax (this value must not
+      be written literally in this file: the action-manifest parser evaluates any
+      expression syntax it finds anywhere in action.yml, and `needs` isn't a valid context
+      at that point). The gate fails if any job in it has result 'failure' or 'cancelled';
+      'success' and 'skipped' are both treated as passing.
     required: true
 
 runs:
