@@ -1,0 +1,102 @@
+name: 'Slack Notification'
+description: 'Sends a Slack notification summarizing failed check runs'
+author: 'SonarSource'
+
+inputs:
+  slack-channel:
+    description: 'Slack channel to post the notification to'
+    required: true
+  branch-patterns:
+    description: >-
+      Comma-separated list of branch names/patterns to notify for. A trailing '*' matches
+      as a prefix (e.g. 'dogfood-*'), otherwise an exact match is required.
+    required: false
+    default: 'main,master'
+  github-token:
+    description: 'GitHub token used to query check run details via the GitHub API'
+    required: true
+  slack-title:
+    description: 'Title shown on the Slack failure notification'
+    required: false
+    default: 'Build failed'
+  branch:
+    description: 'Branch to check against branch-patterns (e.g. github.event.check_suite.head_branch)'
+    required: true
+  conclusion:
+    description: 'Conclusion to check for failure (e.g. github.event.check_suite.conclusion)'
+    required: true
+  success-conclusions:
+    description: >-
+      Comma-separated conclusions that count as a success/non-failure - shared by the
+      notify-gate check and the failed-check-run filter, so they can't drift apart.
+    required: false
+    default: 'success,neutral,skipped'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Determine if notification should be sent
+      id: check
+      shell: bash
+      env:
+        BRANCH: ${{ inputs.branch }}
+        CONCLUSION: ${{ inputs.conclusion }}
+        BRANCH_PATTERNS: ${{ inputs.branch-patterns }}
+        SUCCESS_CONCLUSIONS_CSV: ${{ inputs.success-conclusions }}
+      run: |
+        # Returns success (0) if $1 matches one of the comma-separated branch-patterns.
+        # A trailing '*' in a pattern means prefix match; otherwise it's an exact match.
+        branch_matches() {
+          local branch="$1" pattern patterns
+          IFS=',' read -ra patterns <<< "$BRANCH_PATTERNS"
+          for pattern in "${patterns[@]}"; do
+            pattern="$(echo "$pattern" | xargs)" # trim whitespace
+            if [[ "$pattern" == *'*' ]]; then
+              [[ "$branch" == "${pattern%\*}"* ]] && return 0
+            elif [[ "$branch" == "$pattern" ]]; then
+              return 0
+            fi
+          done
+          return 1
+        }
+
+        IFS=',' read -ra SUCCESS_CONCLUSIONS <<< "$SUCCESS_CONCLUSIONS_CSV"
+
+        SHOULD_NOTIFY=false
+        if branch_matches "$BRANCH" && [[ ! " ${SUCCESS_CONCLUSIONS[*]} " =~ " ${CONCLUSION} " ]]; then
+          SHOULD_NOTIFY=true
+        fi
+        echo "should-notify=$SHOULD_NOTIFY" >> "$GITHUB_OUTPUT"
+
+    - name: Vault Secrets
+      id: secrets
+      if: steps.check.outputs.should-notify == 'true'
+      uses: SonarSource/vault-action-wrapper@v3
+      with:
+        secrets: development/kv/data/slack token | SLACK_TOKEN;
+
+    - name: Check run details
+      id: failedRun
+      if: steps.check.outputs.should-notify == 'true'
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        BRANCH: ${{ inputs.branch }}
+        CONCLUSION: ${{ inputs.conclusion }}
+        TITLE: ${{ inputs.slack-title }}
+        SUCCESS_CONCLUSIONS_CSV: ${{ inputs.success-conclusions }}
+      shell: bash
+      run: bash "${{ github.action_path }}/check-run-details.sh"
+
+    - name: Slack Notification
+      if: always() && steps.check.outputs.should-notify == 'true'
+      uses: rtCamp/action-slack-notify@33ca3be66c6f378fe1610fd1d5258632dbed5e58 # v2.4.0
+      env:
+        SLACK_TOKEN: ${{ fromJSON(steps.secrets.outputs.vault).SLACK_TOKEN }}
+        SLACK_CHANNEL: ${{ inputs.slack-channel }}
+        SLACK_MESSAGE: ${{ steps.failedRun.outputs.message }}
+        SLACK_USERNAME: NotifierBot
+        MSG_MINIMAL: true
+        SLACKIFY_MARKDOWN: true
+        SLACK_FOOTER: ' '
+        SLACK_MSG_AUTHOR: ' '
+        SLACK_ICON_EMOJI: ':x:'
