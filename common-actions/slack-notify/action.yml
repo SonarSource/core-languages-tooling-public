@@ -31,6 +31,15 @@ inputs:
       notify-gate check and the failed-check-run filter, so they can't drift apart.
     required: false
     default: 'success,neutral,skipped'
+  custom-message:
+    description: >-
+      If set, used as the Slack message body (below the title line, which is always
+      prepended) instead of building one from a check_suite payload. Use this when
+      calling from a regular job (e.g. a final `if: failure()` job in the same workflow)
+      that has no check_suite event to read - check_suite events never fire for suites
+      created by GitHub Actions itself.
+    required: false
+    default: ''
 
 runs:
   using: 'composite'
@@ -84,19 +93,15 @@ runs:
         CONCLUSION: ${{ inputs.conclusion }}
         TITLE: ${{ inputs.slack-title }}
         SUCCESS_CONCLUSIONS_CSV: ${{ inputs.success-conclusions }}
+        CUSTOM_MESSAGE: ${{ inputs.custom-message }}
       shell: bash
       run: bash "${{ github.action_path }}/check-run-details.sh"
 
     - name: Slack Notification
       if: always() && steps.check.outputs.should-notify == 'true'
-      uses: rtCamp/action-slack-notify@33ca3be66c6f378fe1610fd1d5258632dbed5e58 # v2.4.0
+      shell: bash
       env:
         SLACK_TOKEN: ${{ fromJSON(steps.secrets.outputs.vault).SLACK_TOKEN }}
         SLACK_CHANNEL: ${{ inputs.slack-channel }}
         SLACK_MESSAGE: ${{ steps.failedRun.outputs.message }}
-        SLACK_USERNAME: NotifierBot
-        MSG_MINIMAL: true
-        SLACKIFY_MARKDOWN: true
-        SLACK_FOOTER: ' '
-        SLACK_MSG_AUTHOR: ' '
-        SLACK_ICON_EMOJI: ':x:'
+      run: bash "${{ github.action_path }}/post-to-slack.sh"
