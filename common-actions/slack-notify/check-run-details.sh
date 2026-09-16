@@ -3,6 +3,8 @@
 # Expects env vars: GH_TOKEN, BRANCH, CONCLUSION, TITLE, SUCCESS_CONCLUSIONS_CSV,
 # GITHUB_EVENT_PATH, GITHUB_OUTPUT, GITHUB_REPOSITORY, GITHUB_SERVER_URL (the last four
 # are set automatically by the runner).
+# Optional: CUSTOM_MESSAGE - when non-empty, used as the message body (below the title
+# line) instead of building one from a check_suite payload; skips every lookup below.
 set -uo pipefail
 
 if [[ -n "${CUSTOM_MESSAGE:-}" ]]; then
@@ -49,6 +51,6 @@ delimiter="ghadelim_$(date +%s)_$RANDOM"
   echo "message<<$delimiter"
   echo "❌ *$TITLE*"
   echo "$summary"
-  echo "$failed_check_runs"
+  [[ -n "$failed_check_runs" ]] && echo "$failed_check_runs"
   echo "$delimiter"
 } >> "$GITHUB_OUTPUT"

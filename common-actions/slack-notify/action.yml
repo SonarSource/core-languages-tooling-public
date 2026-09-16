@@ -33,10 +33,11 @@ inputs:
     default: 'success,neutral,skipped'
   custom-message:
     description: >-
-      If set, used verbatim as the Slack message body instead of building one from a
-      check_suite payload. Use this when calling from a regular job (e.g. a final
-      `if: failure()` job in the same workflow) that has no check_suite event to read -
-      check_suite events never fire for suites created by GitHub Actions itself.
+      If set, used as the Slack message body (below the title line, which is always
+      prepended) instead of building one from a check_suite payload. Use this when
+      calling from a regular job (e.g. a final `if: failure()` job in the same workflow)
+      that has no check_suite event to read - check_suite events never fire for suites
+      created by GitHub Actions itself.
     required: false
     default: ''
 

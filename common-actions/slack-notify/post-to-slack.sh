@@ -1,24 +1,22 @@
 #!/usr/bin/env bash
 # Posts a message to Slack via the chat.postMessage Web API directly - no third-party
-# action. rtCamp/action-slack-notify (the previous implementation) is a Docker container
-# action, which the in-house EKS-backed runners (sonar-xs/s/m/l/xl) can't run at all
-# (no Docker-in-Docker); this has no such requirement and runs anywhere.
+# action, and no jq dependency (check-run-details.sh's jq-less fallback path must still
+# be able to deliver its message even when jq isn't on the runner).
 #
 # Expects env vars: SLACK_TOKEN, SLACK_CHANNEL, SLACK_MESSAGE.
 #
-# chat.postMessage always returns HTTP 200, even on failure - the real result is the
-# "ok" field in the JSON body, so that's what determines this step's exit code.
+# chat.postMessage always returns HTTP 200, even on failure - success is checked via
+# plain string matching on the "ok" field in the response body, not jq.
 set -uo pipefail
-
-payload=$(jq -n --arg channel "$SLACK_CHANNEL" --arg text "$SLACK_MESSAGE" '{channel: $channel, text: $text}')
 
 response=$(curl -sS -X POST https://slack.com/api/chat.postMessage \
   -H "Authorization: Bearer $SLACK_TOKEN" \
-  -H "Content-Type: application/json; charset=utf-8" \
-  --data "$payload")
+  -H "Content-Type: application/x-www-form-urlencoded; charset=utf-8" \
+  --data-urlencode "channel=$SLACK_CHANNEL" \
+  --data-urlencode "text=$SLACK_MESSAGE")
 
-if [[ "$(jq -r '.ok' <<<"$response")" != "true" ]]; then
-  echo "::error title=Slack post failed::$(jq -r '.error // "unknown error"' <<<"$response")" >&2
+if [[ "$response" != *'"ok":true'* ]]; then
+  echo "::error title=Slack post failed::${response:-no response from Slack (curl failed)}" >&2
   exit 1
 fi
 
