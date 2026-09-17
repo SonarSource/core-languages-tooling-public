@@ -36,8 +36,8 @@ runs:
     - name: Post PVF result on PR
       shell: bash
       env:
-        GH_TOKEN: ${{ inputs.token }}
-        GH_REPO: ${{ inputs.repository }}
+        GH_TOKEN: ${{ inputs.token || github.token }}
+        GH_REPO: ${{ inputs.repository || github.repository }}
         PR: ${{ inputs.pr-number }}
         URL: ${{ inputs.dashboard-url }}
         NEW: ${{ inputs.new-issues }}

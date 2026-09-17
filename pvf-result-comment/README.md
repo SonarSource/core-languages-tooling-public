@@ -2,8 +2,8 @@
 
 Composite action that posts the **Performance Validation** result back onto a PR.
 
-It runs as steps inside the caller's job. It is the output side of the PVF chain 
-— [`pvf-trigger`](../pvf-trigger) dispatches thehost workflow. This action comments its result once the run completes.
+It runs as steps inside the caller's job. It is the output side of the PVF chain
+— [`pvf-trigger`](../pvf-trigger) dispatches the host workflow. This action comments its result once the run completes.
 
 ## Two modes
 
