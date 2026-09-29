@@ -14,7 +14,7 @@ def run(*command: str) -> None:
 
 
 def output(*command: str, check: bool = True) -> str:
-    result = subprocess.run(command, check=check, capture_output=True, text=True)
+    result = subprocess.run(command, check=check, stdout=subprocess.PIPE, text=True)
     return result.stdout.strip()
 
 
@@ -25,7 +25,7 @@ def has_staged_changes() -> bool:
     return result.returncode == 1
 
 
-def create_fix_pr(target_ref: str, ruling_root: str, pr_number: str) -> tuple[str, str]:
+def create_fix_pr(target_ref: str, ruling_root: str, pr_number: str) -> tuple[str, str, str]:
     fix_branch = f"fix/update-ruling-for-{target_ref}"
     subject = f"PR #{pr_number}" if pr_number else target_ref
     title = f"Update ruling results for {subject}"
@@ -46,6 +46,7 @@ def create_fix_pr(target_ref: str, ruling_root: str, pr_number: str) -> tuple[st
         check=False,
     ).returncode == 0
     run("git", "switch", "-c", fix_branch, f"origin/{target_ref}")
+    fix_base_sha = output("git", "rev-parse", "HEAD")
 
     if stash_created:
         try:
@@ -83,16 +84,18 @@ def create_fix_pr(target_ref: str, ruling_root: str, pr_number: str) -> tuple[st
             f"❌ **Ruling needs updating.** A fix PR has been created: {fix_pr_url}\n\n"
             "Please review and merge it into your branch.",
         )
-    return fix_pr_url, fix_sha
+    return fix_pr_url, fix_base_sha, fix_sha
 
 
 def main() -> int:
     try:
-        fix_pr_url, fix_sha = create_fix_pr(
+        fix_pr_url, fix_base_sha, fix_sha = create_fix_pr(
             os.environ["TARGET_REF"], os.environ["RULING_ROOT"], os.environ["PR_NUMBER"]
         )
         with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output_file:
-            output_file.write(f"fix-pr-url={fix_pr_url}\nfix-sha={fix_sha}\n")
+            output_file.write(
+                f"fix-pr-url={fix_pr_url}\nfix-base-sha={fix_base_sha}\nfix-sha={fix_sha}\n"
+            )
     except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
         print(f"::error::{error}", file=sys.stderr)
         return 1

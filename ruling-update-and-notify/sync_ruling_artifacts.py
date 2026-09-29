@@ -57,7 +57,7 @@ def main() -> int:
             os.environ["DOWNLOAD_OUTCOME"],
         )
     except (OSError, RuntimeError) as error:
-        print(f"::error::{error}", file=sys.stderr)
+        print(f"::error::{error}", flush=True)
         return 1
     finally:
         print("::endgroup::")

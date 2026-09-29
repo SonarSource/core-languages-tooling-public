@@ -6,6 +6,10 @@ inputs:
   ruling-failed:
     description: 'Whether the ruling test failed (true/false)'
     required: true
+  ruling-root:
+    description: 'Expected ruling directory; overrides standard directory detection'
+    required: false
+    default: ''
 
 outputs:
   has-differences:
@@ -28,8 +32,26 @@ runs:
       id: ruling-paths
       if: inputs.ruling-failed == 'true'
       shell: bash
+      env:
+        RULING_ROOT_OVERRIDE: ${{ inputs.ruling-root }}
       run: |
-        if [ -d its/ruling/src/test/resources ] && [ -d private/its/ruling/src/test/resources ]; then
+        if [ -n "$RULING_ROOT_OVERRIDE" ]; then
+          if [ ! -d "$RULING_ROOT_OVERRIDE" ]; then
+            echo "::error::Ruling directory does not exist: $RULING_ROOT_OVERRIDE"
+            exit 1
+          fi
+          case "$RULING_ROOT_OVERRIDE" in
+            private/its/ruling/src/test/resources/*|private/its/ruling/src/test/resources)
+              SOURCES_ROOT=private/its/sources ;;
+            its/ruling/src/test/resources/*|its/ruling/src/test/resources)
+              SOURCES_ROOT=its/sources ;;
+            *)
+              echo "::error::ruling-root must be inside a supported ruling directory"
+              exit 1 ;;
+          esac
+          echo "ruling-root=$RULING_ROOT_OVERRIDE" >> "$GITHUB_OUTPUT"
+          echo "sources-root=$SOURCES_ROOT" >> "$GITHUB_OUTPUT"
+        elif [ -d its/ruling/src/test/resources ] && [ -d private/its/ruling/src/test/resources ]; then
           echo "::error::Both supported ruling directories exist; cannot choose one"
           exit 1
         elif [ -d its/ruling/src/test/resources ]; then
@@ -151,7 +173,7 @@ runs:
       with:
         pr-number: ${{ steps.setup-env.outputs.pr-number }}
         repository: ${{ github.repository }}
-        base-sha: ${{ github.event.pull_request.head.sha }}
+        base-sha: ${{ steps.create-fix-pr.outputs.fix-base-sha }}
         head-sha: ${{ steps.create-fix-pr.outputs.fix-sha }}
         ruling-root: ${{ steps.ruling-paths.outputs.ruling-root }}
         sources-root: ${{ steps.ruling-paths.outputs.sources-root }}

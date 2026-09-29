@@ -59,12 +59,19 @@ jobs:
 | Input | Description | Required |
 |-------|-------------|----------|
 | `ruling-failed` | Whether the ruling test failed (`true` or `false`) | Yes |
+| `ruling-root` | Override the expected ruling directory when it is not the standard resources directory | No |
 
 The action detects the ruling directory from `its/ruling/src/test/resources` or
 `private/its/ruling/src/test/resources` and uses the corresponding `its/sources`
 or `private/its/sources` path for snippets. It fails if both ruling directories
 exist or neither exists when the ruling test fails. On a successful test, it
 needs no ruling directory.
+
+For example, sonar-java should set `ruling-root: its/ruling/src/test/resources/expected`.
+Callers migrating to this version should remove the former `pr-number` and
+`sources-root` inputs; PR context comes from the event and the sources path is
+derived from the ruling directory. Keep `ruling-root` only when the expected
+results live in a subdirectory of the standard resources directory.
 
 PR details come from the GitHub event. On a push, the action can create or
 clean up a fix PR, but it does not post a comment on an original PR.
@@ -106,7 +113,7 @@ clean up a fix PR, but it does not post a comment on an original PR.
    - Commits the changes with a bot signature
    - Creates or updates a fix PR
    - Posts a comment on the original PR linking to the fix PR
-   - Uses the `ruling-diff-comment` action to compare the original PR head with the committed fix
+   - Uses the `ruling-diff-comment` action to compare the fix commit with its actual base
 5. If no differences or ruling passed:
    - Closes any stale fix PRs that may exist
 
