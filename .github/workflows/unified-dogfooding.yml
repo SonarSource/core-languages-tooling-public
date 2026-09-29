@@ -39,12 +39,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # TODO: Choose and uncomment the appropriate build action for your project:
-      # - uses: SonarSource/ci-github-actions/build-maven@v1       # For Maven-based Java projects
-      # - uses: SonarSource/ci-github-actions/build-gradle@v1      # For Gradle-based Java projects
-      # - uses: SonarSource/ci-github-actions/build-poetry@v1      # For Python projects using Poetry
-      # - uses: SonarSource/ci-github-actions/build-npm@v1         # For Node.js projects using npm
-      # - uses: SonarSource/ci-github-actions/build-yarn@v1        # For Node.js projects using Yarn
-      - uses: SonarSource/ci-github-actions/BUILD-ACTION-HERE@v1
+      # - uses: SonarSource/ci-github-actions/build-maven@v2       # For Maven-based Java projects
+      # - uses: SonarSource/ci-github-actions/build-gradle@v2      # For Gradle-based Java projects
+      # - uses: SonarSource/ci-github-actions/build-poetry@v2      # For Python projects using Poetry
+      # - uses: SonarSource/ci-github-actions/build-npm@v2         # For Node.js projects using npm
+      # - uses: SonarSource/ci-github-actions/build-yarn@v2        # For Node.js projects using Yarn
+      - uses: SonarSource/ci-github-actions/BUILD-ACTION-HERE@v2
         with:
           run-shadow-scans: true
 
