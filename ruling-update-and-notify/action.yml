@@ -3,52 +3,9 @@ description: 'Updates ruling results when tests fail and notifies via PR comment
 author: 'SonarSource'
 
 inputs:
-  pr-number:
-    description: 'Pull request number (for PR events only)'
-    required: false
-    default: ''
   ruling-failed:
     description: 'Whether the ruling test failed (true/false)'
     required: true
-  sync-command:
-    description: 'Optional command to run after syncing artifacts (e.g., "mvn clean test -Dupdate-expected")'
-    required: false
-    default: ''
-  ruling-root:
-    description: 'Path to ruling expected results directory'
-    required: true
-  sources-root:
-    description: 'Path to ruling sources directory'
-    required: false
-    default: ''
-  base-sha:
-    description: 'Base commit SHA for comparison (auto-detected for PRs if not provided)'
-    required: false
-    default: ''
-  head-sha:
-    description: 'Head commit SHA for comparison (defaults to current HEAD)'
-    required: false
-    default: ''
-  target-ref:
-    description: 'Target branch/ref name (auto-detected if not provided)'
-    required: false
-    default: ''
-  base-ref:
-    description: 'Base branch/ref name (auto-detected if not provided)'
-    required: false
-    default: ''
-  create-fix-pr:
-    description: 'Whether to create a fix PR when ruling fails (true/false)'
-    required: false
-    default: 'true'
-  fix-pr-branch-prefix:
-    description: 'Prefix for the fix PR branch name'
-    required: false
-    default: 'fix/update-ruling-for'
-  repository:
-    description: 'Repository in format owner/repo (defaults to current repository)'
-    required: false
-    default: ''
 
 outputs:
   has-differences:
@@ -62,143 +19,61 @@ runs:
   using: 'composite'
   steps:
     - name: Install uv
+      if: inputs.ruling-failed == 'true'
       uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       with:
         enable-cache: true
 
-    - name: Validate inputs
+    - name: Find ruling directory
+      id: ruling-paths
+      if: inputs.ruling-failed == 'true'
       shell: bash
       run: |
-        # Validate ruling-root is not empty
-        if [ -z "$RULING_ROOT" ]; then
-          echo "::error::ruling-root must be a non-empty path"
+        if [ -d its/ruling/src/test/resources ] && [ -d private/its/ruling/src/test/resources ]; then
+          echo "::error::Both supported ruling directories exist; cannot choose one"
+          exit 1
+        elif [ -d its/ruling/src/test/resources ]; then
+          echo "ruling-root=its/ruling/src/test/resources" >> "$GITHUB_OUTPUT"
+          echo "sources-root=its/sources" >> "$GITHUB_OUTPUT"
+        elif [ -d private/its/ruling/src/test/resources ]; then
+          echo "ruling-root=private/its/ruling/src/test/resources" >> "$GITHUB_OUTPUT"
+          echo "sources-root=private/its/sources" >> "$GITHUB_OUTPUT"
+        else
+          echo "::error::Neither supported ruling directory exists"
           exit 1
         fi
-
-        # Reject absolute paths
-        if [[ "$RULING_ROOT" == /* ]]; then
-          echo "::error::ruling-root must be a relative path, not an absolute path"
-          exit 1
-        fi
-
-        # Reject paths starting with . (including '.', './', '..')
-        if [[ "$RULING_ROOT" == .* ]]; then
-          echo "::error::ruling-root must not start with '.'"
-          exit 1
-        fi
-
-        # Reject paths containing '..' anywhere
-        if [[ "$RULING_ROOT" == *..* ]]; then
-          echo "::error::ruling-root must not contain '..' path components"
-          exit 1
-        fi
-
-        # Validate it only contains safe characters (alphanumeric, /, _, and -)
-        if ! [[ "$RULING_ROOT" =~ ^[a-zA-Z0-9/_-]+(/[a-zA-Z0-9/_-]+)*$ ]]; then
-          echo "::error::ruling-root contains invalid characters. Only alphanumeric, /, _, and - are allowed"
-          exit 1
-        fi
-      env:
-        RULING_ROOT: ${{ inputs.ruling-root }}
 
     - name: Setup environment variables
       id: setup-env
       shell: bash
       env:
-        INPUT_PR_NUMBER: ${{ inputs.pr-number }}
-        INPUT_TARGET_REF: ${{ inputs.target-ref }}
-        INPUT_BASE_REF: ${{ inputs.base-ref }}
-        INPUT_BASE_SHA: ${{ inputs.base-sha }}
-        INPUT_HEAD_SHA: ${{ inputs.head-sha }}
-        INPUT_REPOSITORY: ${{ inputs.repository }}
+        RULING_FAILED: ${{ inputs.ruling-failed }}
+        GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
         GITHUB_HEAD_REF: ${{ github.head_ref }}
         GITHUB_REF_NAME: ${{ github.ref_name }}
-        GITHUB_BASE_REF: ${{ github.base_ref }}
-        GITHUB_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-        GITHUB_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        GITHUB_SHA: ${{ github.sha }}
-        GITHUB_REPOSITORY: ${{ github.repository }}
       run: |
-        # Detect if this is a PR event
-        if [ -n "$INPUT_PR_NUMBER" ]; then
+        if [[ "$RULING_FAILED" != true && "$RULING_FAILED" != false ]]; then
+          echo "::error::ruling-failed must be true or false"
+          exit 1
+        fi
+
+        if [ -n "$GITHUB_PR_NUMBER" ]; then
           IS_PR=true
-          PR_NUMBER="$INPUT_PR_NUMBER"
+          PR_NUMBER="$GITHUB_PR_NUMBER"
         else
           IS_PR=false
           PR_NUMBER=""
         fi
 
-        # Set target and base refs (validated to prevent injection)
-        TARGET_REF="$INPUT_TARGET_REF"
-        if [ -z "$TARGET_REF" ]; then
-          TARGET_REF="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
-        fi
-        # Validate ref name (must start with alphanumeric, cannot start with -)
+        TARGET_REF="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
         if ! [[ "$TARGET_REF" =~ ^[a-zA-Z0-9][a-zA-Z0-9/_.-]*$ ]]; then
-          echo "::error::Invalid target-ref: $TARGET_REF"
-          exit 1
-        fi
-
-        BASE_REF="$INPUT_BASE_REF"
-        if [ -z "$BASE_REF" ]; then
-          BASE_REF="${GITHUB_BASE_REF:-$GITHUB_DEFAULT_BRANCH}"
-        fi
-        # Validate ref name (must start with alphanumeric, cannot start with -)
-        if ! [[ "$BASE_REF" =~ ^[a-zA-Z0-9][a-zA-Z0-9/_.-]*$ ]]; then
-          echo "::error::Invalid base-ref: $BASE_REF"
-          exit 1
-        fi
-
-        # Set SHAs (validated to be 40-char hex)
-        BASE_SHA="$INPUT_BASE_SHA"
-        if [ -z "$BASE_SHA" ] && [ "$IS_PR" = "true" ]; then
-          BASE_SHA="$GITHUB_PR_BASE_SHA"
-        fi
-        if [ -n "$BASE_SHA" ] && ! [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-          echo "::error::Invalid base-sha: $BASE_SHA"
-          exit 1
-        fi
-
-        HEAD_SHA="$INPUT_HEAD_SHA"
-        if [ -z "$HEAD_SHA" ]; then
-          HEAD_SHA="$GITHUB_SHA"
-        fi
-        if [ -n "$HEAD_SHA" ] && ! [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-          echo "::error::Invalid head-sha: $HEAD_SHA"
-          exit 1
-        fi
-
-        # Set repository (validated format)
-        REPOSITORY="$INPUT_REPOSITORY"
-        if [ -z "$REPOSITORY" ]; then
-          REPOSITORY="$GITHUB_REPOSITORY"
-        fi
-        if ! [[ "$REPOSITORY" =~ ^[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+$ ]]; then
-          echo "::error::Invalid repository: $REPOSITORY"
+          echo "::error::Invalid target ref: $TARGET_REF"
           exit 1
         fi
 
         echo "is-pr=$IS_PR" >> "$GITHUB_OUTPUT"
         echo "pr-number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
         echo "target-ref=$TARGET_REF" >> "$GITHUB_OUTPUT"
-        echo "base-ref=$BASE_REF" >> "$GITHUB_OUTPUT"
-        echo "base-sha=$BASE_SHA" >> "$GITHUB_OUTPUT"
-        echo "head-sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
-        echo "repository=$REPOSITORY" >> "$GITHUB_OUTPUT"
-
-    - name: Fetch base branch
-      shell: bash
-      env:
-        BASE_REF: ${{ steps.setup-env.outputs.base-ref }}
-        BASE_SHA: ${{ steps.setup-env.outputs.base-sha }}
-      run: |
-        git fetch origin -- "$BASE_REF"
-        if [ -n "$BASE_SHA" ]; then
-          git fetch origin -- "$BASE_SHA" || true
-          if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
-            echo "::warning::Failed to fetch PR base SHA: $BASE_SHA"
-          fi
-        fi
 
     - name: Check for auto-update loop
       if: inputs.ruling-failed == 'true'
@@ -231,6 +106,8 @@ runs:
     - name: Sync ruling artifacts
       if: inputs.ruling-failed == 'true' && env.skip-update == 'false'
       shell: bash
+      env:
+        RULING_ROOT: ${{ steps.ruling-paths.outputs.ruling-root }}
       run: |
         set -e  # Exit on error
         echo "::group::Syncing ruling artifacts"
@@ -296,10 +173,10 @@ runs:
         # Copy merged artifact contents into ruling-root
         # With merge-multiple: true, all matching artifacts are merged into the
         # temp directory directly (no per-artifact subdirectories).
-        echo "Copying artifacts into ${{ inputs.ruling-root }}"
+        echo "Copying artifacts into $RULING_ROOT"
 
         set +e
-        COPY_OUTPUT=$(cp -rv "$TEMP_DIR"/* "${{ inputs.ruling-root }}/" 2>&1)
+        COPY_OUTPUT=$(cp -rv "$TEMP_DIR"/* "$RULING_ROOT/" 2>&1)
         COPY_EXIT_CODE=$?
         set -e
 
@@ -317,25 +194,6 @@ runs:
         echo ""
         echo "✓ Artifact sync complete"
 
-        # Run custom sync command if provided (optional)
-        SYNC_CMD='${{ inputs.sync-command }}'
-        if [ -n "$SYNC_CMD" ]; then
-          echo ""
-          echo "Running custom sync command: $SYNC_CMD"
-          set +e
-          eval "$SYNC_CMD"
-          SYNC_EXIT_CODE=$?
-          set -e
-
-          if [ $SYNC_EXIT_CODE -ne 0 ]; then
-            echo "::error::Custom sync command failed with exit code: $SYNC_EXIT_CODE"
-            rm -rf "$TEMP_DIR"
-            echo "::endgroup::"
-            exit 1
-          fi
-          echo "✓ Custom sync command completed successfully"
-        fi
-
         # Cleanup
         rm -rf "$TEMP_DIR"
         echo "::endgroup::"
@@ -344,46 +202,37 @@ runs:
       id: check-diff
       shell: bash
       env:
-        RULING_ROOT: ${{ inputs.ruling-root }}
+        RULING_ROOT: ${{ steps.ruling-paths.outputs.ruling-root }}
+        RULING_FAILED: ${{ inputs.ruling-failed }}
       run: |
+        if [ "$RULING_FAILED" != true ]; then
+          echo "has-differences=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
         # Check if there are uncommitted changes in the ruling directory
-        # produced by the artifact sync / sync-command steps.
+        # produced by artifact sync.
         if [ -n "$(git status --porcelain -- "$RULING_ROOT/")" ]; then
           echo "has-differences=true" >> "$GITHUB_OUTPUT"
         else
           echo "has-differences=false" >> "$GITHUB_OUTPUT"
         fi
 
-    - name: Post ruling diff comment
-      if: steps.setup-env.outputs.is-pr == 'true' && steps.check-diff.outputs.has-differences == 'true'
-      uses: SonarSource/core-languages-tooling-public/ruling-diff-comment@master
-      with:
-        pr-number: ${{ steps.setup-env.outputs.pr-number }}
-        repository: ${{ steps.setup-env.outputs.repository }}
-        base-sha: ${{ steps.setup-env.outputs.base-sha }}
-        head-sha: ${{ steps.setup-env.outputs.head-sha }}
-        ruling-root: ${{ inputs.ruling-root }}
-        sources-root: ${{ inputs.sources-root }}
-      env:
-        GH_TOKEN: ${{ github.token }}
-
     - name: Create fix PR
       id: create-fix-pr
       if: |
         inputs.ruling-failed == 'true' &&
         env.skip-update == 'false' &&
-        steps.check-diff.outputs.has-differences == 'true' &&
-        inputs.create-fix-pr == 'true'
+        steps.check-diff.outputs.has-differences == 'true'
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
-        FIX_PR_BRANCH_PREFIX: ${{ inputs.fix-pr-branch-prefix }}
         TARGET_REF: ${{ steps.setup-env.outputs.target-ref }}
         IS_PR: ${{ steps.setup-env.outputs.is-pr }}
         PR_NUMBER: ${{ steps.setup-env.outputs.pr-number }}
-        RULING_ROOT: ${{ inputs.ruling-root }}
+        RULING_ROOT: ${{ steps.ruling-paths.outputs.ruling-root }}
       run: |
-        FIX_BRANCH="${FIX_PR_BRANCH_PREFIX}-${TARGET_REF}"
+        FIX_BRANCH="fix/update-ruling-for-${TARGET_REF}"
 
         if [ "$IS_PR" = "true" ]; then
           FIX_PR_TITLE="Update ruling results for PR #${PR_NUMBER}"
@@ -399,10 +248,10 @@ runs:
 
         # Stash changes before checkout (account for staged changes too)
         STASH_CREATED=false
-        if git diff --quiet -- "$RULING_ROOT/" && git diff --cached --quiet -- "$RULING_ROOT/"; then
+        if [ -z "$(git status --porcelain -- "$RULING_ROOT/")" ]; then
           echo "No changes to stash"
         else
-          git stash push -m "ruling-sync-changes" -- "$RULING_ROOT/"
+          git stash push --include-untracked -m "ruling-sync-changes" -- "$RULING_ROOT/"
           STASH_CREATED=true
         fi
 
@@ -481,6 +330,7 @@ runs:
         fi
 
         echo "fix-pr-url=$FIX_PR_URL" >> "$GITHUB_OUTPUT"
+        echo "fix-sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
         # Add comment to original PR if this is a PR event
         if [ "$IS_PR" = "true" ] && [ -n "$FIX_PR_URL" ]; then
@@ -489,6 +339,19 @@ runs:
         Please review and merge it into your branch."
         fi
 
+    - name: Post ruling diff comment
+      if: steps.setup-env.outputs.is-pr == 'true' && steps.create-fix-pr.outputs.fix-pr-url != ''
+      uses: SonarSource/core-languages-tooling-public/ruling-diff-comment@master
+      with:
+        pr-number: ${{ steps.setup-env.outputs.pr-number }}
+        repository: ${{ github.repository }}
+        base-sha: ${{ github.event.pull_request.head.sha }}
+        head-sha: ${{ steps.create-fix-pr.outputs.fix-sha }}
+        ruling-root: ${{ steps.ruling-paths.outputs.ruling-root }}
+        sources-root: ${{ steps.ruling-paths.outputs.sources-root }}
+      env:
+        GH_TOKEN: ${{ github.token }}
+
     - name: Cleanup stale fix PR
       if: |
         env.skip-update != 'true' &&
@@ -496,10 +359,9 @@ runs:
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
-        FIX_PR_BRANCH_PREFIX: ${{ inputs.fix-pr-branch-prefix }}
         TARGET_REF: ${{ steps.setup-env.outputs.target-ref }}
       run: |
-        FIX_BRANCH="${FIX_PR_BRANCH_PREFIX}-${TARGET_REF}"
+        FIX_BRANCH="fix/update-ruling-for-${TARGET_REF}"
 
         # Check if there's an open PR for the fix branch
         FIX_PR_STATE=$(gh pr view "$FIX_BRANCH" --json state --jq '.state' 2>/dev/null || true)

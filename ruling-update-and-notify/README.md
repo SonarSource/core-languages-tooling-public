@@ -4,7 +4,7 @@ Automatically updates ruling expected results when tests fail and posts diff com
 
 ## Features
 
-- **Automatic Ruling Sync**: Runs your sync command when ruling tests fail
+- **Automatic Ruling Sync**: Copies downloaded ruling artifacts when ruling tests fail
 - **PR Comments**: Posts detailed ruling diff comments using the `ruling-diff-comment` action
 - **Fix PR Creation**: Automatically creates a fix PR with updated ruling results
 - **Loop Prevention**: Detects and prevents infinite auto-update loops
@@ -47,31 +47,23 @@ jobs:
         if: always()
         uses: SonarSource/core-languages-tooling-public/ruling-update-and-notify@master
         with:
-          pr-number: ${{ github.event.pull_request.number }}
           ruling-failed: ${{ steps.ruling.outcome == 'failure' }}
-          sync-command: 'mvn clean test -Pruling -Dupdate-expected'
-          ruling-root: 'its/ruling/src/test/resources'
-          sources-root: 'its/sources'
-        env:
-          GH_TOKEN: ${{ github.token }}
 ```
 
 ## Inputs
 
-| Input | Description | Required | Default |
-|-------|-------------|----------|---------|
-| `pr-number` | Pull request number (for PR events only) | No | `''` |
-| `ruling-failed` | Whether the ruling test failed (true/false) | Yes | - |
-| `sync-command` | Command to run to sync/update ruling expected results | Yes | - |
-| `ruling-root` | Path to ruling expected results directory | Yes | - |
-| `sources-root` | Path to ruling sources directory | No | `''` |
-| `base-sha` | Base commit SHA for comparison | No | Auto-detected |
-| `head-sha` | Head commit SHA for comparison | No | Current HEAD |
-| `target-ref` | Target branch/ref name | No | Auto-detected |
-| `base-ref` | Base branch/ref name | No | Auto-detected |
-| `create-fix-pr` | Whether to create a fix PR when ruling fails | No | `'true'` |
-| `fix-pr-branch-prefix` | Prefix for the fix PR branch name | No | `'fix/update-ruling-for'` |
-| `repository` | Repository in format owner/repo | No | Current repository |
+| Input | Description | Required |
+|-------|-------------|----------|
+| `ruling-failed` | Whether the ruling test failed (`true` or `false`) | Yes |
+
+The action detects the ruling directory from `its/ruling/src/test/resources` or
+`private/its/ruling/src/test/resources` and uses the corresponding `its/sources`
+or `private/its/sources` path for snippets. It fails if both ruling directories
+exist or neither exists when the ruling test fails. On a successful test, it
+needs no ruling directory.
+
+PR details come from the GitHub event. On a push, the action can create or
+clean up a fix PR, but it does not post a comment on an original PR.
 
 ## Outputs
 
@@ -82,11 +74,11 @@ jobs:
 
 ## Behavior
 
-1. **When ruling tests pass**: Posts a "no changes" comment to the PR
+1. **When ruling tests pass**: Closes an open stale fix PR, if any
 2. **When ruling tests fail with differences**:
-   - Runs the sync command to update expected results
-   - Posts a detailed diff comment to the PR
+   - Downloads `actual_*` artifacts and copies them into the detected ruling directory
    - Creates or updates a fix PR with the updated results
+   - Posts a detailed diff comment to the original PR
    - Adds a comment linking to the fix PR
 3. **When ruling tests fail but auto-update already happened**: Skips to prevent loops
 4. **When ruling becomes up-to-date**: Closes any open fix PRs
@@ -94,22 +86,23 @@ jobs:
 ## Requirements
 
 - `gh` CLI must be available (usually pre-installed on GitHub runners)
-- `uv` must be installed for the ruling-diff-comment action (use `astral-sh/setup-uv@v5`)
-- Repository must have `contents: write` and `pull-requests: write` permissions
+- The caller must check out the repository and upload `actual_*` artifacts when ruling tests fail
+- The job must have `contents: write` and `pull-requests: write` permissions
+- `uv` is installed by this action when ruling fails
 
 ## How It Works
 
 1. Detects if ruling test failed by checking the `ruling-failed` input
 2. Checks last commit to prevent infinite auto-update loops
-3. If ruling failed, runs the sync command to update expected results
-4. Uses the `ruling-diff-comment` action to post detailed diff to PR
-5. If there are differences and ruling failed:
+3. If ruling failed, downloads artifacts and copies them into the detected ruling directory
+4. If there are differences and ruling failed:
    - Stashes the synced changes
    - Creates/updates a fix branch from the target branch
    - Commits the changes with a bot signature
    - Creates or updates a fix PR
    - Posts a comment on the original PR linking to the fix PR
-6. If no differences or ruling passed:
+   - Uses the `ruling-diff-comment` action to compare the original PR head with the committed fix
+5. If no differences or ruling passed:
    - Closes any stale fix PRs that may exist
 
 ## Example PR Comment
