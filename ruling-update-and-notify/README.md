@@ -43,6 +43,10 @@ jobs:
         run: |
           mvn clean test -Pruling
 
+      - name: Prepare ruling artifact
+        if: ${{ always() && steps.ruling.outcome == 'failure' }}
+        uses: SonarSource/core-languages-tooling-public/prepare-ruling-artifact@master
+
       - name: Update ruling and notify
         if: always()
         uses: SonarSource/core-languages-tooling-public/ruling-update-and-notify@master
@@ -87,7 +91,7 @@ clean up a fix PR, but it does not post a comment on an original PR.
 
 - `gh` CLI must be available (usually pre-installed on GitHub runners)
 - Python 3 must be available on the runner
-- The caller must check out the repository and upload `actual_*` artifacts when ruling tests fail
+- The caller must check out the repository and upload `actual_*` artifacts when ruling tests fail; `prepare-ruling-artifact` packages the standard ruling layout
 - The job must have `contents: write` and `pull-requests: write` permissions
 - `uv` is installed by this action when ruling fails
 
