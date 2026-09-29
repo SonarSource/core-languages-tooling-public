@@ -86,6 +86,7 @@ clean up a fix PR, but it does not post a comment on an original PR.
 ## Requirements
 
 - `gh` CLI must be available (usually pre-installed on GitHub runners)
+- Python 3 must be available on the runner
 - The caller must check out the repository and upload `actual_*` artifacts when ruling tests fail
 - The job must have `contents: write` and `pull-requests: write` permissions
 - `uv` is installed by this action when ruling fails
@@ -104,6 +105,10 @@ clean up a fix PR, but it does not post a comment on an original PR.
    - Uses the `ruling-diff-comment` action to compare the original PR head with the committed fix
 5. If no differences or ruling passed:
    - Closes any stale fix PRs that may exist
+
+Artifact copying and fix-PR creation are implemented in `sync_ruling_artifacts.py`
+and `create_fix_pr.py`; the composite action passes them the GitHub context and
+publishes their outputs.
 
 ## Example PR Comment
 
