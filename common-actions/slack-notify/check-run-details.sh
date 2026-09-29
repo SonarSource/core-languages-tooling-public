@@ -1,56 +1,44 @@
 #!/usr/bin/env bash
-# Builds the Slack message body for the calling composite action.
-# Expects env vars: GH_TOKEN, BRANCH, CONCLUSION, TITLE, SUCCESS_CONCLUSIONS_CSV,
-# GITHUB_EVENT_PATH, GITHUB_OUTPUT, GITHUB_REPOSITORY, GITHUB_SERVER_URL (the last four
-# are set automatically by the runner).
-# Optional: CUSTOM_MESSAGE - when non-empty, used as the message body (below the title
-# line) instead of building one from a check_suite payload; skips every lookup below.
+# Builds the Slack message: "❌ <name> in <repo> failed on <branch>: <commit>" + a bulleted
+# failed-job list, for a job in the same workflow run whose failure is being reported.
 set -uo pipefail
 
-if [[ -n "${CUSTOM_MESSAGE:-}" ]]; then
-  summary="$CUSTOM_MESSAGE"
-  failed_check_runs=""
-  degraded=true # skip the check_suite/jq lookups below entirely
-elif ! command -v jq >/dev/null 2>&1; then
-  # No jq: don't pretend this is a manual test run - degrade with repo context.
-  failed_check_runs="_(failed to read event payload: jq is not available on this runner)_"
-  summary="Pipeline in <$GITHUB_SERVER_URL/$GITHUB_REPOSITORY|$GITHUB_REPOSITORY> failed ($CONCLUSION) on $BRANCH"
-  check_runs_url=""
-  degraded=true
-else
-  check_runs_url=$(jq -r '.check_suite.check_runs_url // empty' "$GITHUB_EVENT_PATH")
-fi
+repo_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+repo_name="${GITHUB_REPOSITORY#*/}"
 
-if [[ "${degraded:-false}" == "true" ]]; then
-  : # message already built above
-elif [[ -n "$check_runs_url" ]]; then
-  if check_runs=$(gh api --paginate --jq '.check_runs[]' "$check_runs_url" 2>/tmp/gh-api-error.log); then
-    failed_check_runs=$(printf '%s\n' "$check_runs" | jq -r --arg success_csv "$SUCCESS_CONCLUSIONS_CSV" '
-      ($success_csv | split(",") | map(gsub("^\\s+|\\s+$"; ""))) as $success
-      | select(($success | index(.conclusion)) | not)
-      | "• <\(.details_url)|\(.name)>"
-    ')
-    [[ -z "$failed_check_runs" ]] && failed_check_runs="_(no failing check runs found)_"
+# Reads a stream of job objects (from the run-jobs API) on stdin, prints a bulleted list
+# of the failed ones.
+# Example:
+# Input:
+#   {"name":"build","status":"completed","conclusion":"success","html_url":"https://github.com/org/repo/actions/runs/1/jobs/1"}
+#   {"name":"test","status":"completed","conclusion":"failure","html_url":"https://github.com/org/repo/actions/runs/1/jobs/2"}
+# Output:
+#   • <https://github.com/org/repo/actions/runs/1/jobs/2|test>
+failed_jobs() {
+  jq -r '
+    def not_in(arr): . as $x | (arr | index($x)) == null;
 
-    pipeline_name=$(jq -r '.check_suite.app.name // "Pipeline"' "$GITHUB_EVENT_PATH")
-    repo_name=$(jq -r '.repository.name' "$GITHUB_EVENT_PATH")
-    repo_url=$(jq -r '.repository.html_url' "$GITHUB_EVENT_PATH")
-    commit_summary=$(jq -r '.check_suite.head_commit.message' "$GITHUB_EVENT_PATH" | head -n1)
-    summary="$pipeline_name in <$repo_url|$repo_name> failed ($CONCLUSION) on $BRANCH: $commit_summary"
-  else
-    failed_check_runs="_(failed to fetch check run details: $(tr -s '\n' ' ' < /tmp/gh-api-error.log))_"
-    summary="Pipeline in <$GITHUB_SERVER_URL/$GITHUB_REPOSITORY|$GITHUB_REPOSITORY> failed ($CONCLUSION) on $BRANCH"
-  fi
+    ["success", "neutral", "skipped"] as $success_conclusions
+    | select(.status == "completed")
+    | select(.conclusion | not_in($success_conclusions))
+    | "• <\(.html_url)|\(.name)>"
+  '
+}
+
+# status == "completed" excludes the calling job itself (still in_progress here).
+summary="${WORKFLOW_NAME:-Pipeline} in <$repo_url|$repo_name> failed on $BRANCH: <$repo_url/commit/$GITHUB_SHA|${GITHUB_SHA:0:7}>"
+
+if jobs=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs" --jq '.jobs[]' 2>/tmp/gh-api-error.log); then
+  failed_list=$(printf '%s\n' "$jobs" | failed_jobs)
+  [[ -z "$failed_list" ]] && failed_list="_(no failing jobs found)_"
 else
-  failed_check_runs="_(manual test run - no check run details available)_"
-  summary="Manual test notification for branch $BRANCH (conclusion: $CONCLUSION)"
+  failed_list="_(failed to fetch job details: $(tr -s '\n' ' ' < /tmp/gh-api-error.log))_"
 fi
 
 delimiter="ghadelim_$(date +%s)_$RANDOM"
 {
   echo "message<<$delimiter"
-  echo "❌ *$TITLE*"
-  echo "$summary"
-  [[ -n "$failed_check_runs" ]] && echo "$failed_check_runs"
+  echo "❌ $summary"
+  [[ -n "$failed_list" ]] && echo "$failed_list"
   echo "$delimiter"
 } >> "$GITHUB_OUTPUT"
