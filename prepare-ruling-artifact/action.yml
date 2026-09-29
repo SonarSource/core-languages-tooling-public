@@ -3,7 +3,7 @@ description: 'Upload generated ruling results in the layout consumed by ruling-u
 
 inputs:
   actual-root:
-    description: 'Generated ruling directory; auto-detected under its/ruling or private/its/ruling when omitted'
+    description: 'Generated ruling directory; auto-detected for standard Maven and Gradle layouts when omitted'
     required: false
     default: ''
   artifact-name:

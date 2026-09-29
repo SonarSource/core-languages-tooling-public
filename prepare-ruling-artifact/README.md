@@ -3,11 +3,13 @@
 Packages generated ruling results as an `actual_*` artifact for
 `ruling-update-and-notify`.
 
-By default, the action finds either `its/ruling/target/actual` or
-`private/its/ruling/target/actual`. It copies the contents under `expected/` in
-the uploaded artifact, so a generated `project/xml-S123.json` becomes
+By default, the action finds `target/actual` (Maven) or `build/actual` (Gradle)
+under `its/ruling` or `private/its/ruling`. It also accepts a repository-root
+`build/actual` directory. It copies the contents under `expected/` in the
+uploaded artifact, so a generated `project/xml-S123.json` becomes
 `expected/project/xml-S123.json` when the notification action downloads it.
-It fails if neither directory exists, both exist, or no JSON results are found.
+It fails if no directory exists, multiple candidates exist, or no JSON results
+are found. Set `actual-root` to select a custom or ambiguous location.
 
 ```yaml
 - name: Prepare ruling artifact

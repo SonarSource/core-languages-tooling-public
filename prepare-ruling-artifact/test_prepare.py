@@ -54,6 +54,17 @@ class PrepareRulingArtifactTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue((Path(stage_path) / "expected/project/xml-S123.json").exists())
 
+    def test_stages_gradle_ruling_results(self) -> None:
+        for root in (
+            "its/ruling/build/actual",
+            "private/its/ruling/build/actual",
+            "build/actual",
+        ):
+            with self.subTest(root=root):
+                result, stage_path, _ = self.run_preparer((root,))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertTrue((Path(stage_path) / "expected/project/xml-S123.json").exists())
+
     def test_explicit_root_resolves_ambiguous_layout(self) -> None:
         result, stage_path, _ = self.run_preparer(
             ("its/ruling/target/actual", "private/its/ruling/target/actual"),
@@ -70,7 +81,14 @@ class PrepareRulingArtifactTests(unittest.TestCase):
         self.assertNotEqual(missing.returncode, 0)
         self.assertIn("No generated ruling directory", missing.stderr)
         self.assertNotEqual(ambiguous.returncode, 0)
-        self.assertIn("Both supported generated ruling directories", ambiguous.stderr)
+        self.assertIn("Multiple generated ruling directories", ambiguous.stderr)
+
+    def test_rejects_ambiguous_maven_and_gradle_results(self) -> None:
+        result, _, _ = self.run_preparer(
+            ("its/ruling/target/actual", "its/ruling/build/actual")
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Multiple generated ruling directories", result.stderr)
 
     def test_rejects_artifact_names_outside_consumer_pattern(self) -> None:
         result, _, _ = self.run_preparer(("its/ruling/target/actual",), artifact_name="ruling")

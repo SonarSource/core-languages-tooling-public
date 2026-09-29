@@ -8,14 +8,21 @@ fi
 
 actual_root="$ACTUAL_ROOT"
 if [ -z "$actual_root" ]; then
-  if [ -d its/ruling/target/actual ] && [ -d private/its/ruling/target/actual ]; then
-    echo "::error::Both supported generated ruling directories exist; set actual-root" >&2
-    exit 1
-  elif [ -d its/ruling/target/actual ]; then
-    actual_root=its/ruling/target/actual
-  elif [ -d private/its/ruling/target/actual ]; then
-    actual_root=private/its/ruling/target/actual
-  else
+  for candidate in \
+    its/ruling/target/actual \
+    private/its/ruling/target/actual \
+    its/ruling/build/actual \
+    private/its/ruling/build/actual \
+    build/actual; do
+    if [ -d "$candidate" ]; then
+      if [ -n "$actual_root" ]; then
+        echo "::error::Multiple generated ruling directories found; set actual-root" >&2
+        exit 1
+      fi
+      actual_root="$candidate"
+    fi
+  done
+  if [ -z "$actual_root" ]; then
     echo "::error::No generated ruling directory found; set actual-root" >&2
     exit 1
   fi
