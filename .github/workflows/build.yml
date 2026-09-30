@@ -37,3 +37,22 @@ jobs:
           cd pvf-comment
           python3 -m unittest discover -v -s . -p "test_pvf_comment_parser.py"
 
+  notify-build-failure:
+    needs: [run-python-tests]
+    if: >-
+      always()
+      && (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/heads/branch-') || startsWith(github.ref, 'refs/heads/dogfood-'))
+      && contains(needs.*.result, 'failure')
+    runs-on: github-ubuntu-latest-s
+    permissions:
+      actions: read
+      id-token: write
+    steps:
+      - name: Slack Notification
+        uses: SonarSource/core-languages-tooling-public/common-actions/slack-notify@v1
+        with:
+          slack-channel: squad-corelang-notifs
+          branch-patterns: ${{ format('{0},branch-*,dogfood-*', github.event.repository.default_branch) }}
+          github-token: ${{ github.token }}
+          branch: ${{ github.ref_name }}
+
