@@ -43,7 +43,7 @@ jobs:
       always()
       && (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/heads/branch-') || startsWith(github.ref, 'refs/heads/dogfood-'))
       && contains(needs.*.result, 'failure')
-    runs-on: sonar-xs
+    runs-on: github-ubuntu-latest-s
     permissions:
       actions: read
       id-token: write
