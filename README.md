@@ -10,4 +10,4 @@ Development tooling for Core Languages & Parsers squad — For artifacts accessi
 - **[pvf-comment](pvf-comment)** - Parses `/pvf` activation comments into structured outputs
 - **[pvf-trigger](pvf-trigger)** - Dispatches the PVF host workflow on a `/pvf` PR comment
 - **[pvf-result-comment](pvf-result-comment)** - Posts the PVF result (dashboard link, or run-logs fallback) on the PR
-- **[common-actions/slack-notify](common-actions/slack-notify)** - Sends a Slack notification summarizing failed check runs for a GitHub check_suite
+- **[common-actions/slack-notify](common-actions/slack-notify)** - Sends a Slack notification summarizing the failed jobs of the current workflow run (call it from a final `if: failure()` job)

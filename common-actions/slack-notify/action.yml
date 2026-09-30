@@ -1,5 +1,5 @@
 name: 'Slack Notification'
-description: 'Sends a Slack notification summarizing failed check runs'
+description: 'Sends a Slack notification summarizing this run''s failed jobs'
 author: 'SonarSource'
 
 inputs:
@@ -13,33 +13,18 @@ inputs:
     required: false
     default: 'main,master'
   github-token:
-    description: 'GitHub token used to query check run details via the GitHub API'
+    description: 'GitHub token used to query this run''s job details via the GitHub API'
     required: true
-  slack-title:
-    description: 'Title shown on the Slack failure notification'
-    required: false
-    default: 'Build failed'
   branch:
-    description: 'Branch to check against branch-patterns (e.g. github.event.check_suite.head_branch)'
+    description: 'Branch to check against branch-patterns (e.g. github.ref_name)'
     required: true
   conclusion:
-    description: 'Conclusion to check for failure (e.g. github.event.check_suite.conclusion)'
-    required: true
-  success-conclusions:
     description: >-
-      Comma-separated conclusions that count as a success/non-failure - shared by the
-      notify-gate check and the failed-check-run filter, so they can't drift apart.
+      Conclusion to check for failure. Only needed if the caller's job doesn't already
+      run exclusively on failure; default 'failure' covers a job gated by `if: failure()`
+      or similar.
     required: false
-    default: 'success,neutral,skipped'
-  custom-message:
-    description: >-
-      If set, used as the Slack message body (below the title line, which is always
-      prepended) instead of building one from a check_suite payload. Use this when
-      calling from a regular job (e.g. a final `if: failure()` job in the same workflow)
-      that has no check_suite event to read - check_suite events never fire for suites
-      created by GitHub Actions itself.
-    required: false
-    default: ''
+    default: 'failure'
 
 runs:
   using: 'composite'
@@ -51,7 +36,6 @@ runs:
         BRANCH: ${{ inputs.branch }}
         CONCLUSION: ${{ inputs.conclusion }}
         BRANCH_PATTERNS: ${{ inputs.branch-patterns }}
-        SUCCESS_CONCLUSIONS_CSV: ${{ inputs.success-conclusions }}
       run: |
         # Returns success (0) if $1 matches one of the comma-separated branch-patterns.
         # A trailing '*' in a pattern means prefix match; otherwise it's an exact match.
@@ -69,7 +53,8 @@ runs:
           return 1
         }
 
-        IFS=',' read -ra SUCCESS_CONCLUSIONS <<< "$SUCCESS_CONCLUSIONS_CSV"
+        # GitHub's fixed conclusion values that don't count as a failure.
+        SUCCESS_CONCLUSIONS=(success neutral skipped)
 
         SHOULD_NOTIFY=false
         if branch_matches "$BRANCH" && [[ ! " ${SUCCESS_CONCLUSIONS[*]} " =~ " ${CONCLUSION} " ]]; then
@@ -84,16 +69,13 @@ runs:
       with:
         secrets: development/kv/data/slack token | SLACK_TOKEN;
 
-    - name: Check run details
+    - name: Job details
       id: failedRun
       if: steps.check.outputs.should-notify == 'true'
       env:
         GH_TOKEN: ${{ inputs.github-token }}
         BRANCH: ${{ inputs.branch }}
-        CONCLUSION: ${{ inputs.conclusion }}
-        TITLE: ${{ inputs.slack-title }}
-        SUCCESS_CONCLUSIONS_CSV: ${{ inputs.success-conclusions }}
-        CUSTOM_MESSAGE: ${{ inputs.custom-message }}
+        WORKFLOW_NAME: ${{ github.workflow }}
       shell: bash
       run: bash "${{ github.action_path }}/check-run-details.sh"
 
