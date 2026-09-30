@@ -23,6 +23,7 @@ failed_jobs() {
     | select(.conclusion | not_in($success_conclusions))
     | "• <\(.html_url)|\(.name)>"
   '
+  return
 }
 
 # status == "completed" excludes the calling job itself (still in_progress here).
