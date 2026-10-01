@@ -12,6 +12,10 @@ inputs:
     description: 'Id of the comment to acknowledge with a reaction once the run is dispatched. Empty disables the reaction.'
     required: false
     default: ${{ github.event.comment.id }}
+  comment-author:
+    description: 'Login to mention when the command could not be dispatched. Empty posts the failure without a mention.'
+    required: false
+    default: ${{ github.event.comment.user.login }}
   build-workflow:
     description: 'Filename of the build workflow that uploads the candidate-version artifact'
     required: false
@@ -56,6 +60,7 @@ runs:
         rule-prefixes: ${{ inputs.rule-prefixes }}
 
     - name: Trigger performance validation
+      id: trigger
       if: steps.pvf.outputs.found == 'true'
       shell: bash
       env:
@@ -71,6 +76,13 @@ runs:
         USE_FAST_RUN: ${{ inputs.use-fast-run }}
       run: |
         set -euo pipefail
+        fail() {
+          # A reason spanning several lines would corrupt GITHUB_OUTPUT.
+          local reason="${1//$'\n'/ }"
+          echo "reason=${reason}" >> "$GITHUB_OUTPUT"
+          echo "$reason" >&2
+          exit 1
+        }
         pull="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")"
         head_ref="$(jq -r .head.ref <<<"$pull")"
         head_sha="$(jq -r .head.sha <<<"$pull")"
@@ -85,8 +97,7 @@ runs:
           fi
         done
         if [ ! -f candidate-version.txt ]; then
-          echo "No candidate-version artifact for ${head_sha}; wait for Build to finish" >&2
-          exit 1
+          fail "No candidate-version artifact for ${head_sha}; wait for Build to finish"
         fi
 
         TARGET_REPO="${TARGET_REPO:-$GITHUB_REPOSITORY}"
@@ -96,8 +107,7 @@ runs:
         extra_args=()
         if [ "$TARGET_REPO" != "$GITHUB_REPOSITORY" ]; then
           if [ -z "$TARGET_REF" ]; then
-            echo "target-ref is required for cross-repo dispatch to ${TARGET_REPO}; set it to the host repo default branch (e.g. master)" >&2
-            exit 1
+            fail "target-ref is required for cross-repo dispatch to ${TARGET_REPO}; set it to the host repo default branch (e.g. master)"
           fi
           ref="$TARGET_REF"
           extra_args+=(-f "analyzer-repo=${GITHUB_REPOSITORY}")
@@ -113,14 +123,18 @@ runs:
           extra_args+=(-f "use-fast-run=${USE_FAST_RUN}")
         fi
 
-        GH_TOKEN="$token" gh workflow run "$workflow" \
+        # A rejected dispatch (ref gone, workflow not dispatchable, token without actions:write) is
+        # the likeliest failure, so report what gh says about it rather than a bare "it failed".
+        if ! dispatch_error="$(GH_TOKEN="$token" gh workflow run "$workflow" \
           --repo "$TARGET_REPO" \
           --ref "$ref" \
           -f "candidate-version=$(cat candidate-version.txt)" \
           -f "rules-request=${RULES_REQUEST}" \
           -f "pr-number=${PR_NUMBER}" \
           -f "run-description=${title}" \
-          ${extra_args[@]+"${extra_args[@]}"}
+          ${extra_args[@]+"${extra_args[@]}"} 2>&1)"; then
+          fail "${TARGET_REPO} rejected the dispatch of ${workflow} on ${ref}: ${dispatch_error}"
+        fi
 
     # Best-effort: a caller that has not granted pull-requests:write must still get its run dispatched.
     - name: Acknowledge the /pvf comment
@@ -135,3 +149,21 @@ runs:
         gh api --method POST \
           "repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT_ID}/reactions" \
           -f content=eyes
+
+    - name: Report the /pvf failure
+      if: failure()
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        PR_NUMBER: ${{ inputs.pr-number }}
+        COMMENT_AUTHOR: ${{ inputs.comment-author }}
+        REASON: ${{ steps.trigger.outputs.reason }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: |
+        set -euo pipefail
+        mention=""
+        if [ -n "$COMMENT_AUTHOR" ]; then
+          mention="@${COMMENT_AUTHOR} "
+        fi
+        gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
+          --body "${mention}❌ Your \`/pvf\` command was not dispatched: ${REASON:-unexpected failure}. [See the failed run](${RUN_URL})."
