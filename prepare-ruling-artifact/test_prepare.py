@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 
-SCRIPT = Path(__file__).with_name("prepare.sh")
+SCRIPT = Path(__file__).with_name("prepare.py")
 
 
 class PrepareRulingArtifactTests(unittest.TestCase):
@@ -16,6 +17,7 @@ class PrepareRulingArtifactTests(unittest.TestCase):
         roots: tuple[str, ...],
         actual_root: str = "",
         artifact_name: str = "actual_ruling",
+        create_json: bool = True,
     ) -> tuple[subprocess.CompletedProcess[str], str | None, Path]:
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
@@ -23,10 +25,11 @@ class PrepareRulingArtifactTests(unittest.TestCase):
         for root in roots:
             project = workspace / root / "project"
             project.mkdir(parents=True)
-            (project / "xml-S123.json").write_text('{"rule": [1]}')
+            if create_json:
+                (project / "xml-S123.json").write_text('{"rule": [1]}')
         output = workspace / "github-output"
         result = subprocess.run(
-            ("bash", str(SCRIPT)),
+            (sys.executable, str(SCRIPT)),
             cwd=workspace,
             env={
                 **os.environ,
@@ -82,6 +85,14 @@ class PrepareRulingArtifactTests(unittest.TestCase):
         self.assertIn("No generated ruling directory", missing.stderr)
         self.assertNotEqual(ambiguous.returncode, 0)
         self.assertIn("Multiple generated ruling directories", ambiguous.stderr)
+
+    def test_rejects_directory_without_json(self) -> None:
+        result, stage_path, _ = self.run_preparer(
+            ("its/ruling/target/actual",), create_json=False
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIsNone(stage_path)
+        self.assertIn("No generated ruling JSON files", result.stderr)
 
     def test_rejects_ambiguous_maven_and_gradle_results(self) -> None:
         result, _, _ = self.run_preparer(

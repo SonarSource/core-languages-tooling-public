@@ -1,5 +1,5 @@
 name: 'Prepare Ruling Artifact'
-description: 'Upload generated ruling results in the layout consumed by ruling-update-and-notify'
+description: 'Upload generated ruling results from a test job for a separate update job'
 
 inputs:
   actual-root:
@@ -20,7 +20,12 @@ runs:
       env:
         ACTUAL_ROOT: ${{ inputs.actual-root }}
         ARTIFACT_NAME: ${{ inputs.artifact-name }}
-      run: bash "${{ github.action_path }}/prepare.sh"
+      run: |
+        if command -v python3 >/dev/null 2>&1; then
+          python3 "${{ github.action_path }}/prepare.py"
+        else
+          python "${{ github.action_path }}/prepare.py"
+        fi
 
     - name: Upload ruling results
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

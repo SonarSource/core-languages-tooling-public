@@ -24,8 +24,9 @@ jobs:
   ruling:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
+    outputs:
+      ruling-failed: ${{ steps.ruling.outcome == 'failure' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -47,12 +48,37 @@ jobs:
         if: ${{ always() && steps.ruling.outcome == 'failure' }}
         uses: SonarSource/core-languages-tooling-public/prepare-ruling-artifact@master
 
+  ruling-update-notify:
+    needs: ruling
+    if: ${{ always() && needs.ruling.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Update ruling and notify
-        if: always()
         uses: SonarSource/core-languages-tooling-public/ruling-update-and-notify@master
         with:
-          ruling-failed: ${{ steps.ruling.outcome == 'failure' }}
+          ruling-failed: ${{ needs.ruling.outputs.ruling-failed }}
 ```
+
+## Why Separate Jobs?
+
+Test jobs generate local `target/actual` or `build/actual` results and upload
+them as `actual_*` artifacts. A downstream job downloads those artifacts into
+the expectation tree and creates a fix PR. This permits parallel ruling tests
+without giving test jobs permission to push branches or create PRs. When tests
+pass, the downstream job still runs to close an obsolete fix PR.
+
+The current consumer merges **all** `actual_*` artifacts and creates **one**
+fix PR per target branch. Producers must write disjoint project paths, or one
+platform must be selected as the canonical source for overlapping projects.
+Per-project fix PRs would require scoped artifact selection, unique fix-branch
+names, and matching cleanup; the current actions do not provide that mode.
 
 ## Inputs
 

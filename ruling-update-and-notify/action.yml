@@ -1,5 +1,5 @@
 name: 'Ruling Update and Notify'
-description: 'Updates ruling results when tests fail and notifies via PR comments'
+description: 'Consumes ruling artifacts from test jobs, updates expectations, and notifies via PR comments'
 author: 'SonarSource'
 
 inputs:
@@ -175,7 +175,6 @@ runs:
         repository: ${{ github.repository }}
         base-sha: ${{ steps.create-fix-pr.outputs.fix-base-sha }}
         head-sha: ${{ steps.create-fix-pr.outputs.fix-sha }}
-        ruling-root: ${{ steps.ruling-paths.outputs.ruling-root }}
         sources-root: ${{ steps.ruling-paths.outputs.sources-root }}
       env:
         GH_TOKEN: ${{ github.token }}
