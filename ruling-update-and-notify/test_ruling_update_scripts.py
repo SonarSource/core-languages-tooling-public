@@ -91,12 +91,16 @@ class FixPullRequestTests(unittest.TestCase):
             return ""
 
         with patch.object(create_fix_pr, "output", side_effect=command_output):
-            url, base_sha, sha = create_fix_pr.create_fix_pr("feature", "its/ruling", "")
+            url, base_sha, sha = create_fix_pr.create_fix_pr("feature", "its/ruling", "123")
 
         self.assertEqual(url, "https://github.com/org/repo/pull/1")
         self.assertEqual(base_sha, "b" * 40)
         self.assertEqual(sha, "a" * 40)
         run.assert_any_call("git", "push", "origin", "fix/update-ruling-for-feature")
+        run.assert_any_call(
+            "gh", "pr", "comment", "123", "--body",
+            "⚖️ Ruling update ready for review: https://github.com/org/repo/pull/1",
+        )
         remote.assert_called_once()
         staged.assert_called_once()
 

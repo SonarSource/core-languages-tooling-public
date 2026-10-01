@@ -161,9 +161,7 @@ When ruling differences are detected, the action posts a comment like:
 
 [View code snippet for project/file.py:42]
 ---
-❌ **Ruling needs updating.** A fix PR has been created: https://github.com/org/repo/pull/123
-
-Please review and merge it into your branch.
+⚖️ Ruling update ready for review: https://github.com/org/repo/pull/123
 ```
 
 ## License

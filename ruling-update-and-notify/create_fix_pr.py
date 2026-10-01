@@ -81,8 +81,7 @@ def create_fix_pr(target_ref: str, ruling_root: str, pr_number: str) -> tuple[st
     if pr_number and fix_pr_url:
         run(
             "gh", "pr", "comment", pr_number, "--body",
-            f"❌ **Ruling needs updating.** A fix PR has been created: {fix_pr_url}\n\n"
-            "Please review and merge it into your branch.",
+            f"⚖️ Ruling update ready for review: {fix_pr_url}",
         )
     return fix_pr_url, fix_base_sha, fix_sha
 
