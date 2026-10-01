@@ -4,10 +4,9 @@ Packages generated ruling results as an `actual_*` artifact for
 `ruling-update-and-notify`.
 
 By default, the action finds `target/actual` (Maven) or `build/actual` (Gradle)
-under `its/ruling` or `private/its/ruling`. It also accepts a repository-root
-`build/actual` directory. It copies the contents under `expected/` in the
-uploaded artifact, so a generated `project/xml-S123.json` becomes
-`expected/project/xml-S123.json` when the notification action downloads it.
+under `its/ruling` or `private/its/ruling`. It copies the contents under
+`expected/` in the uploaded artifact, so a generated `project/xml-S123.json`
+becomes `expected/project/xml-S123.json` when the notification action downloads it.
 It fails if none or multiple standard directories exist, or if the chosen
 one contains no JSON results. Errors list the checked directories.
 Python 3 must be available as `python3` or `python` on the runner.

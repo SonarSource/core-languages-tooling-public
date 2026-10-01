@@ -59,7 +59,6 @@ class PrepareRulingArtifactTests(unittest.TestCase):
         for root in (
             "its/ruling/build/actual",
             "private/its/ruling/build/actual",
-            "build/actual",
         ):
             with self.subTest(root=root):
                 result, stage_path, _ = self.run_preparer((root,))
@@ -75,7 +74,6 @@ class PrepareRulingArtifactTests(unittest.TestCase):
         self.assertIn("No generated ruling directory", missing.stderr)
         self.assertIn("its/ruling/target/actual", missing.stderr)
         self.assertIn("private/its/ruling/build/actual", missing.stderr)
-        self.assertIn("build/actual", missing.stderr)
         self.assertNotEqual(ambiguous.returncode, 0)
         self.assertIn("Multiple generated ruling directories", ambiguous.stderr)
         self.assertIn("its/ruling/target/actual", ambiguous.stderr)
@@ -86,6 +84,11 @@ class PrepareRulingArtifactTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("No generated ruling directory", result.stderr)
         self.assertIn("its/ruling/target/actual", result.stderr)
+
+    def test_rejects_repository_root_build_directory(self) -> None:
+        result, _, _ = self.run_preparer(("build/actual",))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("No generated ruling directory", result.stderr)
 
     def test_rejects_directory_without_json(self) -> None:
         result, stage_path, _ = self.run_preparer(

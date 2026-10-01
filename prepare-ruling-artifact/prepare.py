@@ -13,7 +13,6 @@ ACTUAL_ROOTS = (
     Path("private/its/ruling/target/actual"),
     Path("its/ruling/build/actual"),
     Path("private/its/ruling/build/actual"),
-    Path("build/actual"),
 )
 
 

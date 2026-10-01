@@ -1,3 +1,11 @@
+"""Copy downloaded ruling artifacts into the repository's expectation tree.
+
+The action merges ``actual_*`` artifacts into ``ruling-artifacts-temp``. This
+script checks the download, copies its contents into the detected ruling
+resources directory, and removes the temporary directory. A later step handles
+committing the updated expectations and creating a fix PR.
+"""
+
 from __future__ import annotations
 
 import os
