@@ -17,14 +17,17 @@ ACTUAL_ROOTS = (
 )
 
 
-def select_actual_root(override: str) -> Path:
-    if override:
-        return Path(override)
+def select_actual_root() -> Path:
     candidates = [root for root in ACTUAL_ROOTS if root.is_dir()]
+    checked_roots = ", ".join(str(root) for root in ACTUAL_ROOTS)
     if len(candidates) > 1:
-        raise ValueError("Multiple generated ruling directories found; set actual-root")
+        found_roots = ", ".join(str(root) for root in candidates)
+        raise ValueError(
+            f"Multiple generated ruling directories found: {found_roots}. "
+            f"Expected exactly one of: {checked_roots}"
+        )
     if not candidates:
-        raise ValueError("No generated ruling directory found; set actual-root")
+        raise ValueError(f"No generated ruling directory found. Checked: {checked_roots}")
     return candidates[0]
 
 
@@ -34,7 +37,7 @@ def main() -> int:
             "artifact-name must begin with actual_ and contain only letters, numbers, _, ., or -"
         )
 
-    actual_root = select_actual_root(os.environ["ACTUAL_ROOT"])
+    actual_root = select_actual_root()
     if not actual_root.is_dir() or not any(
         path.is_file() and not path.is_symlink()
         for path in actual_root.rglob("*.json")

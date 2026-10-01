@@ -2,10 +2,6 @@ name: 'Prepare Ruling Artifact'
 description: 'Upload generated ruling results from a test job for a separate update job'
 
 inputs:
-  actual-root:
-    description: 'Generated ruling directory; auto-detected for standard Maven and Gradle layouts when omitted'
-    required: false
-    default: ''
   artifact-name:
     description: 'Unique artifact name beginning with actual_'
     required: false
@@ -18,7 +14,6 @@ runs:
       id: stage
       shell: bash
       env:
-        ACTUAL_ROOT: ${{ inputs.actual-root }}
         ARTIFACT_NAME: ${{ inputs.artifact-name }}
       run: |
         if command -v python3 >/dev/null 2>&1; then

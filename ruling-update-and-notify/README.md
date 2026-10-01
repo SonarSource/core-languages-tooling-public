@@ -85,19 +85,14 @@ names, and matching cleanup; the current actions do not provide that mode.
 | Input | Description | Required |
 |-------|-------------|----------|
 | `ruling-failed` | Whether the ruling test failed (`true` or `false`) | Yes |
-| `ruling-root` | Override the expected ruling directory when it is not the standard resources directory | No |
 
-The action detects the ruling directory from `its/ruling/src/test/resources` or
-`private/its/ruling/src/test/resources` and uses the corresponding `its/sources`
-or `private/its/sources` path for snippets. It fails if both ruling directories
-exist or neither exists when the ruling test fails. On a successful test, it
-needs no ruling directory.
-
-For example, sonar-java should set `ruling-root: its/ruling/src/test/resources/expected`.
-Callers migrating to this version should remove the former `pr-number` and
-`sources-root` inputs; PR context comes from the event and the sources path is
-derived from the ruling directory. Keep `ruling-root` only when the expected
-results live in a subdirectory of the standard resources directory.
+When ruling tests fail, the action checks for exactly one of
+`its/ruling/src/test/resources/expected` and
+`private/its/ruling/src/test/resources/expected`. It reports both paths if
+neither or both exist, and uses the corresponding `its/sources` or
+`private/its/sources` path for snippets. Successful tests need no ruling
+directory. PR context comes from the event; callers should remove former
+`pr-number`, `sources-root`, and `ruling-root` inputs.
 
 PR details come from the GitHub event. On a push, the action can create or
 clean up a fix PR, but it does not post a comment on an original PR.
@@ -143,9 +138,10 @@ clean up a fix PR, but it does not post a comment on an original PR.
 5. If no differences or ruling passed:
    - Closes any stale fix PRs that may exist
 
-Artifact copying and fix-PR creation are implemented in `sync_ruling_artifacts.py`
-and `create_fix_pr.py`; the composite action passes them the GitHub context and
-publishes their outputs.
+Directory detection, artifact copying, fix-PR creation, and stale-PR cleanup
+are implemented in `find_ruling_directory.py`, `sync_ruling_artifacts.py`,
+`create_fix_pr.py`, and `cleanup_fix_pr.py`. The composite action passes them
+the GitHub context and publishes their outputs.
 
 ## Example PR Comment
 

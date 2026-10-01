@@ -61,7 +61,9 @@ its/ruling/src/test/resources/expected/<project-key>/
 private/its/ruling/src/test/resources/expected/<project-key>/
 ```
 
-Generated actual results live under `target/actual/<project-key>/` (Maven) or `build/actual/<project-key>/` (Gradle). This action compares committed expectations across revisions; it does not read generated actual files. The ruling directory is not configurable through the action.
+Generated actual results live under `target/actual/<project-key>/` (Maven) or
+`build/actual/<project-key>/` (Gradle). This action compares committed
+expectations across revisions; it does not read generated actual files.
 
 ### Source File Resolution
 

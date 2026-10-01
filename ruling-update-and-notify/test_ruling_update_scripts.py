@@ -8,7 +8,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import cleanup_fix_pr
 import create_fix_pr
+import find_ruling_directory
 import sync_ruling_artifacts
 
 
@@ -119,6 +121,90 @@ class FixPullRequestTests(unittest.TestCase):
         self.assertFalse(any(call.args[:2] == ("git", "push") for call in run.call_args_list))
         remote.assert_called_once()
         staged.assert_called_once()
+
+
+class FindRulingDirectoryTests(unittest.TestCase):
+    def test_selects_public_or_private_expected_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / find_ruling_directory.PUBLIC_ROOT / "expected").mkdir(parents=True)
+            self.assertEqual(find_ruling_directory.find_ruling_paths(root), (
+                find_ruling_directory.PUBLIC_ROOT, Path("its/sources"),
+            ))
+
+            (root / find_ruling_directory.PUBLIC_ROOT / "expected").rmdir()
+            (root / find_ruling_directory.PRIVATE_ROOT / "expected").mkdir(parents=True)
+            self.assertEqual(find_ruling_directory.find_ruling_paths(root), (
+                find_ruling_directory.PRIVATE_ROOT, Path("private/its/sources"),
+            ))
+
+    def test_reports_missing_and_ambiguous_expected_directories(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            public_expected = root / find_ruling_directory.PUBLIC_ROOT / "expected"
+            private_expected = root / find_ruling_directory.PRIVATE_ROOT / "expected"
+            with self.assertRaisesRegex(ValueError, "No expected ruling directory found") as missing:
+                find_ruling_directory.find_ruling_paths(root)
+            self.assertIn(str(find_ruling_directory.PUBLIC_ROOT / "expected"), str(missing.exception))
+            self.assertIn(str(find_ruling_directory.PRIVATE_ROOT / "expected"), str(missing.exception))
+
+            public_expected.mkdir(parents=True)
+            private_expected.mkdir(parents=True)
+            with self.assertRaisesRegex(ValueError, "Both expected ruling directories exist") as ambiguous:
+                find_ruling_directory.find_ruling_paths(root)
+            self.assertIn(str(find_ruling_directory.PUBLIC_ROOT / "expected"), str(ambiguous.exception))
+            self.assertIn(str(find_ruling_directory.PRIVATE_ROOT / "expected"), str(ambiguous.exception))
+
+    def test_main_publishes_roots(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output_path = Path(directory) / "output"
+            with (
+                patch.dict(find_ruling_directory.os.environ, {"GITHUB_OUTPUT": str(output_path)}),
+                patch.object(find_ruling_directory, "find_ruling_paths", return_value=(
+                    find_ruling_directory.PUBLIC_ROOT, Path("its/sources"),
+                )),
+            ):
+                self.assertEqual(find_ruling_directory.main(), 0)
+            self.assertEqual(output_path.read_text(),
+                "ruling-root=its/ruling/src/test/resources\nsources-root=its/sources\n")
+
+
+class CleanupFixPullRequestTests(unittest.TestCase):
+    @patch.object(cleanup_fix_pr.subprocess, "run")
+    def test_closes_open_pr_and_deletes_fix_branch(self, process) -> None:
+        process.side_effect = [
+            SimpleNamespace(returncode=0, stdout="OPEN\n"),
+            SimpleNamespace(returncode=0),
+            SimpleNamespace(returncode=1),
+        ]
+        self.assertTrue(cleanup_fix_pr.cleanup_fix_pr("feature"))
+        branch = "fix/update-ruling-for-feature"
+        self.assertEqual(process.call_args_list[0].args[0],
+            ("gh", "pr", "view", branch, "--json", "state", "--jq", ".state"))
+        self.assertEqual(process.call_args_list[1].args[0][:4], ("gh", "pr", "close", branch))
+        self.assertEqual(process.call_args_list[2].args[0],
+            ("git", "push", "origin", "--delete", branch))
+        self.assertTrue(process.call_args_list[1].kwargs["check"])
+        self.assertFalse(process.call_args_list[2].kwargs["check"])
+
+    @patch.object(cleanup_fix_pr.subprocess, "run")
+    def test_no_open_pr_does_not_delete_branch(self, process) -> None:
+        for result in (SimpleNamespace(returncode=1, stdout=""),
+                       SimpleNamespace(returncode=0, stdout="CLOSED\n")):
+            process.reset_mock()
+            process.return_value = result
+            self.assertFalse(cleanup_fix_pr.cleanup_fix_pr("feature"))
+            process.assert_called_once()
+
+    @patch.object(cleanup_fix_pr.subprocess, "run")
+    def test_close_failure_prevents_branch_deletion(self, process) -> None:
+        process.side_effect = [
+            SimpleNamespace(returncode=0, stdout="OPEN\n"),
+            cleanup_fix_pr.subprocess.CalledProcessError(1, "gh pr close"),
+        ]
+        with self.assertRaises(cleanup_fix_pr.subprocess.CalledProcessError):
+            cleanup_fix_pr.cleanup_fix_pr("feature")
+        self.assertEqual(process.call_count, 2)
 
 
 if __name__ == "__main__":

@@ -6,10 +6,6 @@ inputs:
   ruling-failed:
     description: 'Whether the ruling test failed (true/false)'
     required: true
-  ruling-root:
-    description: 'Expected ruling directory; overrides standard directory detection'
-    required: false
-    default: ''
 
 outputs:
   has-differences:
@@ -32,38 +28,7 @@ runs:
       id: ruling-paths
       if: inputs.ruling-failed == 'true'
       shell: bash
-      env:
-        RULING_ROOT_OVERRIDE: ${{ inputs.ruling-root }}
-      run: |
-        if [ -n "$RULING_ROOT_OVERRIDE" ]; then
-          if [ ! -d "$RULING_ROOT_OVERRIDE" ]; then
-            echo "::error::Ruling directory does not exist: $RULING_ROOT_OVERRIDE"
-            exit 1
-          fi
-          case "$RULING_ROOT_OVERRIDE" in
-            private/its/ruling/src/test/resources/*|private/its/ruling/src/test/resources)
-              SOURCES_ROOT=private/its/sources ;;
-            its/ruling/src/test/resources/*|its/ruling/src/test/resources)
-              SOURCES_ROOT=its/sources ;;
-            *)
-              echo "::error::ruling-root must be inside a supported ruling directory"
-              exit 1 ;;
-          esac
-          echo "ruling-root=$RULING_ROOT_OVERRIDE" >> "$GITHUB_OUTPUT"
-          echo "sources-root=$SOURCES_ROOT" >> "$GITHUB_OUTPUT"
-        elif [ -d its/ruling/src/test/resources ] && [ -d private/its/ruling/src/test/resources ]; then
-          echo "::error::Both supported ruling directories exist; cannot choose one"
-          exit 1
-        elif [ -d its/ruling/src/test/resources ]; then
-          echo "ruling-root=its/ruling/src/test/resources" >> "$GITHUB_OUTPUT"
-          echo "sources-root=its/sources" >> "$GITHUB_OUTPUT"
-        elif [ -d private/its/ruling/src/test/resources ]; then
-          echo "ruling-root=private/its/ruling/src/test/resources" >> "$GITHUB_OUTPUT"
-          echo "sources-root=private/its/sources" >> "$GITHUB_OUTPUT"
-        else
-          echo "::error::Neither supported ruling directory exists"
-          exit 1
-        fi
+      run: python3 "${{ github.action_path }}/find_ruling_directory.py"
 
     - name: Setup environment variables
       id: setup-env
@@ -187,13 +152,4 @@ runs:
       env:
         GH_TOKEN: ${{ github.token }}
         TARGET_REF: ${{ steps.setup-env.outputs.target-ref }}
-      run: |
-        FIX_BRANCH="fix/update-ruling-for-${TARGET_REF}"
-
-        # Check if there's an open PR for the fix branch
-        FIX_PR_STATE=$(gh pr view "$FIX_BRANCH" --json state --jq '.state' 2>/dev/null || true)
-        if [ "$FIX_PR_STATE" = "OPEN" ]; then
-          echo "Closing stale fix PR"
-          gh pr close "$FIX_BRANCH" --comment "No longer needed — the original PR is now up to date."
-          git push origin --delete "$FIX_BRANCH" 2>/dev/null || true
-        fi
+      run: python3 "${{ github.action_path }}/cleanup_fix_pr.py"

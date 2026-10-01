@@ -15,7 +15,6 @@ class PrepareRulingArtifactTests(unittest.TestCase):
     def run_preparer(
         self,
         roots: tuple[str, ...],
-        actual_root: str = "",
         artifact_name: str = "actual_ruling",
         create_json: bool = True,
     ) -> tuple[subprocess.CompletedProcess[str], str | None, Path]:
@@ -33,7 +32,6 @@ class PrepareRulingArtifactTests(unittest.TestCase):
             cwd=workspace,
             env={
                 **os.environ,
-                "ACTUAL_ROOT": actual_root,
                 "ARTIFACT_NAME": artifact_name,
                 "RUNNER_TEMP": str(workspace),
                 "GITHUB_OUTPUT": str(output),
@@ -68,14 +66,6 @@ class PrepareRulingArtifactTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertTrue((Path(stage_path) / "expected/project/xml-S123.json").exists())
 
-    def test_explicit_root_resolves_ambiguous_layout(self) -> None:
-        result, stage_path, _ = self.run_preparer(
-            ("its/ruling/target/actual", "private/its/ruling/target/actual"),
-            actual_root="its/ruling/target/actual",
-        )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertTrue((Path(stage_path) / "expected/project/xml-S123.json").exists())
-
     def test_rejects_missing_and_ambiguous_layouts(self) -> None:
         missing, _, _ = self.run_preparer(())
         ambiguous, _, _ = self.run_preparer(
@@ -83,8 +73,19 @@ class PrepareRulingArtifactTests(unittest.TestCase):
         )
         self.assertNotEqual(missing.returncode, 0)
         self.assertIn("No generated ruling directory", missing.stderr)
+        self.assertIn("its/ruling/target/actual", missing.stderr)
+        self.assertIn("private/its/ruling/build/actual", missing.stderr)
+        self.assertIn("build/actual", missing.stderr)
         self.assertNotEqual(ambiguous.returncode, 0)
         self.assertIn("Multiple generated ruling directories", ambiguous.stderr)
+        self.assertIn("its/ruling/target/actual", ambiguous.stderr)
+        self.assertIn("private/its/ruling/target/actual", ambiguous.stderr)
+
+    def test_rejects_nonstandard_directory(self) -> None:
+        result, _, _ = self.run_preparer(("custom/actual",))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("No generated ruling directory", result.stderr)
+        self.assertIn("its/ruling/target/actual", result.stderr)
 
     def test_rejects_directory_without_json(self) -> None:
         result, stage_path, _ = self.run_preparer(
