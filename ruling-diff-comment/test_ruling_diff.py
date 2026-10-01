@@ -24,7 +24,7 @@ class FakeRulingDiffIO:
         self,
         json_by_ref_path: dict[tuple[str, str], dict[str, list[int]] | None],
         text_by_ref_path: dict[tuple[str, str], str | None],
-        ruling_root: str = "private/its-enterprise/ruling/src/test/resources/expected_ruling",
+        ruling_root: str | None = None,
         sources_root: str = "private/its-enterprise/sources_ruling",
     ) -> None:
         self.json_by_ref_path = json_by_ref_path
@@ -48,20 +48,73 @@ class FakeRulingDiffIO:
         return f"sources/{project}/{file_path.lstrip('/')}"
 
 
+class ChangedRulingFilesTest(unittest.TestCase):
+    def test_discovers_both_expected_roots(self) -> None:
+        standard = "its/ruling/src/test/resources/expected/alpha/java-S100.json"
+        enterprise = "private/its/ruling/src/test/resources/expected/beta/java-S200.json"
+        maven_actual = "its/ruling/target/actual/alpha/java-S300.json"
+        gradle_actual = "private/its/ruling/build/actual/beta/java-S300.json"
+        obsolete = (
+            "private/its-enterprise/ruling/src/test/resources/expected_ruling/"
+            "alpha/java-S400.json"
+        )
+        with patch.object(
+            io,
+            "run_command",
+            return_value="\n".join(
+                (enterprise, maven_actual, gradle_actual, standard, obsolete)
+            ),
+        ) as run_command:
+            changed = io.get_changed_ruling_files("base", "head")
+
+        self.assertEqual(changed, [standard, enterprise])
+        run_command.assert_called_once_with(
+            [
+                "git",
+                "diff",
+                "--name-only",
+                "base...head",
+                "--",
+                "its/ruling/src/test/resources/expected/",
+                "private/its/ruling/src/test/resources/expected/",
+            ]
+        )
+
+    def test_explicit_root_restricts_discovery(self) -> None:
+        root = "custom/expected"
+        with patch.object(
+            io, "run_command", return_value=f"{root}/alpha/java-S100.json"
+        ) as run_command:
+            changed = io.get_changed_ruling_files("base", "head", root)
+
+        self.assertEqual(changed, [f"{root}/alpha/java-S100.json"])
+        run_command.assert_called_once_with(
+            ["git", "diff", "--name-only", "base...head", "--", f"{root}/"]
+        )
+
+
 class ParsePathTest(unittest.TestCase):
+    def test_parse_standard_ruling_path(self) -> None:
+        path = "its/ruling/src/test/resources/expected/airflow/python-S1066.json"
+        self.assertEqual(core.parse_ruling_path(path), ("airflow", "python", "S1066"))
+
+    def test_rejects_generated_actual_path(self) -> None:
+        with self.assertRaises(ValueError):
+            core.parse_ruling_path("its/ruling/target/actual/airflow/python-S1066.json")
+
     def test_parse_ruling_path(self) -> None:
-        path = "private/its-enterprise/ruling/src/test/resources/expected_ruling/airflow/python-S1066.json"
+        path = "private/its/ruling/src/test/resources/expected/airflow/python-S1066.json"
         self.assertEqual(core.parse_ruling_path(path), ("airflow", "python", "S1066"))
 
     def test_parse_ruling_path_with_pythonenterprise(self) -> None:
-        path = "private/its-enterprise/ruling/src/test/resources/expected_ruling/specific-rules/pythonenterprise-S7471.json"
+        path = "private/its/ruling/src/test/resources/expected/specific-rules/pythonenterprise-S7471.json"
         self.assertEqual(
             core.parse_ruling_path(path),
             ("specific-rules", "pythonenterprise", "S7471"),
         )
 
     def test_parse_ruling_path_with_legacy_key(self) -> None:
-        path = "private/its-enterprise/ruling/src/test/resources/expected_ruling/scikit-learn/python-LineLength.json"
+        path = "private/its/ruling/src/test/resources/expected/scikit-learn/python-LineLength.json"
         self.assertEqual(
             core.parse_ruling_path(path),
             ("scikit-learn", "python", "LineLength"),
@@ -389,7 +442,7 @@ class SnippetRenderingTest(unittest.TestCase):
 class BuildRuleDiffsWithIOTest(unittest.TestCase):
     def test_build_rule_diffs_uses_io_object_and_respects_refs(self) -> None:
         changed_file = (
-            "private/its-enterprise/ruling/src/test/resources/expected_ruling/"
+            "its/ruling/src/test/resources/expected/"
             "airflow/python-S107.json"
         )
         io_impl = FakeRulingDiffIO(
@@ -419,7 +472,7 @@ class BuildRuleDiffsWithIOTest(unittest.TestCase):
 
     def test_build_rule_diffs_caches_source_loads_per_ref_and_path(self) -> None:
         changed_file = (
-            "private/its-enterprise/ruling/src/test/resources/expected_ruling/"
+            "private/its/ruling/src/test/resources/expected/"
             "airflow/python-S107.json"
         )
         io_impl = FakeRulingDiffIO(
@@ -440,7 +493,7 @@ class BuildRuleDiffsWithIOTest(unittest.TestCase):
 
     def test_build_rule_diffs_missing_source_produces_placeholder_snippet(self) -> None:
         changed_file = (
-            "private/its-enterprise/ruling/src/test/resources/expected_ruling/"
+            "private/its/ruling/src/test/resources/expected/"
             "airflow/python-S107.json"
         )
         io_impl = FakeRulingDiffIO(

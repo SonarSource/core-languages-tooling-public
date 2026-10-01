@@ -28,8 +28,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--head-sha", required=True)
     parser.add_argument(
         "--ruling-root",
-        default="private/its-enterprise/ruling/src/test/resources/expected_ruling",
-        help="Path to ruling directory"
+        help="Override the standard and enterprise expected ruling directories"
     )
     parser.add_argument(
         "--sources-root",
