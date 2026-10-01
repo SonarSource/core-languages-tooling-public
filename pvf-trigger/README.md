@@ -10,6 +10,13 @@ budget already used by the PVF framework chain.
 Internally it calls the [`pvf-comment`](../pvf-comment) parser action. When a `/pvf` command is found
 it invokes the host workflow (`performance-validation.yml` by default) in the target-repo (caller by default).
 
+## Feedback on the comment
+
+The commenter learns the outcome without waiting for the benchmark: a 👀 reaction on their comment
+once the run is dispatched, or a reply mentioning them with the reason and a link to the failed run.
+The reaction is best-effort, so a caller that has not granted `pull-requests: write` still gets its
+run dispatched.
+
 ## Two modes
 
 - **Same-repo (default):** the host workflow (`performance-validation.yml` by default) lives in the
@@ -25,6 +32,8 @@ it invokes the host workflow (`performance-validation.yml` by default) in the ta
 |-------|-------------|----------|---------|
 | `comment` | Comment body to scan for a `/pvf` command | Yes | |
 | `pr-number` | Pull request number the comment was posted on | Yes | |
+| `comment-id` | Id of the comment to acknowledge with a 👀 reaction once the run is dispatched. Empty ⇒ no reaction. | No | the triggering comment |
+| `comment-author` | Login to mention when the command could not be dispatched. Empty ⇒ no mention. | No | the comment author |
 | `build-workflow` | Filename of the build workflow that uploads the `candidate-version` artifact | No | `build.yml` |
 | `rule-prefixes` | Space-separated rule-key prefixes passed to the parser | No | `S` |
 | `target-repo` | `owner/name` of the repo hosting the host workflow (`performance-validation.yml` by default). Cross-repo target for a gated dashboard. | No | current repo |
@@ -39,8 +48,8 @@ can post the dashboard link back onto the analyzer PR.
 
 ## Requirements
 
-- **Same-repo:** the caller job grants `actions:write`, `contents:read` and `pull-requests:read`.
-- **Cross-repo:** the caller job grants `actions:read`, `contents:read`, `pull-requests:read`, `id-token:write`,
+- **Same-repo:** the caller job grants `actions:write`, `contents:read` and `pull-requests:write`.
+- **Cross-repo:** the caller job grants `actions:read`, `contents:read`, `pull-requests:write`, `id-token:write`,
   and provides a `dispatch-token` with `actions:write` on `target-repo`.
 - 
 - The build workflow must upload a `candidate-version` artifact containing the deployed plugin version
