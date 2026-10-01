@@ -7,7 +7,7 @@ from pathlib import Path
 
 from ruling_diff_core_lib.models_and_constants import (
     COMMENT_MARKER,
-    EXPECTED_RULING_ROOT,
+    EXPECTED_RULING_ROOTS,
     PROJECT_SOURCE_OVERRIDES,
 )
 
@@ -25,7 +25,7 @@ class CommandError(RuntimeError):
 class GitHubActionIO:
     def __init__(
         self,
-        ruling_root: str = EXPECTED_RULING_ROOT,
+        ruling_root: str | None = None,
         sources_root: str = RULING_SOURCES_SUBMODULE,
     ):
         self.ruling_root = ruling_root
@@ -132,7 +132,10 @@ def parse_json_documents(content: str) -> list[object]:
     return documents
 
 
-def get_changed_ruling_files(base_sha: str, head_sha: str, ruling_root: str = EXPECTED_RULING_ROOT) -> list[str]:
+def get_changed_ruling_files(
+    base_sha: str, head_sha: str, ruling_root: str | None = None
+) -> list[str]:
+    ruling_roots = (ruling_root,) if ruling_root is not None else EXPECTED_RULING_ROOTS
     output = run_command(
         [
             "git",
@@ -140,7 +143,7 @@ def get_changed_ruling_files(base_sha: str, head_sha: str, ruling_root: str = EX
             "--name-only",
             f"{base_sha}...{head_sha}",
             "--",
-            f"{ruling_root}/",
+            *(f"{root}/" for root in ruling_roots),
         ]
     )
     changed = [
@@ -151,11 +154,12 @@ def get_changed_ruling_files(base_sha: str, head_sha: str, ruling_root: str = EX
     return sorted(set(changed))
 
 
-def is_ruling_json(path: str, ruling_root: str = EXPECTED_RULING_ROOT) -> bool:
+def is_ruling_json(path: str, ruling_root: str | None = None) -> bool:
+    ruling_roots = (ruling_root,) if ruling_root is not None else EXPECTED_RULING_ROOTS
     return (
         bool(path)
         and path.endswith(".json")
-        and path.startswith(f"{ruling_root}/")
+        and any(path.startswith(f"{root}/") for root in ruling_roots)
     )
 
 

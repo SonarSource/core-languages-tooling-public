@@ -27,7 +27,6 @@ Add this action to your workflow:
     base-sha: ${{ github.event.pull_request.base.sha }}
     head-sha: ${{ github.event.pull_request.head.sha }}
     # Optional: customize for different analyzers
-    # ruling-root: 'its/ruling/src/test/resources'  # For Java
     # sources-root: 'its/sources'                    # For Java
 ```
 
@@ -39,7 +38,6 @@ Add this action to your workflow:
 | `repository` | Repository in `owner/repo` format | Yes | - |
 | `base-sha` | Base commit SHA for comparison | Yes | - |
 | `head-sha` | Head commit SHA for comparison | Yes | - |
-| `ruling-root` | Path to ruling directory | No | `private/its-enterprise/ruling/src/test/resources/expected_ruling` |
 | `sources-root` | Path to sources directory | No | `private/its-enterprise/sources_ruling` |
 
 ## Requirements
@@ -57,12 +55,15 @@ Add this action to your workflow:
 
 ### Ruling File Location
 
-By default, the action expects ruling files at:
+The action detects changed expectation JSON files under either:
 ```
-private/its-enterprise/ruling/src/test/resources/expected_ruling/
+its/ruling/src/test/resources/expected/<project-key>/
+private/its/ruling/src/test/resources/expected/<project-key>/
 ```
 
-Override with the `ruling-root` input parameter for different analyzers.
+Generated actual results live under `target/actual/<project-key>/` (Maven) or
+`build/actual/<project-key>/` (Gradle). This action compares committed
+expectations across revisions; it does not read generated actual files.
 
 ### Source File Resolution
 
@@ -96,17 +97,13 @@ The action automatically detects and handles both formats.
 
 When using this action in a different analyzer repository:
 
-1. **Set `ruling-root` parameter** to match your ruling directory
-   - Java: `its/ruling/src/test/resources`
-   - Python: `private/its-enterprise/ruling/src/test/resources/expected_ruling`
-
-2. **Set `sources-root` parameter** to match your sources directory
+1. **Set `sources-root` parameter** to match your sources directory
    - Java: `its/sources`
    - Python: `private/its-enterprise/sources_ruling`
 
-3. **Ensure sources are available** at the specified path
+2. **Ensure sources are available** at the specified path
 
-4. **Configure workflow trigger paths** to match your ruling file locations
+3. **Configure workflow trigger paths** to include both supported expectation locations
 
 See `example-workflow.yml` for a reference implementation.
 

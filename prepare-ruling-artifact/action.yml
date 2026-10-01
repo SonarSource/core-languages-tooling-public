@@ -1,0 +1,30 @@
+name: 'Prepare Ruling Artifact'
+description: 'Upload generated ruling results from a test job for a separate update job'
+
+inputs:
+  artifact-name:
+    description: 'Unique artifact name beginning with actual_'
+    required: false
+    default: 'actual_ruling'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Stage ruling results
+      id: stage
+      shell: bash
+      env:
+        ARTIFACT_NAME: ${{ inputs.artifact-name }}
+      run: |
+        if command -v python3 >/dev/null 2>&1; then
+          python3 "${{ github.action_path }}/prepare.py"
+        else
+          python "${{ github.action_path }}/prepare.py"
+        fi
+
+    - name: Upload ruling results
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ steps.stage.outputs.path }}/
+        if-no-files-found: error
