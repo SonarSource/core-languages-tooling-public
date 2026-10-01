@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -18,11 +20,38 @@ def output(*command: str, check: bool = True) -> str:
     return result.stdout.strip()
 
 
-def has_staged_changes() -> bool:
-    result = subprocess.run(("git", "diff", "--staged", "--quiet"), check=False)
+def has_staged_changes(worktree: Path) -> bool:
+    result = subprocess.run(
+        ("git", "-C", str(worktree), "diff", "--staged", "--quiet"), check=False
+    )
     if result.returncode not in (0, 1):
         raise RuntimeError("Could not inspect staged ruling changes")
     return result.returncode == 1
+
+
+def transfer_ruling_changes(ruling_root: str, worktree: Path) -> None:
+    patch = subprocess.run(
+        ("git", "diff", "--binary", "HEAD", "--", ruling_root),
+        stdout=subprocess.PIPE,
+        check=True,
+    ).stdout
+    if patch:
+        subprocess.run(
+            ("git", "-C", str(worktree), "apply", "--3way", "--index"),
+            input=patch,
+            check=True,
+        )
+
+    untracked = output(
+        "git", "ls-files", "--others", "--exclude-standard", "-z", "--", ruling_root
+    )
+    for relative_path in filter(None, untracked.split("\0")):
+        source = Path(relative_path)
+        destination = worktree / relative_path
+        if destination.exists() or destination.is_symlink():
+            raise RuntimeError(f"Ruling file already exists on target branch: {relative_path}")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination, follow_symlinks=False)
 
 
 def create_fix_pr(target_ref: str, ruling_root: str, pr_number: str) -> tuple[str, str, str]:
@@ -31,40 +60,49 @@ def create_fix_pr(target_ref: str, ruling_root: str, pr_number: str) -> tuple[st
     title = f"Update ruling results for {subject}"
     body = f"Auto-generated ruling update for {subject}.\n\n{GENERATED_MARKER}"
 
-    stash_created = bool(output("git", "status", "--porcelain", "--", ruling_root))
-    if stash_created:
-        run("git", "stash", "push", "--include-untracked", "-m", "ruling-sync-changes", "--", ruling_root)
-
     run("git", "fetch", "origin", "--", target_ref)
-    run("git", "config", "user.name", "github-actions[bot]")
-    run("git", "config", "user.email", "github-actions[bot]@users.noreply.github.com")
-
-    branch_exists = subprocess.run(
+    remote_branch = subprocess.run(
         ("git", "ls-remote", "--exit-code", "origin", "--", f"refs/heads/{fix_branch}"),
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        text=True,
         check=False,
-    ).returncode == 0
-    run("git", "switch", "-c", fix_branch, f"origin/{target_ref}")
-    fix_base_sha = output("git", "rev-parse", "HEAD")
+    )
+    if remote_branch.returncode not in (0, 2):
+        raise RuntimeError("Could not inspect the remote fix branch")
+    previous_sha = remote_branch.stdout.split()[0] if remote_branch.returncode == 0 else ""
+    if remote_branch.returncode == 0 and not previous_sha:
+        raise RuntimeError("Remote fix branch has no commit SHA")
+    branch_exists = bool(previous_sha)
 
-    if stash_created:
+    with tempfile.TemporaryDirectory(prefix="ruling-fix-") as temporary_directory:
+        worktree = Path(temporary_directory) / "checkout"
+        run("git", "worktree", "add", "--detach", str(worktree), f"origin/{target_ref}")
         try:
-            run("git", "stash", "pop")
-        except subprocess.CalledProcessError as error:
-            subprocess.run(("git", "stash", "drop"), check=False)
-            raise RuntimeError("Failed to apply stashed ruling changes") from error
+            fix_base_sha = output("git", "-C", str(worktree), "rev-parse", "HEAD")
+            transfer_ruling_changes(ruling_root, worktree)
+            run("git", "-C", str(worktree), "add", "-A", "--", ruling_root)
+            committed = has_staged_changes(worktree)
+            if committed:
+                run(
+                    "git", "-C", str(worktree),
+                    "-c", "user.name=github-actions[bot]",
+                    "-c", "user.email=github-actions[bot]@users.noreply.github.com",
+                    "commit", "-m", f"Update ruling results\n\n{GENERATED_MARKER}",
+                )
+                refspec = f"HEAD:refs/heads/{fix_branch}"
+                if branch_exists:
+                    run(
+                        "git", "-C", str(worktree), "push",
+                        f"--force-with-lease=refs/heads/{fix_branch}:{previous_sha}",
+                        "origin", refspec,
+                    )
+                else:
+                    run("git", "-C", str(worktree), "push", "origin", refspec)
+            fix_sha = output("git", "-C", str(worktree), "rev-parse", "HEAD")
+        finally:
+            run("git", "worktree", "remove", "--force", str(worktree))
 
-    run("git", "add", ruling_root)
     fix_pr_url = ""
-    committed = has_staged_changes()
-    if committed:
-        run("git", "commit", "-m", f"Update ruling results\n\n{GENERATED_MARKER}")
-        if branch_exists:
-            run("git", "push", "--force-with-lease", "origin", fix_branch)
-        else:
-            run("git", "push", "origin", fix_branch)
-
     if branch_exists:
         fix_pr_url = output(
             "gh", "pr", "list", "--head", fix_branch, "--base", target_ref,
@@ -77,7 +115,6 @@ def create_fix_pr(target_ref: str, ruling_root: str, pr_number: str) -> tuple[st
             "--head", fix_branch, "--body", body,
         )
 
-    fix_sha = output("git", "rev-parse", "HEAD")
     if pr_number and fix_pr_url:
         run(
             "gh", "pr", "comment", pr_number, "--body",

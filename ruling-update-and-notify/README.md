@@ -129,9 +129,9 @@ clean up a fix PR, but it does not post a comment on an original PR.
 2. Checks last commit to prevent infinite auto-update loops
 3. If ruling failed, downloads artifacts and copies them into the detected ruling directory
 4. If there are differences and ruling failed:
-   - Stashes the synced changes
-   - Creates/updates a fix branch from the target branch
-   - Commits the changes with a bot signature
+   - Creates a clean temporary worktree from the target branch and applies only ruling changes
+   - Commits the changes with a bot signature and pushes the fix branch
+   - Leaves the caller's checkout and unrelated changes untouched
    - Creates or updates a fix PR
    - Posts a comment on the original PR linking to the fix PR
    - Uses the `ruling-diff-comment` action to compare the fix commit with its actual base

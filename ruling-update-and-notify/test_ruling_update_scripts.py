@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import subprocess
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -77,16 +79,15 @@ class FixPullRequestTests(unittest.TestCase):
 
     @patch.object(create_fix_pr, "run")
     @patch.object(create_fix_pr, "has_staged_changes", return_value=True)
-    @patch.object(create_fix_pr.subprocess, "run", return_value=SimpleNamespace(returncode=2))
-    def test_new_branch_creates_a_pull_request(self, remote, staged, run) -> None:
+    @patch.object(create_fix_pr, "transfer_ruling_changes")
+    @patch.object(create_fix_pr.subprocess, "run", return_value=SimpleNamespace(returncode=2, stdout=""))
+    def test_new_branch_creates_a_pull_request(self, remote, transfer, staged, run) -> None:
         head_shas = iter(("b" * 40, "a" * 40))
 
         def command_output(*command: str, **kwargs) -> str:
-            if command[:2] == ("git", "status"):
-                return " M its/ruling/result.json"
             if command[:3] == ("gh", "pr", "create"):
                 return "https://github.com/org/repo/pull/1"
-            if command[:3] == ("git", "rev-parse", "HEAD"):
+            if "rev-parse" in command:
                 return next(head_shas)
             return ""
 
@@ -96,35 +97,126 @@ class FixPullRequestTests(unittest.TestCase):
         self.assertEqual(url, "https://github.com/org/repo/pull/1")
         self.assertEqual(base_sha, "b" * 40)
         self.assertEqual(sha, "a" * 40)
-        run.assert_any_call("git", "push", "origin", "fix/update-ruling-for-feature")
+        self.assertTrue(any(
+            call.args[0] == "git" and call.args[3:] == (
+                "push", "origin", "HEAD:refs/heads/fix/update-ruling-for-feature",
+            ) for call in run.call_args_list
+        ))
         run.assert_any_call(
             "gh", "pr", "comment", "123", "--body",
             "⚖️ Ruling update ready for review: https://github.com/org/repo/pull/1",
         )
+        self.assertFalse(any("stash" in call.args or "switch" in call.args for call in run.call_args_list))
         remote.assert_called_once()
+        transfer.assert_called_once()
         staged.assert_called_once()
 
     @patch.object(create_fix_pr, "run")
     @patch.object(create_fix_pr, "has_staged_changes", return_value=False)
-    @patch.object(create_fix_pr.subprocess, "run", return_value=SimpleNamespace(returncode=0))
-    def test_existing_branch_reuses_its_pull_request(self, remote, staged, run) -> None:
+    @patch.object(create_fix_pr, "transfer_ruling_changes")
+    @patch.object(create_fix_pr.subprocess, "run", return_value=SimpleNamespace(
+        returncode=0, stdout=f"{'c' * 40}\trefs/heads/fix/update-ruling-for-feature\n",
+    ))
+    def test_existing_branch_reuses_its_pull_request(self, remote, transfer, staged, run) -> None:
         def command_output(*command: str, **kwargs) -> str:
             if command[:3] == ("gh", "pr", "list"):
                 return "https://github.com/org/repo/pull/1"
-            if command[:3] == ("git", "rev-parse", "HEAD"):
+            if "rev-parse" in command:
                 return "b" * 40
             return ""
 
-        with patch.object(create_fix_pr, "output", side_effect=command_output) as output:
+        with patch.object(create_fix_pr, "output", side_effect=command_output) as get_output:
             url, base_sha, sha = create_fix_pr.create_fix_pr("feature", "its/ruling", "")
 
         self.assertEqual(url, "https://github.com/org/repo/pull/1")
         self.assertEqual(base_sha, "b" * 40)
         self.assertEqual(sha, "b" * 40)
-        self.assertFalse(any(call.args[:3] == ("gh", "pr", "create") for call in output.call_args_list))
-        self.assertFalse(any(call.args[:2] == ("git", "push") for call in run.call_args_list))
+        self.assertFalse(any(call.args[:3] == ("gh", "pr", "create") for call in get_output.call_args_list))
+        self.assertFalse(any("push" in call.args for call in run.call_args_list))
         remote.assert_called_once()
+        transfer.assert_called_once()
         staged.assert_called_once()
+
+    def test_dirty_checkout_does_not_block_clean_worktree(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            origin = root / "origin.git"
+            source = root / "source"
+            target = root / "target"
+            ruling_root = Path("its/ruling/src/test/resources")
+            project = ruling_root / "expected/project"
+
+            def git(*arguments: str, cwd: Path) -> str:
+                return subprocess.run(
+                    ("git", *arguments), cwd=cwd, check=True, stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE, text=True,
+                ).stdout.strip()
+
+            git("init", "--bare", str(origin), cwd=root)
+            git("init", "-b", "feature", str(source), cwd=root)
+            git("config", "user.name", "Test", cwd=source)
+            git("config", "user.email", "test@example.com", cwd=source)
+            (source / project).mkdir(parents=True)
+            (source / "pom.xml").write_text("original")
+            (source / project / "report.json").write_text("old")
+            (source / project / "deleted.json").write_text("old")
+            git("add", ".", cwd=source)
+            git("commit", "-m", "Initial files", cwd=source)
+            git("remote", "add", "origin", str(origin), cwd=source)
+            git("push", "-u", "origin", "feature", cwd=source)
+
+            git("clone", "--branch", "feature", str(origin), str(target), cwd=root)
+            git("config", "user.name", "Test", cwd=target)
+            git("config", "user.email", "test@example.com", cwd=target)
+            (target / "pom.xml").write_text("target branch version")
+            git("add", "pom.xml", cwd=target)
+            git("commit", "-m", "Move target branch", cwd=target)
+            git("push", "origin", "feature", cwd=target)
+
+            (source / "pom.xml").write_text("dirty local version")
+            (source / project / "report.json").write_text("new")
+            (source / project / "deleted.json").unlink()
+            (source / project / "added.json").write_text("added")
+
+            original_output = create_fix_pr.output
+            def fake_output(*command: str, **kwargs) -> str:
+                if command[:3] in (("gh", "pr", "create"), ("gh", "pr", "list")):
+                    return "https://example.test/fix"
+                return original_output(*command, **kwargs)
+
+            previous_directory = Path.cwd()
+            try:
+                os.chdir(source)
+                with patch.object(create_fix_pr, "output", side_effect=fake_output):
+                    url, base, head = create_fix_pr.create_fix_pr("feature", str(ruling_root), "")
+                    self.assertEqual(url, "https://example.test/fix")
+                    self.assertEqual(base, git("rev-parse", "HEAD", cwd=target))
+                    self.assertEqual(head, git("--git-dir", str(origin), "rev-parse",
+                        "refs/heads/fix/update-ruling-for-feature", cwd=root))
+                    (source / project / "report.json").write_text("newer")
+                    _, _, updated_head = create_fix_pr.create_fix_pr("feature", str(ruling_root), "")
+                    self.assertNotEqual(updated_head, head)
+                    (target / project / "report.json").write_text("conflicting target version")
+                    git("add", str(project / "report.json"), cwd=target)
+                    git("commit", "-m", "Change target ruling", cwd=target)
+                    git("push", "origin", "feature", cwd=target)
+                    with self.assertRaises(subprocess.CalledProcessError):
+                        create_fix_pr.create_fix_pr("feature", str(ruling_root), "")
+            finally:
+                os.chdir(previous_directory)
+
+            fix_ref = "refs/heads/fix/update-ruling-for-feature"
+            self.assertEqual(git("--git-dir", str(origin), "show", f"{fix_ref}:pom.xml", cwd=root),
+                "target branch version")
+            self.assertEqual(git("--git-dir", str(origin), "show",
+                f"{fix_ref}:{project}/report.json", cwd=root), "newer")
+            self.assertEqual(git("--git-dir", str(origin), "show",
+                f"{fix_ref}:{project}/added.json", cwd=root), "added")
+            self.assertNotIn(str(project / "deleted.json"),
+                git("--git-dir", str(origin), "ls-tree", "-r", "--name-only", fix_ref, cwd=root))
+            self.assertEqual((source / "pom.xml").read_text(), "dirty local version")
+            self.assertEqual((source / project / "added.json").read_text(), "added")
+            self.assertEqual(git("worktree", "list", "--porcelain", cwd=source).count("worktree "), 1)
 
 
 class FindRulingDirectoryTests(unittest.TestCase):
