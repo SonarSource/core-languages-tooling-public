@@ -8,6 +8,10 @@ inputs:
   pr-number:
     description: 'Pull request number the comment was posted on'
     required: true
+  comment-id:
+    description: 'Id of the comment to acknowledge with a reaction once the run is dispatched. Empty disables the reaction.'
+    required: false
+    default: ${{ github.event.comment.id }}
   build-workflow:
     description: 'Filename of the build workflow that uploads the candidate-version artifact'
     required: false
@@ -117,3 +121,17 @@ runs:
           -f "pr-number=${PR_NUMBER}" \
           -f "run-description=${title}" \
           ${extra_args[@]+"${extra_args[@]}"}
+
+    # Best-effort: a caller that has not granted pull-requests:write must still get its run dispatched.
+    - name: Acknowledge the /pvf comment
+      if: steps.pvf.outputs.found == 'true' && inputs.comment-id != ''
+      continue-on-error: true
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        COMMENT_ID: ${{ inputs.comment-id }}
+      run: |
+        set -euo pipefail
+        gh api --method POST \
+          "repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT_ID}/reactions" \
+          -f content=eyes
