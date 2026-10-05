@@ -7,8 +7,8 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
-      # Adjust this path to match your analyzer's ruling directory structure
-      - 'private/its-enterprise/ruling/src/test/resources/expected_ruling/**'
+      - 'its/ruling/src/test/resources/expected/**'
+      - 'private/its/ruling/src/test/resources/expected/**'
       # Include action changes to test modifications
       - '.github/actions/ruling-diff-comment/**'
       - '.github/workflows/ruling-diff-comment.yml'
@@ -65,7 +65,6 @@ jobs:
           base-sha: ${{ inputs.base-sha || github.event.pull_request.base.sha }}
           head-sha: ${{ inputs.head-sha || github.event.pull_request.head.sha }}
           # For Java analyzer, use:
-          # ruling-root: 'its/ruling/src/test/resources'
           # sources-root: 'its/sources'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

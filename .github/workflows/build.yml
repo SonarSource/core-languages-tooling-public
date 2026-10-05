@@ -37,3 +37,13 @@ jobs:
           cd pvf-comment
           python3 -m unittest discover -v -s . -p "test_pvf_comment_parser.py"
 
+      - name: Run ruling-update-and-notify unit tests
+        run: |
+          cd ruling-update-and-notify
+          python3 -m unittest discover -v -s . -p "test_ruling_update_scripts.py"
+
+      - name: Run prepare-ruling-artifact unit tests
+        run: |
+          cd prepare-ruling-artifact
+          python3 -m unittest discover -v -s . -p "test_prepare.py"
+

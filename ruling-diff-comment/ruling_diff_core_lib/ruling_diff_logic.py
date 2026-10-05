@@ -5,7 +5,7 @@ from collections import Counter
 from pathlib import PurePosixPath
 
 from ruling_diff_core_lib.models_and_constants import (
-    EXPECTED_RULING_ROOT,
+    EXPECTED_RULING_ROOTS,
     IssueDiff,
     OptionalRulingJson,
     RulingDiffIO,
@@ -17,11 +17,14 @@ from ruling_diff_core_lib.models_and_constants import (
 from ruling_diff_core_lib.snippet_generation import build_snippets_for_rule
 
 
-def parse_ruling_path(path: str, ruling_root: str = EXPECTED_RULING_ROOT) -> tuple[str, str, str]:
-    prefix = f"{ruling_root}/"
-    if not path.startswith(prefix):
+def parse_ruling_path(path: str, ruling_root: str | None = None) -> tuple[str, str, str]:
+    ruling_roots = (ruling_root,) if ruling_root is not None else EXPECTED_RULING_ROOTS
+    matching_root = next(
+        (root for root in ruling_roots if path.startswith(f"{root}/")), None
+    )
+    if matching_root is None:
         raise ValueError(f"Unexpected ruling path outside expected root: {path}")
-    relative_path = path[len(prefix) :]
+    relative_path = path[len(matching_root) + 1 :]
     project, filename = parse_ruling_relative_path(relative_path)
     repository, rule_key = parse_rule_filename(filename)
     return project, repository, rule_key

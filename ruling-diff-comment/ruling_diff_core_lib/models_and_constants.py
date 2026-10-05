@@ -11,7 +11,7 @@ SourceCache = dict[tuple[str, str], OptionalSourceLines]
 
 
 class RulingDiffIO(Protocol):
-    ruling_root: str
+    ruling_root: str | None
     sources_root: str
 
     def load_json_at_ref(self, path: str, ref: str) -> OptionalRulingJson:
@@ -23,9 +23,11 @@ class RulingDiffIO(Protocol):
     def resolve_source_path(self, project: str, file_path: str) -> str:
         ...
 
-EXPECTED_RULING_ROOT = (
-    "private/its-enterprise/ruling/src/test/resources/expected_ruling"
+EXPECTED_RULING_ROOTS = (
+    "its/ruling/src/test/resources/expected",
+    "private/its/ruling/src/test/resources/expected",
 )
+EXPECTED_RULING_ROOT = EXPECTED_RULING_ROOTS[0]
 COMMENT_MARKER = "<!-- ruling-diff-comment -->"
 COMMENT_SOFT_LIMIT = 60000
 SNIPPET_CONTEXT = 5
