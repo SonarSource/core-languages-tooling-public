@@ -141,7 +141,7 @@ runs:
           -f content=eyes
 
     - name: Report the /pvf failure
-      if: failure()
+      if: failure() && steps.trigger.outcome != 'success'
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
