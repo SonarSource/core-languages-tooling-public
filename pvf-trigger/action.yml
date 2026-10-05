@@ -115,8 +115,6 @@ runs:
           extra_args+=(-f "use-fast-run=${USE_FAST_RUN}")
         fi
 
-        # A rejected dispatch (ref gone, workflow not dispatchable, token without actions:write) is
-        # the likeliest failure, so report what gh says about it rather than a bare "it failed".
         if ! dispatch_error="$(GH_TOKEN="$token" gh workflow run "$workflow" \
           --repo "$TARGET_REPO" \
           --ref "$ref" \

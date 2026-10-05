@@ -12,10 +12,7 @@ it invokes the host workflow (`performance-validation.yml` by default) in the ta
 
 ## Feedback on the comment
 
-The commenter learns the outcome without waiting for the benchmark: a 👀 reaction on their comment
-once the run is dispatched, or a reply mentioning them with the reason and a link to the failed run.
-Both read the triggering comment straight off the `issue_comment` payload, so a caller that has not
-granted `pull-requests: write` fails loudly rather than going quiet.
+On a successful dispatch the triggering comment is reacted to with 👀.
 
 ## Two modes
 
