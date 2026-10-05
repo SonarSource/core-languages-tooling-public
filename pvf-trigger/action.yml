@@ -116,7 +116,7 @@ runs:
           extra_args+=(-f "use-fast-run=${USE_FAST_RUN}")
         fi
 
-        if ! dispatch_error="$(GH_TOKEN="$token" gh workflow run "$workflow" \
+        if ! dispatch_output="$(GH_TOKEN="$token" gh workflow run "$workflow" \
           --repo "$TARGET_REPO" \
           --ref "$ref" \
           -f "candidate-version=$(cat candidate-version.txt)" \
@@ -124,8 +124,9 @@ runs:
           -f "pr-number=${PR_NUMBER}" \
           -f "run-description=${title}" \
           ${extra_args[@]+"${extra_args[@]}"} 2>&1)"; then
-          fail "${TARGET_REPO} rejected the dispatch of ${workflow} on ${ref}: ${dispatch_error}"
+          fail "${TARGET_REPO} rejected the dispatch of ${workflow} on ${ref}: ${dispatch_output}"
         fi
+        echo "$dispatch_output"
 
     - name: Acknowledge the /pvf comment
       if: steps.pvf.outputs.found == 'true'
