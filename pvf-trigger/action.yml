@@ -75,6 +75,7 @@ runs:
           echo "$reason" >&2
           exit 1
         }
+        trap 'fail "unexpected error on line ${LINENO}"' ERR
         pull="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")"
         head_ref="$(jq -r .head.ref <<<"$pull")"
         head_sha="$(jq -r .head.sha <<<"$pull")"
