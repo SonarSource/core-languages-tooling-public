@@ -151,5 +151,6 @@ runs:
         RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       run: |
         set -euo pipefail
-        gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
-          --body "@${COMMENT_AUTHOR} ❌ Your \`/pvf\` command was not dispatched: ${REASON:-unexpected failure}. [See the failed run](${RUN_URL})."
+        body="@${COMMENT_AUTHOR} ❌ Your \`/pvf\` command was not dispatched. [See the failed run](${RUN_URL})."
+        body+=$'\n\n'"> ${REASON:-unexpected failure}"
+        gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body "$body"
