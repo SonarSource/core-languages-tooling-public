@@ -8,14 +8,6 @@ inputs:
   pr-number:
     description: 'Pull request number the comment was posted on'
     required: true
-  comment-id:
-    description: 'Id of the comment to acknowledge with a reaction once the run is dispatched. Empty disables the reaction.'
-    required: false
-    default: ${{ github.event.comment.id }}
-  comment-author:
-    description: 'Login to mention when the command could not be dispatched. Empty posts the failure without a mention.'
-    required: false
-    default: ${{ github.event.comment.user.login }}
   build-workflow:
     description: 'Filename of the build workflow that uploads the candidate-version artifact'
     required: false
@@ -136,14 +128,12 @@ runs:
           fail "${TARGET_REPO} rejected the dispatch of ${workflow} on ${ref}: ${dispatch_error}"
         fi
 
-    # Best-effort: a caller that has not granted pull-requests:write must still get its run dispatched.
     - name: Acknowledge the /pvf comment
-      if: steps.pvf.outputs.found == 'true' && inputs.comment-id != ''
-      continue-on-error: true
+      if: steps.pvf.outputs.found == 'true'
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
-        COMMENT_ID: ${{ inputs.comment-id }}
+        COMMENT_ID: ${{ github.event.comment.id }}
       run: |
         set -euo pipefail
         gh api --method POST \
@@ -156,14 +146,10 @@ runs:
       env:
         GH_TOKEN: ${{ github.token }}
         PR_NUMBER: ${{ inputs.pr-number }}
-        COMMENT_AUTHOR: ${{ inputs.comment-author }}
+        COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
         REASON: ${{ steps.trigger.outputs.reason }}
         RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       run: |
         set -euo pipefail
-        mention=""
-        if [ -n "$COMMENT_AUTHOR" ]; then
-          mention="@${COMMENT_AUTHOR} "
-        fi
         gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
-          --body "${mention}❌ Your \`/pvf\` command was not dispatched: ${REASON:-unexpected failure}. [See the failed run](${RUN_URL})."
+          --body "@${COMMENT_AUTHOR} ❌ Your \`/pvf\` command was not dispatched: ${REASON:-unexpected failure}. [See the failed run](${RUN_URL})."

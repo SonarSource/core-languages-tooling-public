@@ -14,8 +14,8 @@ it invokes the host workflow (`performance-validation.yml` by default) in the ta
 
 The commenter learns the outcome without waiting for the benchmark: a 👀 reaction on their comment
 once the run is dispatched, or a reply mentioning them with the reason and a link to the failed run.
-The reaction is best-effort, so a caller that has not granted `pull-requests: write` still gets its
-run dispatched.
+Both read the triggering comment straight off the `issue_comment` payload, so a caller that has not
+granted `pull-requests: write` fails loudly rather than going quiet.
 
 ## Two modes
 
@@ -32,8 +32,6 @@ run dispatched.
 |-------|-------------|----------|---------|
 | `comment` | Comment body to scan for a `/pvf` command | Yes | |
 | `pr-number` | Pull request number the comment was posted on | Yes | |
-| `comment-id` | Id of the comment to acknowledge with a 👀 reaction once the run is dispatched. Empty ⇒ no reaction. | No | the triggering comment |
-| `comment-author` | Login to mention when the command could not be dispatched. Empty ⇒ no mention. | No | the comment author |
 | `build-workflow` | Filename of the build workflow that uploads the `candidate-version` artifact | No | `build.yml` |
 | `rule-prefixes` | Space-separated rule-key prefixes passed to the parser | No | `S` |
 | `target-repo` | `owner/name` of the repo hosting the host workflow (`performance-validation.yml` by default). Cross-repo target for a gated dashboard. | No | current repo |
