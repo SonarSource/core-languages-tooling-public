@@ -32,6 +32,14 @@ inputs:
     description: 'Filename of the workflow to dispatch in target-repo. Lets one host repo serve several analyzers via per-analyzer host workflows. Empty falls back to performance-validation.yml.'
     required: false
     default: performance-validation.yml
+  baseline-version:
+    description: 'Forwarded as the baseline-version input of the host workflow, e.g. DEV. Empty omits it, so the host workflow default applies. The host workflow must declare the input.'
+    required: false
+    default: ''
+  use-fast-run:
+    description: 'Forwarded as the use-fast-run input of the host workflow (true/false). Empty omits it, so the host workflow default applies. The host workflow must declare the input.'
+    required: false
+    default: ''
 
 runs:
   using: 'composite'
@@ -55,6 +63,8 @@ runs:
         TARGET_REF: ${{ inputs.target-ref }}
         DISPATCH_TOKEN: ${{ inputs.dispatch-token }}
         TARGET_WORKFLOW: ${{ inputs.target-workflow }}
+        BASELINE_VERSION: ${{ inputs.baseline-version }}
+        USE_FAST_RUN: ${{ inputs.use-fast-run }}
       run: |
         set -euo pipefail
         pull="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")"
@@ -90,6 +100,14 @@ runs:
         else
           # Same-repo dispatch: ref defaults to the PR head ref.
           ref="${TARGET_REF:-$head_ref}"
+        fi
+
+        # Only forwarded when set: gh rejects inputs the host workflow does not declare.
+        if [ -n "$BASELINE_VERSION" ]; then
+          extra_args+=(-f "baseline-version=${BASELINE_VERSION}")
+        fi
+        if [ -n "$USE_FAST_RUN" ]; then
+          extra_args+=(-f "use-fast-run=${USE_FAST_RUN}")
         fi
 
         GH_TOKEN="$token" gh workflow run "$workflow" \
