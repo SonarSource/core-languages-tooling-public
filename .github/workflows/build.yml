@@ -47,3 +47,12 @@ jobs:
           cd prepare-ruling-artifact
           python3 -m unittest discover -v -s . -p "test_prepare.py"
 
+
+      - name: Run PVF baseline resolver unit tests
+        run: python3 -m unittest discover -v -s pvf-resolve-baseline -p 'test_*.py'
+
+      - name: Run PVF result comment unit tests
+        run: python3 -m unittest discover -v -s pvf-result-comment -p 'test_*.py'
+
+      - name: Run PVF Slack notifier unit tests
+        run: python3 -m unittest discover -v -s pvf-notify-slack -p 'test_*.py'

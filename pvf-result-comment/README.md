@@ -1,32 +1,41 @@
 # PVF Result Comment
 
-Composite action that posts the **Performance Validation** result back onto a PR.
+Composite action that posts Performance Validation results to an explicit PR or discovers a
+merged PR associated with a commit. Supports same-repo and cross-repo callers. Requires Python 3
+and `gh`; the supplied token needs `pull-requests: write`, plus `contents: read` for commit lookup.
+The caller controls job conditions, including cancellation behavior.
 
-It runs as steps inside the caller's job. It is the output side of the PVF chain
-— [`pvf-trigger`](../pvf-trigger) dispatches the host workflow. This action comments its result once the run completes.
+| Input | Default / purpose |
+| --- | --- |
+| `pr-number` | Empty; explicit PR number takes precedence over commit lookup |
+| `repository`, `token` | Caller repository and GitHub token; override for cross-repo comments |
+| `dashboard-url` | Empty; published dashboard URL |
+| `new-issues`, `lost-issues` | `0` |
+| `run-url` | Current workflow run URL |
+| `validation-result` | Empty preserves the original dashboard/fallback formatting; otherwise `success`, `failure`, `skipped` or `cancelled` |
+| `commit-sha` | Empty; required when `pr-number` is omitted |
+| `branch` | Empty; optional merged-PR base branch filter and commit display label |
+| `skip-reason` | `No baseline could be resolved.` |
+| `regressed-projects`, `errored-projects` | Empty; affected project names |
 
-## Two modes
+Commit lookup chooses the first merged associated PR matching `branch`, when provided. No merged
+PR emits a warning and skips posting; API failures fail the action. Failure/skip/cancellation
+messages omit issue counts rather than presenting a false clean pass. Rich comments include run
+logs even when a dashboard exists. Repository-controlled text and link delimiters are escaped.
 
-- **Same-repo (default):** the host workflow lives in the caller repo and comments on its own PR
-  using `github.token`. Uses every default; only `pr-number` and the result values are required.
-- **Cross-repo:** Pass `repository` (the analyzer repo) and a `token` that
-  can comment there.
+Existing callers supplying `pr-number` and no `validation-result` retain their original output.
+For cross-repo callers, leave `branch` empty or explicitly supply the analyzer's branch.
 
-## Inputs
+```yaml
+- uses: SonarSource/core-languages-tooling-public/pvf-result-comment@master
+  with:
+    pr-number: ${{ inputs.pr-number }}
+    commit-sha: ${{ inputs.notify-sha }}
+    branch: ${{ github.event.repository.default_branch }}
+    validation-result: ${{ needs.validate.result }}
+    dashboard-url: ${{ needs.validate.outputs.pages-url }}
+    new-issues: ${{ needs.validate.outputs.new-issues }}
+    lost-issues: ${{ needs.validate.outputs.lost-issues }}
+```
 
-| Input | Description | Required | Default |
-|-------|-------------|----------|---------|
-| `pr-number` | Pull request number to comment on | Yes | |
-| `repository` | `owner/name` of the repo whose PR to comment on. Set to the analyzer repo for cross-repo. | No | current repo |
-| `dashboard-url` | Published dashboard URL (the validate job `pages-url`). Empty ⇒ posts the no-dashboard fallback comment. | No | `''` |
-| `new-issues` | Number of new issues found | No | `0` |
-| `lost-issues` | Number of lost issues | No | `0` |
-| `run-url` | URL to the workflow run logs (used in the fallback comment). | No | this run |
-| `token` | Token with `pull-requests:write` on `repository`. For cross-repo, pass a token that can comment on the analyzer repo. | No | `github.token` |
-
-## Requirements
-
-- `gh` CLI on the runner (pre-installed on GitHub-hosted runners).
-- **Same-repo:** the caller job grants `pull-requests: write`.
-- **Cross-repo:** the caller job grants `id-token: write` and provides a `token` with
-  `pull-requests:write` on `repository` (e.g. the `pvf-commenter` Vault token).
+Run tests: `python3 -m unittest discover -v -s pvf-result-comment -p 'test_*.py'`.

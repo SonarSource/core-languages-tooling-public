@@ -1,0 +1,70 @@
+name: "PVF Resolve Baseline"
+description: "Resolve the newest deployed validated baseline, with deployed-build fallbacks"
+
+inputs:
+  repository:
+    description: "Repository owner/name to query"
+    required: false
+    default: "${{ github.repository }}"
+  token:
+    description: "GitHub token with access to the repository"
+    required: false
+    default: "${{ github.token }}"
+  branch:
+    description: "Branch used for build selection or merged PR attribution"
+    required: false
+    default: "${{ github.event.repository.default_branch }}"
+  build-workflow:
+    description: "Build workflow filename or ID"
+    required: false
+    default: "build.yml"
+  publication-job:
+    description: "Exact job display name that must have concluded successfully"
+    required: true
+  previous-sha:
+    description: "Pre-push commit SHA used as a fallback"
+    required: false
+    default: ""
+  current-sha:
+    description: "Candidate commit SHA to exclude"
+    required: false
+    default: "${{ github.sha }}"
+  current-run-id:
+    description: "Candidate workflow run ID to exclude"
+    required: false
+    default: "${{ github.run_id }}"
+  validated-artifact:
+    description: "Validated artifact containing <artifact-name>.txt"
+    required: false
+    default: "pvf-validated"
+  candidate-artifact:
+    description: "Candidate artifact containing <artifact-name>.txt"
+    required: false
+    default: "candidate-version"
+
+outputs:
+  baseline-version:
+    description: "Resolved plugin version; empty when no baseline exists"
+    value: ${{ steps.run.outputs.baseline-version }}
+  baseline-sha:
+    description: "Resolved commit SHA; empty when no baseline exists"
+    value: ${{ steps.run.outputs.baseline-sha }}
+
+runs:
+  using: composite
+  steps:
+    - name: PVF Resolve Baseline
+      id: run
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token || github.token }}
+        REPOSITORY: ${{ inputs.repository || github.repository }}
+        BRANCH: ${{ inputs.branch }}
+        BUILD_WORKFLOW: ${{ inputs.build-workflow }}
+        PUBLICATION_JOB: ${{ inputs.publication-job }}
+        PREVIOUS_SHA: ${{ inputs.previous-sha }}
+        CURRENT_SHA: ${{ inputs.current-sha }}
+        CURRENT_RUN_ID: ${{ inputs.current-run-id }}
+        VALIDATED_ARTIFACT: ${{ inputs.validated-artifact }}
+        CANDIDATE_ARTIFACT: ${{ inputs.candidate-artifact }}
+      run: python3 "${{ github.action_path }}/resolve.py"
