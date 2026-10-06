@@ -31,6 +31,8 @@ it invokes the host workflow (`performance-validation.yml` by default) in the ta
 | `target-ref` | Ref to dispatch on in `target-repo`. Empty ⇒ the PR head ref (same-repo). Set to the target's default branch (e.g. `master`) for cross-repo. | No | `''` |
 | `dispatch-token` | Token used **only** for the cross-repo dispatch (needs `actions:write` on `target-repo`). Empty ⇒ `github.token` (same-repo only). | No | `''` |
 | `target-workflow` | Filename of the host workflow to dispatch in `target-repo`. Lets one host repo serve several analyzers via per-analyzer host workflows (e.g. `performance-validation-html.yml`). | No | `performance-validation.yml` |
+| `baseline-version` | Forwarded as `-f baseline-version=<value>`, e.g. `DEV`. Only passed when set, so the host workflow default applies otherwise; the host workflow must declare the input. | No | `''` |
+| `use-fast-run` | Forwarded as `-f use-fast-run=<value>` (`true`/`false`). Only passed when set; the host workflow must declare the input. | No | `''` |
 
 On cross-repo dispatch the action additionally passes `-f analyzer-repo=<caller repo>` so the host
 can post the dashboard link back onto the analyzer PR.
