@@ -102,7 +102,6 @@ runs:
           ref="${TARGET_REF:-$head_ref}"
         fi
 
-        # Only forwarded when set: gh rejects inputs the host workflow does not declare.
         if [ -n "$BASELINE_VERSION" ]; then
           extra_args+=(-f "baseline-version=${BASELINE_VERSION}")
         fi
