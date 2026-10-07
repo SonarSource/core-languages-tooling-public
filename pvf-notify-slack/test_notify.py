@@ -1,142 +1,128 @@
 import json
 import subprocess
+import tempfile
 import unittest
-from unittest.mock import MagicMock, patch
+from pathlib import Path
+from unittest.mock import patch
+
 import notify
 
-SETTINGS = dict(REPOSITORY='owner/repo', BRANCH='main', BASE_SHA='base', HEAD_SHA='head', MERGER='fallback',
-                VALIDATE_RESULT='success', RESOLVE_RESULT='success', REGRESSED='project', ERRORED='',
-                NEW='2', LOST='3', URL='https://dashboard', RUN_URL='https://run',
-                SLACK_CHANNEL='channel', SLACK_USERNAME='PVF', SLACK_WEBHOOK='https://secret-webhook')
+ENV = dict(REPOSITORY="owner/repo", SERVER_URL="https://github.com", ACTOR="actor", BRANCH="main",
+           BASE_SHA="base", HEAD_SHA="1234567890", VALIDATION_RESULT="success", BASELINE_RESULT="success",
+           NEW_ISSUES="2", LOST_ISSUES="3", REGRESSED_PROJECTS="project", ERRORED_PROJECTS="",
+           DASHBOARD_URL="https://dashboard", RUN_URL="https://run")
 
 
-def commit(index):
-    return dict(sha=f'{index:040x}', commit={'message':f'Commit {index}\nbody'}, author={'login':'author'})
+def commit(sha, title="title", author="author"):
+    return {"sha": sha, "commit": {"message": f"{title}\nbody"}, "author": {"login": author}}
 
 
-class NotifyTests(unittest.TestCase):
-    def test_bounded_commits_and_deduplicated_mergers(self):
-        def api(repo,path):
-            if path.startswith('compare/'):
-                return {'total_commits':25,'commits':[commit(i) for i in range(25)]}
-            if path.startswith('commits/'):
-                return [{'number':1,'merged_at':'date','base':{'ref':'main'}}]
-            return {'merged_by':{'login':'merger'}}
-        with patch.object(notify,'api',side_effect=api):
-            context = notify.attribution(SETTINGS)
-        self.assertEqual(len(context[0]),20)
-        self.assertEqual(context[2],['merger'])
-        self.assertIn('… and 5 more',notify.message(SETTINGS,context))
+def completed(commits):
+    return subprocess.CompletedProcess([], 0, stdout=json.dumps(commits))
 
-    def test_final_compare_pages_are_used(self):
-        def api(repo,path):
-            if path.startswith('compare/'):
-                if 'page=2' in path:
-                    return {'commits':[commit(100)]}
-                return {'total_commits':101,'commits':[commit(i) for i in range(100)]}
-            return []
-        with patch.object(notify,'api',side_effect=api):
-            context = notify.attribution(SETTINGS)
-        self.assertEqual([c['sha'] for c in context[0]], [commit(i)['sha'] for i in range(81,101)])
 
-    def test_lookup_failure_preserves_alert(self):
-        with patch.object(notify,'api',side_effect=subprocess.CalledProcessError(1,['gh'])):
-            context = notify.attribution(SETTINGS)
-        self.assertEqual(context[2],['fallback'])
-        self.assertIn('Commit range unavailable',notify.message(SETTINGS,context))
-        self.assertIn('Regressed: project',notify.message(SETTINGS,context))
+class MessageTests(unittest.TestCase):
+    def message(self, commits=(), **environment):
+        with patch.object(notify.subprocess, "run", return_value=completed(commits)):
+            return notify.message({**ENV, **environment})
+
+    def test_success_message_has_findings_actor_and_links(self):
+        text = self.message([commit("base")], ERRORED_PROJECTS="other")
+        for expected in ("**Performance Validation**", "reported problems", "Regressed: project", "Errored: other",
+                         "New/lost issues: 2 / 3", "Triggered by: actor",
+                         "[Dashboard](https://dashboard) · [Run logs](https://run)"):
+            self.assertIn(expected, text)
+
+    def test_failed_validation_excludes_counts(self):
+        text = self.message(VALIDATION_RESULT="failure")
+        self.assertIn("The validation job failed before completing.", text)
+        self.assertIn("Regressed: project", text)
+        self.assertNotIn("New/lost issues", text)
+
+    def test_skipped_validation_explains_baseline_outcome(self):
+        cases = (({"BASE_SHA": ""}, "No baseline version was found"),
+                 ({"BASELINE_RESULT": "failure"}, "Baseline resolution: failure."))
+        for environment, explanation in cases:
+            with self.subTest(environment=environment):
+                text = self.message(VALIDATION_RESULT="skipped", **environment)
+                self.assertIn("was skipped.", text)
+                self.assertIn(explanation, text)
+                self.assertNotIn("New/lost issues", text)
+                self.assertNotIn("Regressed:", text)
+
+    def test_commits_stop_at_baseline_and_are_newest_first(self):
+        text = self.message([commit("22222222aa", "newer"), commit("11111111aa", "older"), commit("base"),
+                             commit("00000000aa", "before baseline")])
+        self.assertLess(text.index("newer"), text.index("older"))
+        self.assertNotIn("before baseline", text)
+        self.assertIn("22222222 newer (@author)", text)
+        self.assertNotIn("and more", text)
+
+    def test_unreached_baseline_is_bounded_and_links_full_range(self):
+        text = self.message([commit(f"{i:040x}", f"Commit {i}") for i in range(21)])
+        self.assertIn("Commit 19", text)
+        self.assertNotIn("Commit 20", text)
+        self.assertIn("[full range](https://github.com/owner/repo/compare/base...1234567890)", text)
+
+    def test_missing_author_and_long_title(self):
+        item = commit("11111111aa", "x" * 300)
+        item["author"] = None
+        text = self.message([item, commit("base")])
+        self.assertIn(f"{'x' * 200} (@unknown)", text)
+        self.assertNotIn("x" * 201, text)
 
     def test_missing_baseline_needs_no_lookup(self):
-        with patch.object(notify,'api') as api:
-            context = notify.attribution({**SETTINGS,'BASE_SHA':''})
-            api.assert_not_called()
-        self.assertEqual(context[2],['fallback'])
+        with patch.object(notify.subprocess, "run") as run:
+            text = notify.message({**ENV, "BASE_SHA": ""})
+        run.assert_not_called()
+        self.assertNotIn("Commits:", text)
+        self.assertIn("Triggered by: actor", text)
 
-    def test_associated_pr_lookup_failure_retains_author(self):
-        with patch.object(notify,'api',side_effect=[{'total_commits':1,'commits':[commit(1)]},subprocess.CalledProcessError(1,['gh'])]):
-            context = notify.attribution(SETTINGS)
-        self.assertEqual(context[2],['author'])
-        self.assertIn('Mergers: author',notify.message(SETTINGS,context))
+    def test_lookup_failure_still_builds_alert(self):
+        with patch.object(notify.subprocess, "run", side_effect=subprocess.CalledProcessError(1, ["gh"])):
+            text = notify.message(ENV)
+        self.assertIn("Commit range unavailable.", text)
+        self.assertIn("Run logs", text)
 
-    def test_pr_details_lookup_failure_retains_author(self):
-        responses = [
-            {'total_commits':1,'commits':[commit(1)]},
-            [{'number':1,'merged_at':'date','base':{'ref':'main'}}],
-            subprocess.CalledProcessError(1,['gh']),
-        ]
-        with patch.object(notify,'api',side_effect=responses):
-            context = notify.attribution(SETTINGS)
-        self.assertEqual(context[2],['author'])
+    def test_repository_content_cannot_create_mentions_or_formatting(self):
+        text = self.message([commit("11111111aa", "<!channel> &lt;!here&gt; *bold* [link](url)"), commit("base")],
+                            REGRESSED_PROJECTS="<!channel> *bold*", DASHBOARD_URL="https://host/|oops>\n")
+        self.assertNotIn("<!channel>", text)
+        self.assertNotIn("&lt;!here&gt;", text)
+        self.assertIn("‹\\!channel› ∗bold∗", text)
+        self.assertIn("\\[link\\]\\(url\\)", text)
+        self.assertIn("https://host/%7Coops%3E%0A", text)
 
-    def test_missing_merger_retains_author(self):
-        for pull in ({}, {'merged_by':None}, {'merged_by':{}}, {'merged_by':{'login':''}}):
-            with self.subTest(pull=pull):
-                responses = [
-                    {'total_commits':1,'commits':[commit(1)]},
-                    [{'number':1,'merged_at':'date','base':{'ref':'main'}}],
-                    pull,
-                ]
-                with patch.object(notify,'api',side_effect=responses):
-                    context = notify.attribution(SETTINGS)
-                self.assertEqual(context[2],['author'])
+    def test_empty_dashboard_omits_dashboard_link(self):
+        self.assertNotIn("[Dashboard]", self.message(DASHBOARD_URL=""))
 
-    def test_lookup_failure_without_author_uses_final_fallback(self):
-        for author in ({}, {'author':None}):
-            for actor, expected in (('fallback','fallback'), ('','unknown')):
-                with self.subTest(author=author,actor=actor):
-                    item = commit(1)
-                    del item['author']
-                    item.update(author)
-                    responses = [
-                        {'total_commits':1,'commits':[item]},
-                        subprocess.CalledProcessError(1,['gh']),
-                    ]
-                    with patch.object(notify,'api',side_effect=responses):
-                        context = notify.attribution({**SETTINGS,'MERGER':actor})
-                    self.assertEqual(context[2],[expected])
-
-    def test_author_fallback_is_deduplicated(self):
-        responses = [
-            {'total_commits':2,'commits':[commit(1),commit(2)]},
-            subprocess.CalledProcessError(1,['gh']),
-            [],
-        ]
-        with patch.object(notify,'api',side_effect=responses):
-            context = notify.attribution(SETTINGS)
-        self.assertEqual(context[2],['author'])
-
-    def test_skipped_failed_do_not_show_counts(self):
-        for outcome in ('failure','skipped'):
-            text = notify.message({**SETTINGS,'VALIDATE_RESULT':outcome},([],0,['fallback'],False))
-            self.assertNotIn('New/lost issues',text)
-        text = notify.message({**SETTINGS,'VALIDATE_RESULT':'skipped','RESOLVE_RESULT':'failure'},([],0,['fallback'],False))
-        self.assertIn('Baseline resolution did not complete',text)
-
-    def test_escapes_slack_mentions_and_formatting(self):
-        text = notify.message({**SETTINGS,'REGRESSED':'<!channel> *bold*','URL':'https://host/|oops>'},([],0,['fallback'],False))
-        self.assertNotIn('<!channel>',text)
-        self.assertIn('&lt;!channel&gt; ∗bold∗',text)
-        self.assertIn('%7Coops%3E',text)
-
-    def test_posts_json_and_checks_response(self):
-        response = MagicMock()
-        response.__enter__.return_value = response
-        response.status = 200
-        response.read.return_value = b'ok'
-        with patch.object(notify.urllib.request,'urlopen',return_value=response) as call:
-            notify.send(SETTINGS,'message')
-            request = call.call_args.args[0]
-            self.assertEqual(json.loads(request.data)['text'],'message')
-            self.assertEqual(call.call_args.kwargs['timeout'],30)
-        response.read.return_value = b'invalid_payload'
-        with patch.object(notify.urllib.request,'urlopen',return_value=response), self.assertRaises(ValueError):
-            notify.send(SETTINGS,'message')
-
-    def test_delivery_failure_does_not_log_webhook(self):
-        with patch.dict(notify.os.environ,SETTINGS), patch.object(notify,'attribution',return_value=([],0,['fallback'],False)), patch.object(notify,'send',side_effect=ValueError('https://secret-webhook')), patch('builtins.print') as output:
-            self.assertEqual(notify.main(),1)
-            self.assertNotIn('https://secret-webhook',str(output.call_args_list))
+    def test_rejects_unknown_result(self):
+        with self.assertRaises(ValueError):
+            notify.message({**ENV, "VALIDATION_RESULT": "unknown"})
 
 
-if __name__ == '__main__':
+class MainTests(unittest.TestCase):
+    def run_main(self, **environment):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory, "outputs")
+            with patch.object(notify.subprocess, "run", return_value=completed([])), \
+                    patch.dict(notify.os.environ, {**ENV, **environment, "GITHUB_OUTPUT": str(output)}):
+                code = notify.main()
+            return code, output.read_text() if output.exists() else ""
+
+    def test_multiline_content_cannot_inject_outputs(self):
+        code, written = self.run_main(REGRESSED_PROJECTS="project\nEOF\nother=bad\nmarkdown<<EOF")
+        self.assertEqual(code, 0)
+        first, *_, last = written.splitlines()
+        self.assertTrue(first.startswith("markdown<<pvf_"))
+        self.assertEqual(last, first.split("<<", 1)[1])
+        self.assertEqual(written.count(last), 2)
+
+    def test_unknown_result_fails_without_output(self):
+        code, written = self.run_main(VALIDATION_RESULT="unknown")
+        self.assertEqual(code, 1)
+        self.assertEqual(written, "")
+
+
+if __name__ == "__main__":
     unittest.main()

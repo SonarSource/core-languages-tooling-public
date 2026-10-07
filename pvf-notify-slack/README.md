@@ -1,44 +1,42 @@
 # PVF Notify Slack
 
-Composite action that sends a PVF problem alert with commit and merger attribution. Requires
-Python 3 and `gh`, a GitHub token with `contents: read` and `pull-requests: read`, and a Slack
-incoming webhook. Credentials are supplied by the caller; this action does not retrieve Vault
-secrets. Webhook errors do not print the credential URL or response content.
+Send a PVF problem alert listing the commits since the baseline. `notify.py` builds the message;
+delivery uses
+[release-github-actions/slack-message](https://github.com/SonarSource/release-github-actions/tree/master/slack-message),
+which converts Markdown to Slack formatting and retrieves the Slack bot token from Vault.
+
+Requires Python 3, `gh`, a GitHub token with `contents: read`, and the caller's normal Vault
+authentication setup. Supply the channel without `#`.
 
 | Input | Default / purpose |
 | --- | --- |
 | `repository`, `token` | Caller repository and GitHub token |
-| `branch` | Caller repository's default branch |
-| `baseline-sha` | Empty; baseline for commit-range attribution |
+| `branch` | Caller repository's default branch; shown in the alert |
+| `baseline-sha` | Empty; baseline for the commit list, omitted when empty |
 | `head-sha` | Caller SHA |
-| `merger-fallback` | Caller triggering actor |
 | `validation-result` | **Required**: `success`, `failure` or `skipped` |
 | `baseline-result` | **Required**: baseline resolution job outcome |
 | `new-issues`, `lost-issues` | `0`; shown only for completed validation |
 | `regressed-projects`, `errored-projects` | Empty; affected project names |
 | `dashboard-url`, `run-url` | Empty dashboard; current run URL |
-| `slack-webhook` | **Required** incoming webhook URL |
-| `slack-channel` | **Required** channel; webhook must support channel overrides |
-| `display-name` | `Performance Validation` |
+| `slack-channel` | **Required** destination channel without `#` |
 
-The caller gates the job to regressions, errors, validation failures or skipped validation, and
-suppresses duplicate framework notifications. This action sends whenever invoked.
+The caller gates the job to regressions, errors, validation failures or skipped validation. This
+action sends whenever invoked. Pass the resolver's `baseline-sha` so a skip caused by a missing
+baseline can be told apart from other reasons.
 
-Attribution includes the latest 20 commits in the baseline/head range, newest first, with deduplicated
-mergers of associated PRs on `branch`, falling back to commit authors and then `merger-fallback`.
-Commit titles are bounded to 200 characters. Range/merger lookup failures warn and still send the
-alert; delivery failures fail the action. Slack mentions, formatting and link delimiters in
-repository-controlled content are escaped.
+The alert lists up to 20 commits (newest first, with author) between baseline and head, and links
+the full range when there are more. Commit titles are limited to 200 characters. A failed lookup
+warns and still sends the alert; delivery failures fail the action. Repository-controlled text
+cannot create Slack mentions or formatting; Slack syntax characters are shown as lookalikes.
 
 ```yaml
 - uses: SonarSource/core-languages-tooling-public/pvf-notify-slack@master
   with:
-    baseline-sha: ${{ needs.resolve_baseline.outputs.baseline-sha }}
-    head-sha: ${{ github.sha }}
+    baseline-sha: ${{ needs.resolve_latest_validated_master.outputs.baseline-sha }}
     validation-result: ${{ needs.validate.result }}
-    baseline-result: ${{ needs.resolve_baseline.result }}
+    baseline-result: ${{ needs.resolve_latest_validated_master.result }}
     regressed-projects: ${{ needs.validate.outputs.regressed-projects }}
-    slack-webhook: ${{ steps.secrets.outputs.slack_webhook }}
     slack-channel: squad-pvf-notifs
 ```
 

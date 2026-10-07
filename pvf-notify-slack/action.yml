@@ -1,5 +1,5 @@
 name: "PVF Notify Slack"
-description: "Send a PVF alert with bounded commit and merger attribution"
+description: "Send a PVF alert listing the commits since the baseline"
 
 inputs:
   repository:
@@ -11,21 +11,17 @@ inputs:
     required: false
     default: "${{ github.token }}"
   branch:
-    description: "Branch used for build selection or merged PR attribution"
+    description: "Branch shown in the alert"
     required: false
     default: "${{ github.event.repository.default_branch }}"
   baseline-sha:
-    description: "Baseline commit for attribution; empty permits an unattributed alert"
+    description: "Baseline commit; empty omits the commit list"
     required: false
     default: ""
   head-sha:
     description: "Candidate commit being validated"
     required: false
     default: "${{ github.sha }}"
-  merger-fallback:
-    description: "Fallback GitHub login when attribution is unavailable"
-    required: false
-    default: "${{ github.triggering_actor }}"
   validation-result:
     description: "success, failure or skipped"
     required: true
@@ -56,39 +52,36 @@ inputs:
     description: "Workflow run logs URL"
     required: false
     default: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-  slack-webhook:
-    description: "Slack incoming webhook; supplied by caller, never logged"
-    required: true
   slack-channel:
-    description: "Destination Slack channel (webhook must allow channel overrides)"
+    description: "Destination Slack channel without #; the shared action authenticates through Vault"
     required: true
-  display-name:
-    description: "Slack display name"
-    required: false
-    default: "Performance Validation"
 
 runs:
   using: composite
   steps:
-    - name: PVF Notify Slack
-      id: run
+    - name: Build the PVF alert
+      id: message
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.token || github.token }}
         REPOSITORY: ${{ inputs.repository || github.repository }}
+        SERVER_URL: ${{ github.server_url }}
+        ACTOR: ${{ github.triggering_actor }}
         BRANCH: ${{ inputs.branch }}
         BASE_SHA: ${{ inputs.baseline-sha }}
         HEAD_SHA: ${{ inputs.head-sha }}
-        MERGER: ${{ inputs.merger-fallback }}
-        VALIDATE_RESULT: ${{ inputs.validation-result }}
-        RESOLVE_RESULT: ${{ inputs.baseline-result }}
-        NEW: ${{ inputs.new-issues }}
-        LOST: ${{ inputs.lost-issues }}
-        REGRESSED: ${{ inputs.regressed-projects }}
-        ERRORED: ${{ inputs.errored-projects }}
-        URL: ${{ inputs.dashboard-url }}
+        VALIDATION_RESULT: ${{ inputs.validation-result }}
+        BASELINE_RESULT: ${{ inputs.baseline-result }}
+        NEW_ISSUES: ${{ inputs.new-issues }}
+        LOST_ISSUES: ${{ inputs.lost-issues }}
+        REGRESSED_PROJECTS: ${{ inputs.regressed-projects }}
+        ERRORED_PROJECTS: ${{ inputs.errored-projects }}
+        DASHBOARD_URL: ${{ inputs.dashboard-url }}
         RUN_URL: ${{ inputs.run-url }}
-        SLACK_WEBHOOK: ${{ inputs.slack-webhook }}
-        SLACK_CHANNEL: ${{ inputs.slack-channel }}
-        SLACK_USERNAME: ${{ inputs.display-name }}
       run: python3 "${{ github.action_path }}/notify.py"
+
+    - name: Send the PVF alert
+      uses: SonarSource/release-github-actions/slack-message@833b513b1f64e7f7bf29cef5ad6f67d89272d11b
+      with:
+        channel: ${{ inputs.slack-channel }}
+        message-markdown: ${{ steps.message.outputs.markdown }}

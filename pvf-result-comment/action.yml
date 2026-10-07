@@ -1,65 +1,39 @@
-name: "PVF Result Comment"
-description: "Post PVF results on an explicit PR or the merged PR associated with a commit"
+name: 'PVF Result Comment'
+description: 'Posts the Performance Validation result (dashboard link + new/lost issue counts) as a PR comment; falls back to a run-logs link when no dashboard was published. Works same-repo or cross-repo (analyzer PR).'
 
 inputs:
   pr-number:
-    description: "PR number; takes precedence over commit-sha"
-    required: false
-    default: ""
+    description: 'Pull request number to comment on'
+    required: true
   repository:
-    description: "Repository owner/name to query"
+    description: 'owner/name of the repo whose PR to comment on. Defaults to the current repo (same-repo). Set to the analyzer repo for cross-repo dashboards.'
     required: false
-    default: "${{ github.repository }}"
-  token:
-    description: "GitHub token with access to the repository"
-    required: false
-    default: "${{ github.token }}"
+    default: ${{ github.repository }}
   dashboard-url:
-    description: "Published dashboard URL"
+    description: 'Published dashboard URL (the validate job pages-url). Empty ⇒ posts the no-dashboard fallback comment.'
     required: false
-    default: ""
+    default: ''
   new-issues:
-    description: "Number of new findings"
+    description: 'Number of new issues found'
     required: false
-    default: "0"
+    default: '0'
   lost-issues:
-    description: "Number of lost findings"
+    description: 'Number of lost issues'
     required: false
-    default: "0"
+    default: '0'
   run-url:
-    description: "Workflow run logs URL"
+    description: 'URL to the workflow run logs (used in the fallback comment). Defaults to this run.'
     required: false
-    default: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-  validation-result:
-    description: "success, failure, skipped or cancelled; empty preserves legacy formatting"
+    default: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+  token:
+    description: 'Token with pull-requests:write on `repository`. Defaults to github.token (same-repo only). For cross-repo, pass a token that can comment on the analyzer repo (e.g. from Vault).'
     required: false
-    default: ""
-  commit-sha:
-    description: "Commit used to find a merged PR when pr-number is empty"
-    required: false
-    default: ""
-  branch:
-    description: "Branch for merged PR discovery and display; empty accepts any merged PR branch"
-    required: false
-    default: ""
-  skip-reason:
-    description: "Explanation for a skipped validation"
-    required: false
-    default: "No baseline could be resolved."
-  regressed-projects:
-    description: "Regressed projects; empty means none"
-    required: false
-    default: ""
-  errored-projects:
-    description: "Errored projects; empty means none"
-    required: false
-    default: ""
+    default: ${{ github.token }}
 
 runs:
-  using: composite
+  using: 'composite'
   steps:
-    - name: PVF Result Comment
-      id: run
+    - name: Post PVF result on PR
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.token || github.token }}
@@ -69,10 +43,12 @@ runs:
         NEW: ${{ inputs.new-issues }}
         LOST: ${{ inputs.lost-issues }}
         RUN_URL: ${{ inputs.run-url }}
-        VALIDATE_RESULT: ${{ inputs.validation-result }}
-        SHA: ${{ inputs.commit-sha }}
-        BRANCH: ${{ inputs.branch }}
-        SKIP_REASON: ${{ inputs.skip-reason }}
-        REGRESSED: ${{ inputs.regressed-projects }}
-        ERRORED: ${{ inputs.errored-projects }}
-      run: python3 "${{ github.action_path }}/comment.py"
+      run: |
+        set -euo pipefail
+        if [ -n "$URL" ]; then
+          gh pr comment "$PR" --body "📊 **Performance Validation** complete
+        🆕 ${NEW:-0} new · 🗑️ ${LOST:-0} lost issues
+        [View dashboard](${URL})"
+        else
+          gh pr comment "$PR" --body "⚠️ **Performance Validation** finished without publishing a dashboard. [See run logs](${RUN_URL})."
+        fi
