@@ -47,3 +47,8 @@ jobs:
           cd prepare-ruling-artifact
           python3 -m unittest discover -v -s . -p "test_prepare.py"
 
+      - name: Run PVF latest validated master resolver unit tests
+        run: python3 -m unittest discover -v -s pvf-resolve-latest-validated-master -p 'test_*.py'
+
+      - name: Run PVF Slack notifier unit tests
+        run: python3 -m unittest discover -v -s pvf-notify-slack -p 'test_*.py'

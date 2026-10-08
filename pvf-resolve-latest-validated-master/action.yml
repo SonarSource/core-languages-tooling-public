@@ -1,0 +1,50 @@
+name: "PVF Resolve Latest Validated Master"
+description: "Find a validated default-branch baseline, falling back at the previous UTC day"
+
+inputs:
+  repository:
+    description: "Repository owner/name to query"
+    required: false
+    default: "${{ github.repository }}"
+  token:
+    description: "GitHub token with access to the repository"
+    required: false
+    default: "${{ github.token }}"
+  branch:
+    description: "Branch to search; defaults to the repository's default branch"
+    required: false
+    default: "${{ github.event.repository.default_branch }}"
+  build-workflow:
+    description: "Build workflow filename or ID"
+    required: false
+    default: "build.yml"
+  publication-job:
+    description: "Exact job display name that must have concluded successfully"
+    required: true
+  current-sha:
+    description: "Candidate commit SHA; every build of this commit is excluded"
+    required: false
+    default: "${{ github.sha }}"
+
+outputs:
+  baseline-version:
+    description: "Resolved plugin version; empty when no baseline exists"
+    value: ${{ steps.run.outputs.baseline-version }}
+  baseline-sha:
+    description: "Resolved commit SHA; empty when no baseline exists"
+    value: ${{ steps.run.outputs.baseline-sha }}
+
+runs:
+  using: composite
+  steps:
+    - name: Find the latest validated baseline
+      id: run
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token || github.token }}
+        REPOSITORY: ${{ inputs.repository || github.repository }}
+        BRANCH: ${{ inputs.branch }}
+        BUILD_WORKFLOW: ${{ inputs.build-workflow }}
+        PUBLICATION_JOB: ${{ inputs.publication-job }}
+        CURRENT_SHA: ${{ inputs.current-sha }}
+      run: python3 "${{ github.action_path }}/resolve.py"
