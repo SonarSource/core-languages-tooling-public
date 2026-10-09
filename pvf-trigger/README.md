@@ -10,6 +10,10 @@ budget already used by the PVF framework chain.
 Internally it calls the [`pvf-comment`](../pvf-comment) parser action. When a `/pvf` command is found
 it invokes the host workflow (`performance-validation.yml` by default) in the target-repo (caller by default).
 
+## Feedback on the comment
+
+On a successful dispatch the triggering comment is reacted to with 👀.
+
 ## Two modes
 
 - **Same-repo (default):** the host workflow (`performance-validation.yml` by default) lives in the
@@ -39,8 +43,8 @@ can post the dashboard link back onto the analyzer PR.
 
 ## Requirements
 
-- **Same-repo:** the caller job grants `actions:write`, `contents:read` and `pull-requests:read`.
-- **Cross-repo:** the caller job grants `actions:read`, `contents:read`, `pull-requests:read`, `id-token:write`,
+- **Same-repo:** the caller job grants `actions:write`, `contents:read` and `pull-requests:write`.
+- **Cross-repo:** the caller job grants `actions:read`, `contents:read`, `pull-requests:write`, `id-token:write`,
   and provides a `dispatch-token` with `actions:write` on `target-repo`.
 - 
 - The build workflow must upload a `candidate-version` artifact containing the deployed plugin version
