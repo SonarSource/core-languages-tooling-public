@@ -1,0 +1,87 @@
+name: "PVF Notify Slack"
+description: "Send a PVF alert listing the commits since the baseline"
+
+inputs:
+  repository:
+    description: "Repository owner/name to query"
+    required: false
+    default: "${{ github.repository }}"
+  token:
+    description: "GitHub token with access to the repository"
+    required: false
+    default: "${{ github.token }}"
+  branch:
+    description: "Branch shown in the alert"
+    required: false
+    default: "${{ github.event.repository.default_branch }}"
+  baseline-sha:
+    description: "Baseline commit; empty omits the commit list"
+    required: false
+    default: ""
+  head-sha:
+    description: "Candidate commit being validated"
+    required: false
+    default: "${{ github.sha }}"
+  validation-result:
+    description: "success, failure or skipped"
+    required: true
+  baseline-result:
+    description: "Baseline resolution job outcome"
+    required: true
+  new-issues:
+    description: "Number of new findings"
+    required: false
+    default: "0"
+  lost-issues:
+    description: "Number of lost findings"
+    required: false
+    default: "0"
+  regressed-projects:
+    description: "Regressed projects; empty means none"
+    required: false
+    default: ""
+  errored-projects:
+    description: "Errored projects; empty means none"
+    required: false
+    default: ""
+  dashboard-url:
+    description: "Published dashboard URL"
+    required: false
+    default: ""
+  run-url:
+    description: "Workflow run logs URL"
+    required: false
+    default: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+  slack-channel:
+    description: "Destination Slack channel without #; the shared action authenticates through Vault"
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Build the PVF alert
+      id: message
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token || github.token }}
+        REPOSITORY: ${{ inputs.repository || github.repository }}
+        SERVER_URL: ${{ github.server_url }}
+        ACTOR: ${{ github.triggering_actor }}
+        BRANCH: ${{ inputs.branch }}
+        BASE_SHA: ${{ inputs.baseline-sha }}
+        HEAD_SHA: ${{ inputs.head-sha }}
+        VALIDATION_RESULT: ${{ inputs.validation-result }}
+        BASELINE_RESULT: ${{ inputs.baseline-result }}
+        NEW_ISSUES: ${{ inputs.new-issues }}
+        LOST_ISSUES: ${{ inputs.lost-issues }}
+        REGRESSED_PROJECTS: ${{ inputs.regressed-projects }}
+        ERRORED_PROJECTS: ${{ inputs.errored-projects }}
+        DASHBOARD_URL: ${{ inputs.dashboard-url }}
+        RUN_URL: ${{ inputs.run-url }}
+      run: python3 "${{ github.action_path }}/notify.py"
+
+    - name: Send the PVF alert
+      uses: SonarSource/release-github-actions/slack-message@833b513b1f64e7f7bf29cef5ad6f67d89272d11b
+      with:
+        channel: ${{ inputs.slack-channel }}
+        message-markdown: ${{ steps.message.outputs.markdown }}
