@@ -7,8 +7,11 @@ By default, the action finds `target/actual` (Maven) or `build/actual` (Gradle)
 under `its/ruling` or `private/its/ruling`. It copies the contents under
 `expected/` in the uploaded artifact, so a generated `project/xml-S123.json`
 becomes `expected/project/xml-S123.json` when the notification action downloads it.
+Both JSON (`.json`) and SARIF (`.sarif`) results are supported, including mixed
+directories. Files retain their original names and contents; no format conversion
+is performed.
 It fails if none or multiple standard directories exist, or if the chosen
-one contains no JSON results. Errors list the checked directories.
+one contains no regular, non-symlink JSON or SARIF result files. Errors list the checked directories.
 Python 3 must be available as `python3` or `python` on the runner.
 
 ## Why a Separate Action?
