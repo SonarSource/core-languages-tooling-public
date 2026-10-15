@@ -25,6 +25,7 @@ This action uploads those files for `ruling-update-and-notify` to consume later.
 | Input | Required | Default | Purpose |
 |-------|----------|---------|---------|
 | `artifact-name` | No | `actual_ruling` | Use a distinct `actual_*` name when multiple jobs upload results. |
+| `retention-days` | No | repository default | Number of days to keep the uploaded artifact. |
 
 Run after the ruling test in each producer job. Invoke
 `ruling-update-and-notify` in a downstream job after the producers finish.
