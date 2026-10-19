@@ -1,5 +1,5 @@
 name: 'PVF Trigger'
-description: 'On a /pvf PR comment, resolve the candidate plugin version from the latest Build run and dispatch the host workflow (performance-validation.yml by default) (in this repo or a separate dashboard-host repo)'
+description: 'On a /pvf PR comment, resolve the candidate from the latest Build run and dispatch the host workflow (performance-validation.yml by default), in this repo or a separate dashboard-host repo. The candidate is a plugin version recorded by prepare-pvf (default), or an uploaded build artifact such as a native subprocess when executable-artifact is set.'
 
 inputs:
   comment:
@@ -12,6 +12,10 @@ inputs:
     description: 'Filename of the build workflow that uploads the candidate-version artifact'
     required: false
     default: build.yml
+  executable-artifact:
+    description: 'Name of a build artifact to validate instead of a plugin version. Empty (default) uses the candidate-version model.'
+    required: false
+    default: ''
   rule-prefixes:
     description: 'Space-separated rule-key prefixes passed to the /pvf comment parser'
     required: false
@@ -60,6 +64,7 @@ runs:
         PR_NUMBER: ${{ inputs.pr-number }}
         RULES_REQUEST: ${{ steps.pvf.outputs.rules-request }}
         BUILD_WORKFLOW: ${{ inputs.build-workflow }}
+        EXECUTABLE_ARTIFACT: ${{ inputs.executable-artifact }}
         TARGET_REPO: ${{ inputs.target-repo }}
         TARGET_REF: ${{ inputs.target-ref }}
         DISPATCH_TOKEN: ${{ inputs.dispatch-token }}
@@ -80,17 +85,40 @@ runs:
         head_ref="$(jq -r .head.ref <<<"$pull")"
         head_sha="$(jq -r .head.sha <<<"$pull")"
         title="$(jq -r .title <<<"$pull")"
+        # A commit can have several build-workflow runs (re-runs, or a newest run that failed or is
+        # still in progress). We walk them newest-first and use the newest one we can actually get the
+        # artifact from, skipping runs that don't have it yet. Both models forward different inputs.
         run_ids="$(gh api \
           "repos/${GITHUB_REPOSITORY}/actions/workflows/${BUILD_WORKFLOW}/runs?head_sha=${head_sha}&event=pull_request&per_page=10" \
-          --jq '.workflow_runs[].id')"
+          --jq '.workflow_runs[].id')" \
+          || fail "Failed to list ${BUILD_WORKFLOW} runs for ${head_sha}"
 
-        for run_id in $run_ids; do
-          if gh run download "$run_id" --repo "$GITHUB_REPOSITORY" -n candidate-version; then
-            break
-          fi
-        done
-        if [ ! -f candidate-version.txt ]; then
-          fail "No candidate-version artifact for ${head_sha}; wait for Build to finish"
+        resolved_run_id=""
+        if [ -n "${EXECUTABLE_ARTIFACT}" ]; then
+          for run_id in $run_ids; do
+            has="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts?per_page=100" \
+              | jq --arg name "$EXECUTABLE_ARTIFACT" 'any(.artifacts[]; .name == $name and .expired == false)')" \
+              || continue
+            if [ "$has" = "true" ]; then
+              resolved_run_id="$run_id"
+              break
+            fi
+          done
+          [ -n "$resolved_run_id" ] \
+            || fail "No ${EXECUTABLE_ARTIFACT} artifact for ${head_sha}; wait for Build to finish"
+          candidate_args=(-f "uploaded-executable-run-id=${resolved_run_id}" -f "executable-artifact=${EXECUTABLE_ARTIFACT}")
+        else
+          for run_id in $run_ids; do
+            if gh run download "$run_id" --repo "$GITHUB_REPOSITORY" -n candidate-version; then
+              resolved_run_id="$run_id"
+              break
+            fi
+          done
+          [ -n "$resolved_run_id" ] \
+            || fail "No candidate-version artifact for ${head_sha}; wait for Build to finish"
+          [ -s candidate-version.txt ] \
+            || fail "candidate-version artifact for ${head_sha} is missing or empty"
+          candidate_args=(-f "candidate-version=$(cat candidate-version.txt)")
         fi
 
         TARGET_REPO="${TARGET_REPO:-$GITHUB_REPOSITORY}"
@@ -119,7 +147,7 @@ runs:
         if ! dispatch_output="$(GH_TOKEN="$token" gh workflow run "$workflow" \
           --repo "$TARGET_REPO" \
           --ref "$ref" \
-          -f "candidate-version=$(cat candidate-version.txt)" \
+          "${candidate_args[@]}" \
           -f "rules-request=${RULES_REQUEST}" \
           -f "pr-number=${PR_NUMBER}" \
           -f "run-description=${title}" \

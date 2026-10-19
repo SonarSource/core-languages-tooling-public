@@ -30,6 +30,7 @@ On a successful dispatch the triggering comment is reacted to with 👀.
 | `comment` | Comment body to scan for a `/pvf` command | Yes | |
 | `pr-number` | Pull request number the comment was posted on | Yes | |
 | `build-workflow` | Filename of the build workflow that uploads the `candidate-version` artifact | No | `build.yml` |
+| `executable-artifact` | Name of a build artifact to validate instead of a plugin version. Empty ⇒ the `candidate-version` model. | No | `''` |
 | `rule-prefixes` | Space-separated rule-key prefixes passed to the parser | No | `S` |
 | `target-repo` | `owner/name` of the repo hosting the host workflow (`performance-validation.yml` by default). Cross-repo target for a gated dashboard. | No | current repo |
 | `target-ref` | Ref to dispatch on in `target-repo`. Empty ⇒ the PR head ref (same-repo). Set to the target's default branch (e.g. `master`) for cross-repo. | No | `''` |
@@ -46,6 +47,8 @@ can post the dashboard link back onto the analyzer PR.
 - **Same-repo:** the caller job grants `actions:write`, `contents:read` and `pull-requests:write`.
 - **Cross-repo:** the caller job grants `actions:read`, `contents:read`, `pull-requests:write`, `id-token:write`,
   and provides a `dispatch-token` with `actions:write` on `target-repo`.
-- 
-- The build workflow must upload a `candidate-version` artifact containing the deployed plugin version
-  in `candidate-version.txt`.
+- **Candidate-version model (default):** the build workflow must upload a `candidate-version` artifact
+  containing the deployed plugin version in `candidate-version.txt`.
+- **Executable-artifact model (`executable-artifact` set):** the build workflow must upload an artifact
+  with that name; the host workflow downloads it by run id (the action forwards `uploaded-executable-run-id`
+  and `executable-artifact` instead of `candidate-version`).
