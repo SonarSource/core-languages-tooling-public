@@ -9,7 +9,7 @@ inputs:
     description: 'Pull request number the comment was posted on'
     required: true
   build-workflow:
-    description: 'Filename of the build workflow that uploads the candidate-version artifact (or the artifact named by executable-artifact when that is set)'
+    description: 'Build workflow to inspect. Resolves candidate-version unless executable-artifact is set, then resolves that artifact.'
     required: false
     default: build.yml
   executable-artifact:
@@ -85,9 +85,7 @@ runs:
         head_ref="$(jq -r .head.ref <<<"$pull")"
         head_sha="$(jq -r .head.sha <<<"$pull")"
         title="$(jq -r .title <<<"$pull")"
-        # A commit can have several build-workflow runs (re-runs, or a newest run that failed or is
-        # still in progress). We walk them newest-first and use the newest one we can actually get the
-        # artifact from, skipping runs that don't have it yet. Both models forward different inputs.
+        # Use the newest run containing the required artifact. Each model forwards different inputs.
         run_ids="$(gh api \
           "repos/${GITHUB_REPOSITORY}/actions/workflows/${BUILD_WORKFLOW}/runs?head_sha=${head_sha}&event=pull_request&per_page=10" \
           --jq '.workflow_runs[].id')" \
