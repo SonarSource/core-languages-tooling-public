@@ -1,7 +1,8 @@
 # PVF Trigger
 
-Composite action that, on a `/pvf` PR comment, resolves the candidate plugin version from the
-latest **Build** run and dispatches the host workflow (`performance-validation.yml` by default).
+Composite action that, on a `/pvf` PR comment, resolves the candidate from the latest **Build** run
+and dispatches the host workflow (`performance-validation.yml` by default). The candidate is a plugin
+version by default, or the artifact named by `executable-artifact` when that input is set.
 
 It is a composite action (not a reusable workflow) on purpose: it runs as steps inside the caller's
 job, so it adds no workflow-nesting level and does not consume the GitHub 4-level reusable-workflow
@@ -29,7 +30,7 @@ On a successful dispatch the triggering comment is reacted to with 👀.
 |-------|-------------|----------|---------|
 | `comment` | Comment body to scan for a `/pvf` command | Yes | |
 | `pr-number` | Pull request number the comment was posted on | Yes | |
-| `build-workflow` | Filename of the build workflow that uploads the `candidate-version` artifact | No | `build.yml` |
+| `build-workflow` | Filename of the build workflow that uploads the `candidate-version` artifact (or the artifact named by `executable-artifact` when set) | No | `build.yml` |
 | `executable-artifact` | Name of a build artifact to validate instead of a plugin version. Empty ⇒ the `candidate-version` model. | No | `''` |
 | `rule-prefixes` | Space-separated rule-key prefixes passed to the parser | No | `S` |
 | `target-repo` | `owner/name` of the repo hosting the host workflow (`performance-validation.yml` by default). Cross-repo target for a gated dashboard. | No | current repo |

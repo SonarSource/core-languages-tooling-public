@@ -9,7 +9,7 @@ inputs:
     description: 'Pull request number the comment was posted on'
     required: true
   build-workflow:
-    description: 'Filename of the build workflow that uploads the candidate-version artifact'
+    description: 'Filename of the build workflow that uploads the candidate-version artifact (or the artifact named by executable-artifact when that is set)'
     required: false
     default: build.yml
   executable-artifact:
