@@ -22,16 +22,43 @@ class SyncArtifactsTests(unittest.TestCase):
             root = Path(directory)
             artifacts = root / "artifacts"
             destination = root / "ruling"
-            (artifacts / "project").mkdir(parents=True)
-            (destination / "project").mkdir(parents=True)
-            (artifacts / "project" / "new.json").write_text("new")
-            (destination / "project" / "existing.json").write_text("existing")
+            (artifacts / "expected/project").mkdir(parents=True)
+            (destination / "expected/project").mkdir(parents=True)
+            (artifacts / "expected/project" / "new.json").write_text("new")
+            (destination / "expected/project" / "existing.json").write_text("existing")
 
             sync_ruling_artifacts.sync_artifacts(destination, artifacts, "success")
 
-            self.assertEqual((destination / "project" / "new.json").read_text(), "new")
-            self.assertEqual((destination / "project" / "existing.json").read_text(), "existing")
+            self.assertEqual((destination / "expected/project" / "new.json").read_text(), "new")
+            self.assertEqual((destination / "expected/project" / "existing.json").read_text(), "existing")
             self.assertFalse(artifacts.exists())
+
+    def test_syncs_python_enterprise_results_with_or_without_expected_wrapper(self) -> None:
+        for wrapped in (False, True):
+            with self.subTest(wrapped=wrapped), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                resources = Path("private/its-enterprise/ruling/src/test/resources")
+                expected = root / resources / "expected"
+                (expected / "project").mkdir(parents=True)
+                (expected / "project/python-S100.json").write_text("old")
+                (expected / "project/python-S200.json").write_text("unchanged")
+                artifacts = root / "artifacts"
+                artifact_root = artifacts / "expected" if wrapped else artifacts
+                (artifact_root / "project").mkdir(parents=True)
+                (artifact_root / "project/python-S100.json").write_text("new")
+                (artifact_root / "project/python-S300.json").write_text("added")
+
+                ruling_root, sources_root = find_ruling_directory.find_ruling_paths(root)
+                self.assertEqual(ruling_root, resources)
+                self.assertEqual(sources_root, Path("private/its-enterprise/sources_ruling"))
+                sync_ruling_artifacts.sync_artifacts(root / ruling_root, artifacts, "success")
+
+                self.assertEqual((expected / "project/python-S100.json").read_text(), "new")
+                self.assertEqual((expected / "project/python-S200.json").read_text(), "unchanged")
+                self.assertEqual((expected / "project/python-S300.json").read_text(), "added")
+                self.assertFalse((root / resources / "project").exists())
+                self.assertFalse((expected / "expected").exists())
+                self.assertFalse(artifacts.exists())
 
     def test_failure_annotation_stays_inside_log_group(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -246,10 +273,22 @@ class FindRulingDirectoryTests(unittest.TestCase):
 
             public_expected.mkdir(parents=True)
             private_expected.mkdir(parents=True)
-            with self.assertRaisesRegex(ValueError, "Both expected ruling directories exist") as ambiguous:
+            with self.assertRaisesRegex(ValueError, "Multiple expected ruling directories exist") as ambiguous:
                 find_ruling_directory.find_ruling_paths(root)
             self.assertIn(str(find_ruling_directory.PUBLIC_ROOT / "expected"), str(ambiguous.exception))
             self.assertIn(str(find_ruling_directory.PRIVATE_ROOT / "expected"), str(ambiguous.exception))
+
+    def test_rejects_enterprise_layout_alongside_other_layouts(self) -> None:
+        enterprise_expected = Path("private/its-enterprise/ruling/src/test/resources/expected")
+        for other in (find_ruling_directory.PUBLIC_ROOT, find_ruling_directory.PRIVATE_ROOT):
+            with self.subTest(other=other), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / enterprise_expected).mkdir(parents=True)
+                (root / other / "expected").mkdir(parents=True)
+                with self.assertRaisesRegex(ValueError, "Multiple expected ruling directories exist") as ambiguous:
+                    find_ruling_directory.find_ruling_paths(root)
+                self.assertIn(str(enterprise_expected), str(ambiguous.exception))
+                self.assertIn(str(other / "expected"), str(ambiguous.exception))
 
     def test_main_publishes_roots(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

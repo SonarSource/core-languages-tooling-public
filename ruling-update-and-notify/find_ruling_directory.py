@@ -9,23 +9,26 @@ PUBLIC_ROOT = Path("its/ruling/src/test/resources")
 PRIVATE_ROOT = Path("private/its/ruling/src/test/resources")
 
 
-def find_ruling_paths(repository_root: Path) -> tuple[Path, Path]:
-    public_expected = PUBLIC_ROOT / "expected"
-    private_expected = PRIVATE_ROOT / "expected"
-    has_public = (repository_root / public_expected).is_dir()
-    has_private = (repository_root / private_expected).is_dir()
+RULING_LAYOUTS = (
+    (PUBLIC_ROOT, Path("its/sources")),
+    (PRIVATE_ROOT, Path("private/its/sources")),
+    (Path("private/its-enterprise/ruling/src/test/resources"), Path("private/its-enterprise/sources_ruling")),
+)
 
-    if has_public and has_private:
-        raise ValueError(
-            f"Both expected ruling directories exist: {public_expected} and {private_expected}"
-        )
-    if has_public:
-        return PUBLIC_ROOT, Path("its/sources")
-    if has_private:
-        return PRIVATE_ROOT, Path("private/its/sources")
-    raise ValueError(
-        f"No expected ruling directory found. Checked: {public_expected}, {private_expected}"
-    )
+
+def find_ruling_paths(repository_root: Path) -> tuple[Path, Path]:
+    candidates = [
+        (ruling_root, sources_root)
+        for ruling_root, sources_root in RULING_LAYOUTS
+        if (repository_root / ruling_root / "expected").is_dir()
+    ]
+    if len(candidates) > 1:
+        found_roots = ", ".join(str(root / "expected") for root, _ in candidates)
+        raise ValueError(f"Multiple expected ruling directories exist: {found_roots}")
+    if candidates:
+        return candidates[0]
+    checked_roots = ", ".join(str(root / "expected") for root, _ in RULING_LAYOUTS)
+    raise ValueError(f"No expected ruling directory found. Checked: {checked_roots}")
 
 
 def main() -> int:

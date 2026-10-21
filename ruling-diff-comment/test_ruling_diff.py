@@ -49,9 +49,10 @@ class FakeRulingDiffIO:
 
 
 class ChangedRulingFilesTest(unittest.TestCase):
-    def test_discovers_both_expected_roots(self) -> None:
+    def test_discovers_all_expected_roots(self) -> None:
         standard = "its/ruling/src/test/resources/expected/alpha/java-S100.json"
         enterprise = "private/its/ruling/src/test/resources/expected/beta/java-S200.json"
+        python_enterprise = "private/its-enterprise/ruling/src/test/resources/expected/gamma/python-S100.json"
         maven_actual = "its/ruling/target/actual/alpha/java-S300.json"
         gradle_actual = "private/its/ruling/build/actual/beta/java-S300.json"
         obsolete = (
@@ -62,12 +63,12 @@ class ChangedRulingFilesTest(unittest.TestCase):
             io,
             "run_command",
             return_value="\n".join(
-                (enterprise, maven_actual, gradle_actual, standard, obsolete)
+                (enterprise, python_enterprise, maven_actual, gradle_actual, standard, obsolete)
             ),
         ) as run_command:
             changed = io.get_changed_ruling_files("base", "head")
 
-        self.assertEqual(changed, [standard, enterprise])
+        self.assertEqual(changed, sorted([standard, enterprise, python_enterprise]))
         run_command.assert_called_once_with(
             [
                 "git",
@@ -77,6 +78,7 @@ class ChangedRulingFilesTest(unittest.TestCase):
                 "--",
                 "its/ruling/src/test/resources/expected/",
                 "private/its/ruling/src/test/resources/expected/",
+                "private/its-enterprise/ruling/src/test/resources/expected/",
             ]
         )
 
@@ -105,6 +107,15 @@ class ParsePathTest(unittest.TestCase):
     def test_parse_ruling_path(self) -> None:
         path = "private/its/ruling/src/test/resources/expected/airflow/python-S1066.json"
         self.assertEqual(core.parse_ruling_path(path), ("airflow", "python", "S1066"))
+
+    def test_parse_python_enterprise_layout(self) -> None:
+        for repository in ("python", "pythonenterprise"):
+            with self.subTest(repository=repository):
+                path = (
+                    "private/its-enterprise/ruling/src/test/resources/expected/"
+                    f"specific-rules/{repository}-S7471.json"
+                )
+                self.assertEqual(core.parse_ruling_path(path), ("specific-rules", repository, "S7471"))
 
     def test_parse_ruling_path_with_pythonenterprise(self) -> None:
         path = "private/its/ruling/src/test/resources/expected/specific-rules/pythonenterprise-S7471.json"

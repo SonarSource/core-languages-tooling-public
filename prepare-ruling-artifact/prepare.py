@@ -11,8 +11,10 @@ from pathlib import Path
 ACTUAL_ROOTS = (
     Path("its/ruling/target/actual"),
     Path("private/its/ruling/target/actual"),
+    Path("private/its-enterprise/ruling/target/actual"),
     Path("its/ruling/build/actual"),
     Path("private/its/ruling/build/actual"),
+    Path("private/its-enterprise/ruling/build/actual"),
 )
 
 
