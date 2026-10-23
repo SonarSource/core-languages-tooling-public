@@ -6,6 +6,10 @@ inputs:
     description: 'Unique artifact name beginning with actual_'
     required: false
     default: 'actual_ruling'
+  retention-days:
+    description: 'Number of days to keep the artifact. Uses the repository default when empty'
+    required: false
+    default: ''
 
 runs:
   using: 'composite'
@@ -28,3 +32,4 @@ runs:
         name: ${{ inputs.artifact-name }}
         path: ${{ steps.stage.outputs.path }}/
         if-no-files-found: error
+        retention-days: ${{ inputs.retention-days }}
