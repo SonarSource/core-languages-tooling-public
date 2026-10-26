@@ -26,6 +26,7 @@ class RulingDiffIO(Protocol):
 EXPECTED_RULING_ROOTS = (
     "its/ruling/src/test/resources/expected",
     "private/its/ruling/src/test/resources/expected",
+    "private/its-enterprise/ruling/src/test/resources/expected",
 )
 EXPECTED_RULING_ROOT = EXPECTED_RULING_ROOTS[0]
 COMMENT_MARKER = "<!-- ruling-diff-comment -->"

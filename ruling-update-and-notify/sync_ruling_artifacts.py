@@ -43,6 +43,12 @@ def sync_artifacts(ruling_root: Path, artifact_directory: Path, download_outcome
     if not artifacts:
         raise RuntimeError("Artifact directory is empty; no 'actual_*' artifacts found")
 
+    # prepare-ruling-artifact wraps results in expected/. Older producers upload
+    # target/actual contents directly, so those need the expected/ destination.
+    if not (artifact_directory / "expected").is_dir():
+        ruling_root = ruling_root / "expected"
+    ruling_root.mkdir(parents=True, exist_ok=True)
+
     print(f"Copying {len(artifacts)} artifact entries into {ruling_root}")
     try:
         for artifact in artifacts:

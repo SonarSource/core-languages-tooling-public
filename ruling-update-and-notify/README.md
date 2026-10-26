@@ -80,6 +80,12 @@ platform must be selected as the canonical source for overlapping projects.
 Per-project fix PRs would require scoped artifact selection, unique fix-branch
 names, and matching cleanup; the current actions do not provide that mode.
 
+Artifacts prepared by `prepare-ruling-artifact` contain an `expected/` directory
+and are copied into the detected ruling resources directory. For compatibility
+with existing producers such as sonar-python-enterprise, artifacts without that
+wrapper are copied into its `expected/` directory instead. All artifacts in a
+run must use the same format.
+
 ## Inputs
 
 | Input | Description | Required |
@@ -87,10 +93,15 @@ names, and matching cleanup; the current actions do not provide that mode.
 | `ruling-failed` | Whether the ruling test failed (`true` or `false`) | Yes |
 
 When ruling tests fail, the action checks for exactly one of
-`its/ruling/src/test/resources/expected` and
-`private/its/ruling/src/test/resources/expected`. It reports both paths if
-neither or both exist, and uses the corresponding `its/sources` or
-`private/its/sources` path for snippets. Successful tests need no ruling
+the following layouts:
+
+| Expectations directory | Sources directory |
+|------------------------|-------------------|
+| `its/ruling/src/test/resources/expected` | `its/sources` |
+| `private/its/ruling/src/test/resources/expected` | `private/its/sources` |
+| `private/its-enterprise/ruling/src/test/resources/expected` | `private/its-enterprise/sources_ruling` |
+
+It reports an error if none or multiple expectation directories exist. Successful tests need no ruling
 directory. PR context comes from the event; callers should remove former
 `pr-number`, `sources-root`, and `ruling-root` inputs.
 

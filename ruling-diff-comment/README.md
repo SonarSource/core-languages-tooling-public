@@ -55,10 +55,11 @@ Add this action to your workflow:
 
 ### Ruling File Location
 
-The action detects changed expectation JSON files under either:
+The action detects changed expectation JSON files under any of:
 ```
 its/ruling/src/test/resources/expected/<project-key>/
 private/its/ruling/src/test/resources/expected/<project-key>/
+private/its-enterprise/ruling/src/test/resources/expected/<project-key>/
 ```
 
 Generated actual results live under `target/actual/<project-key>/` (Maven) or

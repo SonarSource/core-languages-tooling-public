@@ -55,6 +55,26 @@ class PrepareRulingArtifactTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue((Path(stage_path) / "expected/project/xml-S123.json").exists())
 
+    def test_stages_python_enterprise_ruling_results(self) -> None:
+        for build_directory in ("target", "build"):
+            with self.subTest(build_directory=build_directory):
+                result, stage_path, _ = self.run_preparer(
+                    (f"private/its-enterprise/ruling/{build_directory}/actual",)
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(
+                    (Path(stage_path) / "expected/project/xml-S123.json").read_text(),
+                    '{"rule": [1]}',
+                )
+
+    def test_rejects_enterprise_results_alongside_other_layouts(self) -> None:
+        result, _, _ = self.run_preparer((
+            "private/its/ruling/target/actual",
+            "private/its-enterprise/ruling/target/actual",
+        ))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Multiple generated ruling directories", result.stderr)
+
     def test_stages_gradle_ruling_results(self) -> None:
         for root in (
             "its/ruling/build/actual",
