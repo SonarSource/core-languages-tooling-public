@@ -4,20 +4,39 @@
 # be able to deliver its message even when jq isn't on the runner).
 #
 # Expects env vars: SLACK_TOKEN, SLACK_CHANNEL, SLACK_MESSAGE.
+# SLACK_CHANNEL is a comma-separated list of one or more channels; the message is posted
+# to each independently so one bad channel doesn't suppress delivery to the others.
 #
 # chat.postMessage always returns HTTP 200, even on failure - success is checked via
 # plain string matching on the "ok" field in the response body, not jq.
 set -uo pipefail
 
-response=$(curl -sS -X POST https://slack.com/api/chat.postMessage \
-  -H "Authorization: Bearer $SLACK_TOKEN" \
-  -H "Content-Type: application/x-www-form-urlencoded; charset=utf-8" \
-  --data-urlencode "channel=$SLACK_CHANNEL" \
-  --data-urlencode "text=$SLACK_MESSAGE")
+failed=false
+attempted=0
+IFS=',' read -ra channels <<< "$SLACK_CHANNEL"
+for channel in "${channels[@]}"; do
+  channel="$(echo "$channel" | xargs)" # trim whitespace
+  [[ -z "$channel" ]] && continue
+  attempted=$((attempted + 1))
 
-if [[ "$response" != *'"ok":true'* ]]; then
-  echo "::error title=Slack post failed::${response:-no response from Slack (curl failed)}" >&2
+  response=$(curl -sS -X POST https://slack.com/api/chat.postMessage \
+    -H "Authorization: Bearer $SLACK_TOKEN" \
+    -H "Content-Type: application/x-www-form-urlencoded; charset=utf-8" \
+    --data-urlencode "channel=$channel" \
+    --data-urlencode "text=$SLACK_MESSAGE")
+
+  if [[ "$response" != *'"ok":true'* ]]; then
+    echo "::error title=Slack post failed::channel $channel: ${response:-no response from Slack (curl failed)}" >&2
+    failed=true
+    continue
+  fi
+
+  echo "Message posted to Slack channel: $channel"
+done
+
+if (( attempted == 0 )); then
+  echo "::error title=Slack post failed::no Slack channel provided (SLACK_CHANNEL='$SLACK_CHANNEL')" >&2
   exit 1
 fi
-
-echo "Message posted to Slack channel: $SLACK_CHANNEL"
+[[ "$failed" == true ]] && exit 1
+exit 0
