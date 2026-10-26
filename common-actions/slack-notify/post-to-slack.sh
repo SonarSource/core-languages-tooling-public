@@ -12,10 +12,12 @@
 set -uo pipefail
 
 failed=false
+attempted=0
 IFS=',' read -ra channels <<< "$SLACK_CHANNEL"
 for channel in "${channels[@]}"; do
   channel="$(echo "$channel" | xargs)" # trim whitespace
   [[ -z "$channel" ]] && continue
+  attempted=$((attempted + 1))
 
   response=$(curl -sS -X POST https://slack.com/api/chat.postMessage \
     -H "Authorization: Bearer $SLACK_TOKEN" \
@@ -32,5 +34,9 @@ for channel in "${channels[@]}"; do
   echo "Message posted to Slack channel: $channel"
 done
 
+if (( attempted == 0 )); then
+  echo "::error title=Slack post failed::no Slack channel provided (SLACK_CHANNEL='$SLACK_CHANNEL')" >&2
+  exit 1
+fi
 [[ "$failed" == true ]] && exit 1
 exit 0
