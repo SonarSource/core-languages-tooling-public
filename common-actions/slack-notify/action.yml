@@ -4,7 +4,9 @@ author: 'SonarSource'
 
 inputs:
   slack-channel:
-    description: 'Slack channel to post the notification to'
+    description: >-
+      Comma-separated list of Slack channels to post the notification to
+      (e.g. 'squad-a,squad-b').
     required: true
   branch-patterns:
     description: >-
