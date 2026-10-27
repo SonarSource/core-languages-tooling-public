@@ -7,8 +7,8 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
-      - 'its/ruling/src/test/resources/expected/**'
-      - 'private/its/ruling/src/test/resources/expected/**'
+      - 'its/ruling/src/test/resources/expected/**/*.sarif'
+      - 'private/its/ruling/src/test/resources/expected/**/*.sarif'
       # Include action changes to test modifications
       - '.github/actions/ruling-diff-comment/**'
       - '.github/workflows/ruling-diff-comment.yml'

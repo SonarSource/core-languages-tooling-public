@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Protocol
 
 
@@ -26,10 +26,8 @@ class IssueLocation:
         )
 
 
-RulingJson = dict[str, list[int]]
 SarifReport = dict[str, list[IssueLocation]]
-RulingReport = RulingJson | SarifReport
-OptionalRulingReport = RulingReport | None
+OptionalSarifReport = SarifReport | None
 SourceLines = list[str]
 OptionalSourceLines = SourceLines | None
 SourceCache = dict[tuple[str, str], OptionalSourceLines]
@@ -39,7 +37,7 @@ class RulingDiffIO(Protocol):
     ruling_root: str | None
     sources_root: str
 
-    def load_json_at_ref(self, path: str, ref: str) -> OptionalRulingReport:
+    def load_sarif_at_ref(self, path: str, ref: str) -> OptionalSarifReport:
         ...
 
     def load_text_at_ref(self, path: str, ref: str) -> str | None:
@@ -79,19 +77,16 @@ PROJECT_SOURCE_OVERRIDES = {
 @dataclass(frozen=True)
 class IssueDiff:
     file_path: str
-    added_lines: list[int]
-    removed_lines: list[int]
-    added_locations: list[IssueLocation] = field(default_factory=list)
-    removed_locations: list[IssueLocation] = field(default_factory=list)
+    added_locations: list[IssueLocation]
+    removed_locations: list[IssueLocation]
 
 
 @dataclass(frozen=True)
 class Snippet:
     file_path: str
-    line_number: int
+    location: IssueLocation
     change_kind: str
     body: str
-    location: IssueLocation | None = None
 
 
 @dataclass(frozen=True)

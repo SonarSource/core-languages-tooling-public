@@ -7,15 +7,14 @@ from ruling_diff_core_lib.models_and_constants import (
     EXPECTED_RULING_ROOTS,
     IssueDiff,
     IssueLocation,
-    OptionalRulingReport,
+    OptionalSarifReport,
     RulingDiffIO,
     RuleDiff,
-    RulingReport,
+    SarifReport,
     SourceCache,
     Snippet,
 )
 from ruling_diff_core_lib.snippet_generation import build_snippets_for_rule
-from ruling_diff_core_lib.report_formats import split_report_filename
 
 
 def parse_ruling_path(path: str, ruling_root: str | None = None) -> tuple[str, str, str]:
@@ -35,15 +34,17 @@ def parse_ruling_relative_path(relative_path: str) -> tuple[str, str]:
     parts = PurePosixPath(relative_path).parts
     if len(parts) != 2:
         raise ValueError(
-            f"Expected '<project>/<repo>-<rule>.<format>' path, got: {relative_path}"
+            f"Expected '<project>/<repo>-<rule>.sarif' path, got: {relative_path}"
         )
     return parts[0], parts[1]
 
 
 def parse_rule_filename(filename: str) -> tuple[str, str]:
-    basename, _ = split_report_filename(filename)
+    if not filename.endswith(".sarif"):
+        raise ValueError(f"Expected a .sarif report filename, got: {filename}")
+    basename = filename.removesuffix(".sarif")
     if "-" not in basename:
-        raise ValueError(f"Expected '<repo>-<ruleKey>.<format>', got: {filename}")
+        raise ValueError(f"Expected '<repo>-<ruleKey>.sarif', got: {filename}")
     repository, rule_key = basename.rsplit("-", 1)
     if not repository:
         raise ValueError(f"Missing repo in filename: {filename}")
@@ -54,7 +55,7 @@ def parse_rule_filename(filename: str) -> tuple[str, str]:
 
 def strip_project_key(key: str) -> str:
     """
-    Extract file path from ruling JSON key.
+    Extract a source path from a SARIF artifact URI containing a component key.
 
     Handles different formats:
     - Python: "airflow:airflow/cli/cli_parser.py" -> "airflow/cli/cli_parser.py"
@@ -83,8 +84,8 @@ def strip_project_key(key: str) -> str:
         return key
 
 
-def diff_ruling_jsons(
-    old: OptionalRulingReport, new: OptionalRulingReport
+def diff_sarif_reports(
+    old: OptionalSarifReport, new: OptionalSarifReport
 ) -> list[IssueDiff]:
     old_map = old or {}
     new_map = new or {}
@@ -99,7 +100,7 @@ def diff_ruling_jsons(
 
 
 def diff_single_file_key(
-    key: str, old_map: RulingReport, new_map: RulingReport
+    key: str, old_map: SarifReport, new_map: SarifReport
 ) -> IssueDiff | None:
     old_locations = set(old_map.get(key, []))
     new_locations = set(new_map.get(key, []))
@@ -109,15 +110,9 @@ def diff_single_file_key(
         return None
     return IssueDiff(
         file_path=strip_project_key(key),
-        added_lines=[location.start_line for location in added],
-        removed_lines=[location.start_line for location in removed],
         added_locations=added,
         removed_locations=removed,
     )
-
-
-def as_location(value: int | IssueLocation) -> IssueLocation:
-    return IssueLocation(start_line=value) if isinstance(value, int) else value
 
 
 def build_rule_diffs(
@@ -155,9 +150,9 @@ def build_rule_diff_for_file(
     except ValueError as exc:
         logging.warning("Skipping unrecognized ruling path %s: %s", path, exc)
         return None
-    old_json: OptionalRulingReport = io.load_json_at_ref(path, base_sha)
-    new_json: OptionalRulingReport = io.load_json_at_ref(path, head_sha)
-    file_diffs: list[IssueDiff] = diff_ruling_jsons(old_json, new_json)
+    old_report: OptionalSarifReport = io.load_sarif_at_ref(path, base_sha)
+    new_report: OptionalSarifReport = io.load_sarif_at_ref(path, head_sha)
+    file_diffs: list[IssueDiff] = diff_sarif_reports(old_report, new_report)
     if not file_diffs:
         return None
     snippets: list[Snippet] = build_snippets_for_rule(
@@ -174,6 +169,6 @@ def build_rule_diff_for_file(
         rule_key=rule_key,
         file_diffs=file_diffs,
         snippets=snippets,
-        is_new_file=old_json is None,
-        is_deleted_file=new_json is None,
+        is_new_file=old_report is None,
+        is_deleted_file=new_report is None,
     )

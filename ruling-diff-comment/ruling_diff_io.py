@@ -5,17 +5,12 @@ import logging
 import subprocess
 from pathlib import Path
 
-from ruling_diff_core_lib.report_formats import (
-    normalize_ruling_json as normalize_ruling_json,
-    parse_ruling_json as parse_ruling_json,
-    parse_ruling_report,
-    split_report_filename,
-)
+from ruling_diff_core_lib.sarif import parse_sarif_report
 from ruling_diff_core_lib.models_and_constants import (
     COMMENT_MARKER,
     EXPECTED_RULING_ROOTS,
     PROJECT_SOURCE_OVERRIDES,
-    OptionalRulingReport,
+    OptionalSarifReport,
 )
 
 RULING_SOURCES_SUBMODULE = "private/its-enterprise/sources_ruling"
@@ -38,8 +33,8 @@ class GitHubActionIO:
         self.ruling_root = ruling_root
         self.sources_root = sources_root
 
-    def load_json_at_ref(self, path: str, ref: str) -> OptionalRulingReport:
-        return load_json_at_ref(path, ref)
+    def load_sarif_at_ref(self, path: str, ref: str) -> OptionalSarifReport:
+        return load_sarif_at_ref(path, ref)
 
     def load_text_at_ref(self, path: str, ref: str) -> str | None:
         return load_text_at_ref(path, ref, self.sources_root)
@@ -163,13 +158,9 @@ def get_changed_ruling_files(
 
 def is_ruling_report(path: str, ruling_root: str | None = None) -> bool:
     ruling_roots = (ruling_root,) if ruling_root is not None else EXPECTED_RULING_ROOTS
-    if not any(path.startswith(f"{root}/") for root in ruling_roots):
-        return False
-    try:
-        split_report_filename(path)
-    except ValueError:
-        return False
-    return True
+    return path.endswith(".sarif") and any(
+        path.startswith(f"{root}/") for root in ruling_roots
+    )
 
 
 def _is_missing_at_ref(stderr: str) -> bool:
@@ -179,7 +170,7 @@ def _is_missing_at_ref(stderr: str) -> bool:
     )
 
 
-def load_json_at_ref(path: str, ref: str) -> OptionalRulingReport:
+def load_sarif_at_ref(path: str, ref: str) -> OptionalSarifReport:
     result = subprocess.run(
         ["git", "show", f"{ref}:{path}"], capture_output=True, text=True
     )
@@ -189,7 +180,7 @@ def load_json_at_ref(path: str, ref: str) -> OptionalRulingReport:
         raise CommandError(
             f"Failed to read file at ref: git show {ref}:{path}\nstdout: {result.stdout}\nstderr: {result.stderr}"
         )
-    return parse_ruling_report(result.stdout, path, ref)
+    return parse_sarif_report(result.stdout, path, ref)
 
 
 def load_text_at_ref(path: str, ref: str, sources_root: str = RULING_SOURCES_SUBMODULE) -> str | None:

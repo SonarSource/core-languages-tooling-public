@@ -8,7 +8,7 @@ from unittest.mock import patch
 import ruling_diff_core as core
 import ruling_diff_io as io
 from ruling_diff_core_lib.models_and_constants import IssueLocation
-from ruling_diff_core_lib.report_formats import parse_ruling_report
+from ruling_diff_core_lib.sarif import parse_sarif_report
 
 
 def result(filename="alpha:src/A.java", region=None, **metadata):
@@ -23,7 +23,7 @@ def report(*results):
 
 
 def parse(content):
-    return parse_ruling_report(content, "java-S100.sarif", "head")
+    return parse_sarif_report(content, "java-S100.sarif", "head")
 
 
 class SarifDiffTest(unittest.TestCase):
@@ -42,7 +42,7 @@ class SarifDiffTest(unittest.TestCase):
             with self.subTest(field=field):
                 changed = {**self.region, field: self.region[field] + 1}
                 after = parse(report(result(region=changed)))
-                diff = core.diff_ruling_jsons(before, after)[0]
+                diff = core.diff_sarif_reports(before, after)[0]
                 self.assertEqual(diff.removed_locations, [IssueLocation(10, 2, 12, 5)])
                 self.assertEqual(diff.added_locations, [IssueLocation(
                     changed["startLine"], changed["startColumn"], changed["endLine"], changed["endColumn"]
@@ -51,16 +51,16 @@ class SarifDiffTest(unittest.TestCase):
     def test_source_filename_change_is_detected_including_parent_directory(self):
         before = parse(report(result(filename="alpha:src/A.java", region=self.region)))
         after = parse(report(result(filename="alpha:other/A.java", region=self.region)))
-        diffs = core.diff_ruling_jsons(before, after)
+        diffs = core.diff_sarif_reports(before, after)
         self.assertEqual([diff.file_path for diff in diffs], ["other/A.java", "src/A.java"])
-        self.assertEqual(diffs[0].added_lines, [10])
-        self.assertEqual(diffs[1].removed_lines, [10])
+        self.assertEqual(diffs[0].added_locations, [IssueLocation(10, 2, 12, 5)])
+        self.assertEqual(diffs[1].removed_locations, [IssueLocation(10, 2, 12, 5)])
 
     def test_rule_id_messages_and_other_metadata_are_ignored(self):
         before = result(region=self.region, ruleId="java:S100", message={"text": "old"}, level="warning")
         after = result(region=self.region, ruleId="different", message={"text": "new"}, level="error")
         after["relatedLocations"] = [{"message": {"text": "secondary"}}]
-        self.assertEqual(core.diff_ruling_jsons(parse(report(before)), parse(report(after))), [])
+        self.assertEqual(core.diff_sarif_reports(parse(report(before)), parse(report(after))), [])
 
     def test_order_and_duplicate_counts_do_not_matter(self):
         first = result(region=self.region)
@@ -73,7 +73,7 @@ class SarifDiffTest(unittest.TestCase):
         for field in ("startColumn", "endLine", "endColumn"):
             with self.subTest(field=field):
                 missing = {key: value for key, value in self.region.items() if key != field}
-                diffs = core.diff_ruling_jsons(
+                diffs = core.diff_sarif_reports(
                     parse(report(result(region=missing))), parse(report(result(region=self.region)))
                 )
                 self.assertEqual(len(diffs[0].removed_locations), 1)
@@ -88,9 +88,9 @@ class SarifDiffTest(unittest.TestCase):
     def test_missing_coordinates_default_to_zero_without_rendering_them(self):
         location = parse(report(result(region={"startLine": 10})))["alpha:src/A.java"][0]
         self.assertEqual(location.sort_key(), (10, 0, 10, 0))
-        snippet = core.Snippet("src/A.java", 10, "added", "code", location=location)
+        snippet = core.Snippet("src/A.java", location, "added", "code")
         comment = core.format_comment([core.RuleDiff(
-            "alpha", "java", "S100", [core.IssueDiff("src/A.java", [10], [])],
+            "alpha", "java", "S100", [core.IssueDiff("src/A.java", [location], [])],
             [snippet], False, False,
         )])
         self.assertIn("`src/A.java` (line 10)", comment)
@@ -111,7 +111,7 @@ class SarifDiffTest(unittest.TestCase):
             "startLine": 10, "startColumn": 2, "endLine": 10, "endColumn": 5,
         })))
         self.assertEqual(implicit, {"alpha:src/A.java": [IssueLocation(10, 2, 10, 5)]})
-        self.assertEqual(core.diff_ruling_jsons(implicit, explicit), [])
+        self.assertEqual(core.diff_sarif_reports(implicit, explicit), [])
 
     def test_precise_lits_output_preserves_columns_and_ignores_offsets(self):
         # Ranges from romain/precise-sarif-locations DumpTest, already 1-based.
@@ -134,9 +134,9 @@ class SarifDiffTest(unittest.TestCase):
         first["locations"][0]["physicalLocation"]["region"].update(
             charOffset=0, charLength=0, byteOffset=0, byteLength=0
         )
-        self.assertEqual(core.diff_ruling_jsons(parsed, parse(json.dumps(document))), [])
+        self.assertEqual(core.diff_sarif_reports(parsed, parse(json.dumps(document))), [])
         first["locations"][0]["physicalLocation"]["region"]["endColumn"] = 6
-        changed = core.diff_ruling_jsons(parsed, parse(json.dumps(document)))[0]
+        changed = core.diff_sarif_reports(parsed, parse(json.dumps(document)))[0]
         self.assertEqual(changed.removed_locations, [IssueLocation(2, 2, 3, 4)])
         self.assertEqual(changed.added_locations, [IssueLocation(2, 2, 3, 6)])
 
@@ -151,9 +151,9 @@ class SarifDiffTest(unittest.TestCase):
             (parsed["alpha:src/A.java"][1], "`src/A.java` (file-level)"),
         ):
             with self.subTest(location=location):
-                snippet = core.Snippet("src/A.java", location.start_line, "added", "code", location)
+                snippet = core.Snippet("src/A.java", location, "added", "code")
                 comment = core.format_comment([core.RuleDiff(
-                    "alpha", "java", "S100", [core.IssueDiff("src/A.java", [location.start_line], [])],
+                    "alpha", "java", "S100", [core.IssueDiff("src/A.java", [location], [])],
                     [snippet], False, False,
                 )])
                 self.assertIn(expected_header, comment)
@@ -170,9 +170,16 @@ class SarifDiffTest(unittest.TestCase):
         self.assertEqual(parse(report()), {})
         self.assertEqual(parse('{"runs": []}'), {})
         populated = parse(report(result(region=self.region)))
-        self.assertEqual(core.diff_ruling_jsons(None, populated)[0].added_lines, [10])
-        self.assertEqual(core.diff_ruling_jsons(populated, None)[0].removed_lines, [10])
-        self.assertEqual(core.diff_ruling_jsons(populated, {})[0].removed_lines, [10])
+        self.assertEqual(core.diff_sarif_reports(None, populated)[0].added_locations, [IssueLocation(10, 2, 12, 5)])
+        self.assertEqual(core.diff_sarif_reports(populated, None)[0].removed_locations, [IssueLocation(10, 2, 12, 5)])
+        self.assertEqual(core.diff_sarif_reports(populated, {})[0].removed_locations, [IssueLocation(10, 2, 12, 5)])
+
+    def test_report_missing_at_revision_returns_none(self):
+        response = subprocess.CompletedProcess(
+            [], 128, stdout="", stderr="path does not exist in 'base'"
+        )
+        with patch.object(io.subprocess, "run", return_value=response):
+            self.assertIsNone(io.load_sarif_at_ref("java-S100.sarif", "base"))
 
     def test_invalid_reports_fail_with_file_and_revision_context(self):
         invalid = ["{", "[]", "{}", '{"runs": {}}', '{"runs": [null]}',
@@ -204,7 +211,7 @@ class SarifDiffTest(unittest.TestCase):
             )),
         }
         action_io = io.GitHubActionIO()
-        with patch.object(action_io, "load_json_at_ref", side_effect=lambda _, ref: contents[ref]), patch.object(
+        with patch.object(action_io, "load_sarif_at_ref", side_effect=lambda _, ref: contents[ref]), patch.object(
             action_io, "load_text_at_ref", side_effect=lambda _, ref: f"source at {ref}"
         ) as load_source:
             diffs = core.build_rule_diffs([path], "base", "head", action_io)

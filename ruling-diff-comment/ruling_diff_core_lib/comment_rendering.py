@@ -27,9 +27,9 @@ def format_comment(
 
 
 def format_comment_header(rule_diffs: list[RuleDiff]) -> str:
-    added = sum(len(diff.added_lines) for rule in rule_diffs for diff in rule.file_diffs)
+    added = sum(len(diff.added_locations) for rule in rule_diffs for diff in rule.file_diffs)
     removed = sum(
-        len(diff.removed_lines) for rule in rule_diffs for diff in rule.file_diffs
+        len(diff.removed_locations) for rule in rule_diffs for diff in rule.file_diffs
     )
     return "\n".join(
         [
@@ -83,8 +83,8 @@ def format_rule_section(rule_diff: RuleDiff) -> str:
 
 
 def format_rule_summary(rule_diff: RuleDiff) -> str:
-    removed = sum(len(diff.removed_lines) for diff in rule_diff.file_diffs)
-    added = sum(len(diff.added_lines) for diff in rule_diff.file_diffs)
+    removed = sum(len(diff.removed_locations) for diff in rule_diff.file_diffs)
+    added = sum(len(diff.added_locations) for diff in rule_diff.file_diffs)
     summary_parts = [
         f"<b>{rule_diff.rule_key}</b> (<code>{rule_diff.repo}</code>) on <b>{rule_diff.project}</b>",
         f"{removed} issues removed, {added} issues added",
@@ -125,13 +125,12 @@ def format_snippet_block(snippet: Snippet) -> str:
 
 def format_snippet_header(snippet: Snippet) -> str:
     label = "Added" if snippet.change_kind == "added" else "Removed"
-    location = "file-level" if snippet.line_number == 0 else f"line {snippet.line_number}"
-    if snippet.location is not None:
-        region = snippet.location
-        if region.start_column != 0:
-            location += f", column {region.start_column}"
-        if region.end_line not in (0, region.start_line):
-            location += f" to line {region.end_line}"
-        if region.end_column != 0:
-            location += f", end column {region.end_column}"
+    location = "file-level" if snippet.location.start_line == 0 else f"line {snippet.location.start_line}"
+    region = snippet.location
+    if region.start_column != 0:
+        location += f", column {region.start_column}"
+    if region.end_line not in (0, region.start_line):
+        location += f" to line {region.end_line}"
+    if region.end_column != 0:
+        location += f", end column {region.end_column}"
     return f"**{label}** `{snippet.file_path}` ({location})"

@@ -91,15 +91,14 @@ def collect_snippets_for_file(
 ) -> list[Snippet]:
     snippets: list[Snippet] = []
     for change_kind, locations in (
-        ("removed", file_diff.removed_locations or [IssueLocation(line) for line in file_diff.removed_lines]),
-        ("added", file_diff.added_locations or [IssueLocation(line) for line in file_diff.added_lines]),
+        ("removed", file_diff.removed_locations),
+        ("added", file_diff.added_locations),
     ):
         for location in list(dict.fromkeys(locations))[:MAX_SNIPPETS_PER_FILE]:
             snippets.append(
                 create_issue_snippet(
                     project=project,
                     file_path=file_diff.file_path,
-                    line_number=location.start_line,
                     change_kind=change_kind,
                     source_cache=source_cache,
                     base_sha=base_sha,
@@ -115,13 +114,12 @@ def create_issue_snippet(
     *,
     project: str,
     file_path: str,
-    line_number: int,
     change_kind: str,
     source_cache: SourceCache,
     base_sha: str,
     head_sha: str,
     io: RulingDiffIO,
-    location: IssueLocation | None = None,
+    location: IssueLocation,
 ) -> Snippet:
     ref = head_sha if change_kind == "added" else base_sha
     source_path = io.resolve_source_path(project, file_path)
@@ -129,11 +127,10 @@ def create_issue_snippet(
     body = (
         f"(source file not found at this revision: {file_path})"
         if lines is None
-        else render_snippet(lines, line_number)
+        else render_snippet(lines, location.start_line)
     )
     return Snippet(
         file_path=file_path,
-        line_number=line_number,
         change_kind=change_kind,
         body=body,
         location=location,
