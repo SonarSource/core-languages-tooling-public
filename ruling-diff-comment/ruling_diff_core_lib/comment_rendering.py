@@ -126,4 +126,12 @@ def format_snippet_block(snippet: Snippet) -> str:
 def format_snippet_header(snippet: Snippet) -> str:
     label = "Added" if snippet.change_kind == "added" else "Removed"
     location = "file-level" if snippet.line_number == 0 else f"line {snippet.line_number}"
+    if snippet.location is not None:
+        region = snippet.location
+        if region.start_column != 0:
+            location += f", column {region.start_column}"
+        if region.end_line not in (0, region.start_line):
+            location += f" to line {region.end_line}"
+        if region.end_column != 0:
+            location += f", end column {region.end_column}"
     return f"**{label}** `{snippet.file_path}` ({location})"

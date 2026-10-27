@@ -1,11 +1,11 @@
 # Ruling Diff Comment Action
 
-This GitHub Action analyzes changes in ruling JSON files and posts a human-readable summary as a PR comment.
+This GitHub Action analyzes changes in ruling report files and posts a human-readable summary as a PR comment.
 
 ## Purpose
 
 When ruling test files are modified in a pull request, this action automatically:
-1. Detects changed ruling JSON files
+1. Detects changed ruling report files
 2. Compares before/after versions to identify issue differences
 3. Generates code snippets showing where new issues appear or old issues were fixed
 4. Posts or updates a comment on the PR with a formatted summary
@@ -71,16 +71,35 @@ expectations across revisions; it does not read generated actual files.
 Reports retain one file per rule, per project:
 
 - Existing JSON: `<project-key>/<repo>-<rule>.json`
-- SARIF scaffolding: `<project-key>/<repo>-<rule>.sarif`
+- SARIF: `<project-key>/<repo>-<rule>.sarif`
 
-The report suffix selects the parser. Existing JSON parsing continues to work. SARIF files are discovered and their project and rule are
-identified, but processing raises an explicit `NotImplementedError` until the
-ruling SARIF fields are defined. No SARIF findings or diffs are generated yet.
-SARIF stored in a plain `.json` file is not automatically detected in this step.
+The report suffix selects the parser. SARIF results are read from
+`runs[].results[].locations[].physicalLocation`. Within a rule report, findings
+are compared by `artifactLocation.uri` (the source filename/component key) and
+`region.startLine`, `startColumn`, `endLine`, and `endColumn`. Rule IDs, messages,
+and other metadata do not participate in comparison. Locations are compared as
+sets, so duplicate occurrences and result ordering do not affect comparison.
 
-`ruling_diff_core_lib/report_formats.py` contains the format dispatch and the
-SARIF parser extension point. Git loading, issue comparison, snippets, and
-comment rendering remain shared; no SARIF issue schema is introduced yet.
+The parser follows `sonar-lits`'s `romain/precise-sarif-locations` output:
+
+- Precise findings retain the four range coordinates. Columns are already
+  1-based UTF-16 positions (`columnKind: utf16CodeUnits`); no conversion is applied.
+- Line-only findings contain `startLine` and `endLine`, without columns.
+- File-level findings have no region and use line `0` internally.
+
+An omitted `endLine` defaults to `startLine`, matching LITS. Missing columns use
+integer `0` internally; all `IssueLocation` coordinates remain non-nullable.
+Explicit SARIF coordinates must be positive integers. Character/byte offsets,
+lengths, messages, and rule IDs do not affect comparison.
+
+Invalid locations produce an error identifying the report and revision. Changes
+to any comparison field appear as removed and added findings. Comments include
+range coordinates, using base sources for removals and head sources for additions.
+
+Existing JSON parsing and line-based comparison continue to work. SARIF stored
+in a plain `.json` file is not automatically detected. Format parsing lives in
+`ruling_diff_core_lib/report_formats.py`; Git loading, snippets, and comment
+rendering remain shared.
 
 ### Source File Resolution
 
@@ -130,7 +149,7 @@ See `example-workflow.yml` for a reference implementation.
 
 ```bash
 cd .github/actions/ruling-diff-comment
-uv run python -m unittest discover -v -s . -p "test_ruling_diff.py"
+uv run python -m unittest discover -v -s . -p "test_*.py"
 ```
 
 ### Project Structure
@@ -145,7 +164,8 @@ uv run python -m unittest discover -v -s . -p "test_ruling_diff.py"
   - `report_formats.py` - Format selection, existing parsers, and SARIF extension point
   - `snippet_generation.py` - Code snippet rendering
   - `comment_rendering.py` - Markdown comment formatting
-- `test_ruling_diff.py` - Unit tests
+- `test_ruling_diff.py` - Existing format and shared behavior tests
+- `test_sarif_diff.py` - SARIF parsing, range comparison, and Git integration tests
 
 ## License
 

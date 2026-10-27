@@ -1,16 +1,16 @@
 from __future__ import annotations
 
 import logging
-from collections import Counter
 from pathlib import PurePosixPath
 
 from ruling_diff_core_lib.models_and_constants import (
     EXPECTED_RULING_ROOTS,
     IssueDiff,
-    OptionalRulingJson,
+    IssueLocation,
+    OptionalRulingReport,
     RulingDiffIO,
     RuleDiff,
-    RulingJson,
+    RulingReport,
     SourceCache,
     Snippet,
 )
@@ -84,7 +84,7 @@ def strip_project_key(key: str) -> str:
 
 
 def diff_ruling_jsons(
-    old: OptionalRulingJson, new: OptionalRulingJson
+    old: OptionalRulingReport, new: OptionalRulingReport
 ) -> list[IssueDiff]:
     old_map = old or {}
     new_map = new or {}
@@ -99,26 +99,25 @@ def diff_ruling_jsons(
 
 
 def diff_single_file_key(
-    key: str, old_map: RulingJson, new_map: RulingJson
+    key: str, old_map: RulingReport, new_map: RulingReport
 ) -> IssueDiff | None:
-    old_counter = Counter(old_map.get(key, []))
-    new_counter = Counter(new_map.get(key, []))
-    added_lines: list[int] = expand_line_counter(new_counter - old_counter)
-    removed_lines: list[int] = expand_line_counter(old_counter - new_counter)
-    if not added_lines and not removed_lines:
+    old_locations = set(old_map.get(key, []))
+    new_locations = set(new_map.get(key, []))
+    added = sorted(new_locations - old_locations, key=IssueLocation.sort_key)
+    removed = sorted(old_locations - new_locations, key=IssueLocation.sort_key)
+    if not added and not removed:
         return None
     return IssueDiff(
         file_path=strip_project_key(key),
-        added_lines=added_lines,
-        removed_lines=removed_lines,
+        added_lines=[location.start_line for location in added],
+        removed_lines=[location.start_line for location in removed],
+        added_locations=added,
+        removed_locations=removed,
     )
 
 
-def expand_line_counter(counter: Counter[int]) -> list[int]:
-    line_numbers: list[int] = []
-    for line_number in sorted(counter):
-        line_numbers.extend([line_number] * counter[line_number])
-    return line_numbers
+def as_location(value: int | IssueLocation) -> IssueLocation:
+    return IssueLocation(start_line=value) if isinstance(value, int) else value
 
 
 def build_rule_diffs(
@@ -156,8 +155,8 @@ def build_rule_diff_for_file(
     except ValueError as exc:
         logging.warning("Skipping unrecognized ruling path %s: %s", path, exc)
         return None
-    old_json: OptionalRulingJson = io.load_json_at_ref(path, base_sha)
-    new_json: OptionalRulingJson = io.load_json_at_ref(path, head_sha)
+    old_json: OptionalRulingReport = io.load_json_at_ref(path, base_sha)
+    new_json: OptionalRulingReport = io.load_json_at_ref(path, head_sha)
     file_diffs: list[IssueDiff] = diff_ruling_jsons(old_json, new_json)
     if not file_diffs:
         return None

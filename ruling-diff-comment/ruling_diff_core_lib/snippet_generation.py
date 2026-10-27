@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from ruling_diff_core_lib.models_and_constants import (
     IssueDiff,
+    IssueLocation,
     MAX_SNIPPETS_PER_FILE,
     MAX_SNIPPETS_PER_RULE,
     SNIPPET_CONTEXT,
@@ -11,10 +12,6 @@ from ruling_diff_core_lib.models_and_constants import (
     SourceCache,
     SourceLines,
 )
-
-
-def unique_line_numbers_preserving_order(lines: list[int]) -> list[int]:
-    return list(dict.fromkeys(lines))
 
 
 def render_snippet(
@@ -93,21 +90,22 @@ def collect_snippets_for_file(
     io: RulingDiffIO,
 ) -> list[Snippet]:
     snippets: list[Snippet] = []
-    for change_kind, lines in (
-        ("removed", unique_line_numbers_preserving_order(file_diff.removed_lines)),
-        ("added", unique_line_numbers_preserving_order(file_diff.added_lines)),
+    for change_kind, locations in (
+        ("removed", file_diff.removed_locations or [IssueLocation(line) for line in file_diff.removed_lines]),
+        ("added", file_diff.added_locations or [IssueLocation(line) for line in file_diff.added_lines]),
     ):
-        for line_number in lines[:MAX_SNIPPETS_PER_FILE]:
+        for location in list(dict.fromkeys(locations))[:MAX_SNIPPETS_PER_FILE]:
             snippets.append(
                 create_issue_snippet(
                     project=project,
                     file_path=file_diff.file_path,
-                    line_number=line_number,
+                    line_number=location.start_line,
                     change_kind=change_kind,
                     source_cache=source_cache,
                     base_sha=base_sha,
                     head_sha=head_sha,
                     io=io,
+                    location=location,
                 )
             )
     return snippets
@@ -123,6 +121,7 @@ def create_issue_snippet(
     base_sha: str,
     head_sha: str,
     io: RulingDiffIO,
+    location: IssueLocation | None = None,
 ) -> Snippet:
     ref = head_sha if change_kind == "added" else base_sha
     source_path = io.resolve_source_path(project, file_path)
@@ -137,6 +136,7 @@ def create_issue_snippet(
         line_number=line_number,
         change_kind=change_kind,
         body=body,
+        location=location,
     )
 
 

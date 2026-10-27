@@ -226,21 +226,10 @@ class ReportFormatsTest(unittest.TestCase):
         )
 
     def test_sarif_is_not_interpreted_as_legacy_json(self) -> None:
-        path = "java-S100.sarif"
-        # Even legacy-looking content must reach the SARIF extension point.
-        with self.assertRaisesRegex(NotImplementedError, f"{path} at head"):
-            report_formats.parse_ruling_report('{"alpha:src/Foo.java": [10]}', path, "head")
-
-    def test_sarif_pipeline_stops_before_diffing_or_loading_sources(self) -> None:
-        path = "its/ruling/src/test/resources/expected/alpha/java-S100.sarif"
-        action_io = io.GitHubActionIO()
-        result = subprocess.CompletedProcess([], 0, stdout="contents not yet specified", stderr="")
-        with patch.object(io.subprocess, "run", return_value=result), patch.object(
-            action_io, "load_text_at_ref"
-        ) as load_source:
-            with self.assertRaisesRegex(NotImplementedError, "SARIF ruling report processing"):
-                core.build_rule_diffs([path], "base", "head", action_io)
-        load_source.assert_not_called()
+        with self.assertRaisesRegex(ValueError, "runs"):
+            report_formats.parse_ruling_report(
+                '{"alpha:src/Foo.java": [10]}', "java-S100.sarif", "head"
+            )
 
     def test_missing_sarif_at_revision_is_still_absent(self) -> None:
         result = subprocess.CompletedProcess(
@@ -294,9 +283,9 @@ class DiffLogicTest(unittest.TestCase):
             [],
         )
 
-    def test_duplicate_line_numbers_preserved(self) -> None:
-        diffs = core.diff_ruling_jsons({"proj:a.py": [297]}, {"proj:a.py": [297, 297]})
-        self.assertEqual(diffs[0].added_lines, [297])
+    def test_duplicate_locations_ignored(self) -> None:
+        diffs = core.diff_sarif_reports({"proj:a.py": [IssueLocation(297)]}, {"proj:a.py": [IssueLocation(297), IssueLocation(297)]})
+        self.assertEqual(diffs, [])
 
 
 class FormattingTest(unittest.TestCase):
