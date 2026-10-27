@@ -27,5 +27,26 @@ This action uploads those files for `ruling-update-and-notify` to consume later.
 |-------|----------|---------|---------|
 | `artifact-name` | No | `actual_ruling` | Use a distinct `actual_*` name when multiple jobs upload results. |
 
+| Output | Purpose |
+|--------|---------|
+| `artifact-id` | ID of the uploaded artifact. |
+| `artifact-url` | Link to the uploaded artifact, also printed as a notice and in the job summary. |
+
+Use `artifact-url` to point to the exact uploaded artifact in diagnostic messages:
+
+```yaml
+- name: Prepare ruling artifact
+  id: prepare-ruling-artifact
+  if: ${{ steps.ruling.outcome == 'failure' }}
+  uses: SonarSource/core-languages-tooling-public/prepare-ruling-artifact@master
+- name: Fail on ruling test failure
+  if: ${{ !cancelled() && steps.ruling.outcome == 'failure' }}
+  env:
+    ARTIFACT_URL: ${{ steps.prepare-ruling-artifact.outputs.artifact-url }}
+  run: |
+    echo "Ruling tests failed. Actual results: ${ARTIFACT_URL}"
+    exit 1
+```
+
 Run after the ruling test in each producer job. Invoke
 `ruling-update-and-notify` in a downstream job after the producers finish.
