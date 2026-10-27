@@ -12,6 +12,7 @@ if str(MODULE_DIR) not in sys.path:
 
 import ruling_diff_core as core
 import ruling_diff_io as io
+from ruling_diff_core_lib import report_formats
 
 
 IssueDiff = core.IssueDiff
@@ -189,81 +190,64 @@ class NormalizeJsonTest(unittest.TestCase):
         result = io.normalize_ruling_json(data, "test.json", "HEAD")
         self.assertEqual(result, {"S1234": [10, 20, 30]})
 
-    def test_normalize_dotnet_format(self) -> None:
-        # .NET format with Issues array
-        data = {
-            "Issues": [
-                {
-                    "Id": "S1135",
-                    "Message": "Complete the task",
-                    "Location": {"StartLine": 270, "StartColumn": 16, "EndLine": 270, "EndColumn": 20}
-                },
-                {
-                    "Id": "S1135",
-                    "Message": "Complete the task",
-                    "Location": {"StartLine": 54, "StartColumn": 12, "EndLine": 54, "EndColumn": 16}
-                },
-                {
-                    "Id": "S1192",
-                    "Message": "Define a constant",
-                    "Location": {"StartLine": 100, "StartColumn": 10, "EndLine": 100, "EndColumn": 20}
-                }
-            ]
-        }
-        result = io.normalize_ruling_json(data, "test.json", "HEAD")
-        # Should group by rule ID and sort line numbers
-        self.assertEqual(result, {"S1135": [54, 270], "S1192": [100]})
 
-    def test_normalize_dotnet_format_empty_issues(self) -> None:
-        # .NET format with empty Issues array
-        data = {"Issues": []}
-        result = io.normalize_ruling_json(data, "test.json", "HEAD")
-        self.assertEqual(result, {})
+class ReportFormatsTest(unittest.TestCase):
+    def test_discovers_sarif_alongside_json_in_all_roots(self) -> None:
+        paths = [
+            f"{root}/alpha/java-S100{suffix}"
+            for root in io.EXPECTED_RULING_ROOTS
+            for suffix in (".json", ".sarif")
+        ]
+        excluded = [
+            "its/ruling/target/actual/alpha/java-S100.sarif",
+            "its/ruling/src/test/resources/expected/alpha/java-S100.txt",
+        ]
+        with patch.object(io, "run_command", return_value="\n".join(paths + excluded)):
+            self.assertEqual(io.get_changed_ruling_files("base", "head"), sorted(paths))
 
-    def test_normalize_dotnet_format_non_dict_issue(self) -> None:
-        # .NET format with non-dict issue in Issues array
-        data = {"Issues": ["not a dict"]}
-        with self.assertRaises(ValueError) as ctx:
-            io.normalize_ruling_json(data, "test.json", "HEAD")
-        self.assertIn("non-dict issue", str(ctx.exception))
+    def test_report_formats_share_per_project_per_rule_layout(self) -> None:
+        for suffix in (".json", ".sarif"):
+            with self.subTest(suffix=suffix):
+                self.assertEqual(
+                    core.parse_ruling_path(f"custom/expected/alpha/java-S100{suffix}", "custom/expected"),
+                    ("alpha", "java", "S100"),
+                )
 
-    def test_normalize_dotnet_format_missing_id(self) -> None:
-        # .NET format with missing Id field
-        data = {"Issues": [{"Location": {"StartLine": 10}}]}
-        with self.assertRaises(ValueError) as ctx:
-            io.normalize_ruling_json(data, "test.json", "HEAD")
-        self.assertIn("without string Id", str(ctx.exception))
+    def test_rejects_unsupported_extension(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Unsupported ruling report extension"):
+            core.parse_rule_filename("java-S100.xml")
 
-    def test_normalize_dotnet_format_non_string_id(self) -> None:
-        # .NET format with non-string Id field
-        data = {"Issues": [{"Id": 123, "Location": {"StartLine": 10}}]}
-        with self.assertRaises(ValueError) as ctx:
-            io.normalize_ruling_json(data, "test.json", "HEAD")
-        self.assertIn("without string Id", str(ctx.exception))
+    def test_dispatch_preserves_standard_json(self) -> None:
+        self.assertEqual(
+            report_formats.parse_ruling_report(
+                '{"alpha:src/Foo.java": [10, 10, 20]}', "java-S100.json", "head"
+            ),
+            {"alpha:src/Foo.java": [10, 10, 20]},
+        )
 
-    def test_normalize_dotnet_format_missing_location(self) -> None:
-        # .NET format with missing Location field - should default to line 0
-        data = {"Issues": [{"Id": "S1234"}]}
-        result = io.normalize_ruling_json(data, "test.json", "HEAD")
-        self.assertEqual(result, {"S1234": [0]})
+    def test_sarif_is_not_interpreted_as_legacy_json(self) -> None:
+        path = "java-S100.sarif"
+        # Even legacy-looking content must reach the SARIF extension point.
+        with self.assertRaisesRegex(NotImplementedError, f"{path} at head"):
+            report_formats.parse_ruling_report('{"alpha:src/Foo.java": [10]}', path, "head")
 
-    def test_normalize_dotnet_format_non_dict_location(self) -> None:
-        # .NET format with non-dict Location field - should default to line 0
-        data = {"Issues": [{"Id": "S1234", "Location": "not a dict"}]}
-        result = io.normalize_ruling_json(data, "test.json", "HEAD")
-        self.assertEqual(result, {"S1234": [0]})
+    def test_sarif_pipeline_stops_before_diffing_or_loading_sources(self) -> None:
+        path = "its/ruling/src/test/resources/expected/alpha/java-S100.sarif"
+        action_io = io.GitHubActionIO()
+        result = subprocess.CompletedProcess([], 0, stdout="contents not yet specified", stderr="")
+        with patch.object(io.subprocess, "run", return_value=result), patch.object(
+            action_io, "load_text_at_ref"
+        ) as load_source:
+            with self.assertRaisesRegex(NotImplementedError, "SARIF ruling report processing"):
+                core.build_rule_diffs([path], "base", "head", action_io)
+        load_source.assert_not_called()
 
-    def test_normalize_dotnet_format_missing_start_line(self) -> None:
-        # .NET format with missing StartLine field - should default to line 0
-        data = {"Issues": [{"Id": "S1234", "Location": {}}]}
-        result = io.normalize_ruling_json(data, "test.json", "HEAD")
-        self.assertEqual(result, {"S1234": [0]})
-
-    def test_normalize_dotnet_format_non_int_start_line(self) -> None:
-        # .NET format with non-integer StartLine field - should default to line 0
-        data = {"Issues": [{"Id": "S1234", "Location": {"StartLine": "10"}}]}
-        result = io.normalize_ruling_json(data, "test.json", "HEAD")
-        self.assertEqual(result, {"S1234": [0]})
+    def test_missing_sarif_at_revision_is_still_absent(self) -> None:
+        result = subprocess.CompletedProcess(
+            [], 128, stdout="", stderr="path does not exist in 'base'"
+        )
+        with patch.object(io.subprocess, "run", return_value=result):
+            self.assertIsNone(io.load_json_at_ref("java-S100.sarif", "base"))
 
 
 class DiffLogicTest(unittest.TestCase):

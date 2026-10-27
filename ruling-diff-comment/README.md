@@ -55,7 +55,7 @@ Add this action to your workflow:
 
 ### Ruling File Location
 
-The action detects changed expectation JSON files under any of:
+The action detects changed expectation report files under any of:
 ```
 its/ruling/src/test/resources/expected/<project-key>/
 private/its/ruling/src/test/resources/expected/<project-key>/
@@ -65,6 +65,22 @@ private/its-enterprise/ruling/src/test/resources/expected/<project-key>/
 Generated actual results live under `target/actual/<project-key>/` (Maven) or
 `build/actual/<project-key>/` (Gradle). This action compares committed
 expectations across revisions; it does not read generated actual files.
+
+### Report Formats
+
+Reports retain one file per rule, per project:
+
+- Existing JSON: `<project-key>/<repo>-<rule>.json`
+- SARIF scaffolding: `<project-key>/<repo>-<rule>.sarif`
+
+The report suffix selects the parser. Existing JSON parsing continues to work. SARIF files are discovered and their project and rule are
+identified, but processing raises an explicit `NotImplementedError` until the
+ruling SARIF fields are defined. No SARIF findings or diffs are generated yet.
+SARIF stored in a plain `.json` file is not automatically detected in this step.
+
+`ruling_diff_core_lib/report_formats.py` contains the format dispatch and the
+SARIF parser extension point. Git loading, issue comparison, snippets, and
+comment rendering remain shared; no SARIF issue schema is introduced yet.
 
 ### Source File Resolution
 
@@ -126,6 +142,7 @@ uv run python -m unittest discover -v -s . -p "test_ruling_diff.py"
 - `ruling_diff_core_lib/` - Core logic modules
   - `models_and_constants.py` - Data models and configuration
   - `ruling_diff_logic.py` - Diff computation logic
+  - `report_formats.py` - Format selection, existing parsers, and SARIF extension point
   - `snippet_generation.py` - Code snippet rendering
   - `comment_rendering.py` - Markdown comment formatting
 - `test_ruling_diff.py` - Unit tests

@@ -15,6 +15,7 @@ from ruling_diff_core_lib.models_and_constants import (
     Snippet,
 )
 from ruling_diff_core_lib.snippet_generation import build_snippets_for_rule
+from ruling_diff_core_lib.report_formats import split_report_filename
 
 
 def parse_ruling_path(path: str, ruling_root: str | None = None) -> tuple[str, str, str]:
@@ -34,17 +35,15 @@ def parse_ruling_relative_path(relative_path: str) -> tuple[str, str]:
     parts = PurePosixPath(relative_path).parts
     if len(parts) != 2:
         raise ValueError(
-            f"Expected '<project>/<repo>-<rule>.json' path, got: {relative_path}"
+            f"Expected '<project>/<repo>-<rule>.<format>' path, got: {relative_path}"
         )
     return parts[0], parts[1]
 
 
 def parse_rule_filename(filename: str) -> tuple[str, str]:
-    if not filename.endswith(".json"):
-        raise ValueError(f"Expected json filename, got: {filename}")
-    basename = filename[:-5]
+    basename, _ = split_report_filename(filename)
     if "-" not in basename:
-        raise ValueError(f"Expected '<repo>-<ruleKey>.json', got: {filename}")
+        raise ValueError(f"Expected '<repo>-<ruleKey>.<format>', got: {filename}")
     repository, rule_key = basename.rsplit("-", 1)
     if not repository:
         raise ValueError(f"Missing repo in filename: {filename}")
