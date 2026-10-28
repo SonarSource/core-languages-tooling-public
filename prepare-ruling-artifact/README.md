@@ -42,7 +42,7 @@ This action uploads those files for `ruling-update-and-notify` to consume later.
   if: ${{ steps.ruling.outcome == 'failure' }}
   uses: SonarSource/core-languages-tooling-public/prepare-ruling-artifact@master
   with:
-    artifact-name: actual_${{ matrix.os }}
+    artifact-name: actual_${{ matrix.projects }}
 - name: Fail on ruling test failure
   if: ${{ !cancelled() && steps.ruling.outcome == 'failure' && steps.prepare-ruling-artifact.outcome == 'success' }}
 ```

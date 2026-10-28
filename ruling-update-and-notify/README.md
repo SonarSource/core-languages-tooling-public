@@ -27,6 +27,7 @@ on:
 jobs:
   ruling:
     strategy:
+      fail-fast: false
       matrix:
         projects: [first-half, second-half]
     runs-on: ubuntu-latest
