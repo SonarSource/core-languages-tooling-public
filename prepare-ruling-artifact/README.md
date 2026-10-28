@@ -18,9 +18,16 @@ Ruling tests can run in separate jobs, which do not share generated files.
 This action uploads those files for `ruling-update-and-notify` to consume later.
 
 ```yaml
+- name: Ruling tests
+  id: ruling
+  continue-on-error: true
+  run: ./gradlew :its:ruling:test
 - name: Prepare ruling artifact
-  if: ${{ always() && steps.ruling.outcome == 'failure' }}
+  id: prepare-ruling-artifact
+  if: ${{ steps.ruling.outcome == 'failure' }}
   uses: SonarSource/core-languages-tooling-public/prepare-ruling-artifact@master
+- name: Fail on ruling test failure
+  if: ${{ !cancelled() && steps.ruling.outcome == 'failure' && steps.prepare-ruling-artifact.outcome == 'success' }}
 ```
 
 | Input | Required | Default | Purpose |
