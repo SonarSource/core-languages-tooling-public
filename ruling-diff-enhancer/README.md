@@ -45,11 +45,54 @@ uv run --frozen --project ruling-diff-enhancer python ruling-diff-enhancer/enhan
   --output /tmp/ruling-review.md
 ```
 
-Alternatively pass `--model provider/model`. `--api-base` (or `DSPY_API_BASE`)
-supports custom endpoints, including local models. DSPy caching is disabled to
-avoid persisting source snippets in its local cache. Provider-side logging and
-retention remain subject to that provider's policy. `--format json` produces a
-machine-readable report instead of Markdown.
+Alternatively pass `--model provider/model`. `--provider direct` forces the
+existing direct DSPy/LiteLLM connection even if Portkey keys are present.
+`--api-base` (or `DSPY_API_BASE`) supports custom endpoints, including local
+models. DSPy caching is disabled to avoid persisting source snippets in its
+local cache. Provider-side logging and retention remain subject to that
+provider's policy. `--format json` produces a machine-readable report instead
+of Markdown.
+
+### Portkey for Local Testing
+
+Following `rule-identification`, the default `--provider auto` selects Portkey
+for a supported model family when a matching Portkey key is available,
+otherwise it uses the direct provider. No underlying provider API key is
+required in Portkey mode. Export your key as `PORTKEY_API_KEY` using your
+usual secret-management mechanism, then run:
+
+```bash
+uv run --frozen --project ruling-diff-enhancer python ruling-diff-enhancer/enhance.py \
+  ~/git/sonar-java/ruling-comment.md --repo ~/git/sonar-java \
+  --provider portkey --model claude-sonnet-4-5-20250929 \
+  --output /tmp/ruling-review.md
+```
+
+Select a model enabled for your Portkey key. Both bare names (as above) and
+prefixed names such as `anthropic/claude-sonnet-4-5-20250929` are accepted.
+Supported Portkey model families are GPT/o-series, Claude, and Gemini. Claude
+uses the native Anthropic transport; GPT/o-series and Gemini use Portkey's
+OpenAI-compatible transport, with the appropriate provider routing header.
+
+Family-specific keys take precedence over the generic `PORTKEY_API_KEY`:
+
+| Model family | Preferred environment variable |
+| --- | --- |
+| GPT / o-series | `PORTKEY_API_KEY_OPENAI` |
+| Claude | `PORTKEY_API_KEY_CLAUDE` |
+| Gemini | `PORTKEY_API_KEY_GOOGLE` |
+
+`DSPY_PROVIDER` supplies the default connection mode (`auto`, `direct`, or
+`portkey`). Explicit `--provider portkey` fails early if the selected model has
+no matching key; it does not silently fall back to a direct provider.
+Unknown/custom model families retain direct `provider/model` routing in auto
+mode. `--api-base` overrides the endpoint for the selected mode; use
+`--provider direct` for unrelated custom/local endpoints when Portkey keys are
+present. Portkey mode sends the same review evidence through Portkey to the
+selected provider, so its logging, access controls, and retention policies also
+apply.
+
+## Review Results
 
 One typed `dspy.Predict` call is made per rule/repository, merging examples from
 multiple projects of the same rule. It prioritizes:
@@ -82,5 +125,6 @@ uv run --frozen --project ruling-diff-enhancer python -m unittest discover \
   -s ruling-diff-enhancer -p 'test_*.py' -v
 ```
 
-Tests use temporary metadata repositories, mocked predictions, and a DSPy dummy
-language model. They require neither credentials nor paid/external model calls.
+Tests use temporary metadata repositories, mocked predictions, a DSPy dummy
+language model, and mocked HTTP requests for the actual Portkey transports.
+They require neither credentials nor paid/external model calls.

@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from ruling_diff_inputs import prepare_inputs
+from ruling_diff_models import model_connection
 
 
 def positive_integer(value: str) -> int:
@@ -22,7 +23,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("comment", type=Path, help="Path to a ruling-diff-comment Markdown file")
     parser.add_argument("--repo", type=Path, default=Path.cwd(), help="Analyzer repository root (default: cwd)")
     parser.add_argument("--sonarpedia", type=Path, help="Select one config, relative to --repo or absolute")
-    parser.add_argument("--model", default=os.environ.get("DSPY_MODEL"), help="DSPy provider/model (or DSPY_MODEL)")
+    parser.add_argument("--model", default=os.environ.get("DSPY_MODEL"), help="Model name or DSPy provider/model (or DSPY_MODEL)")
+    parser.add_argument(
+        "--provider", choices=("auto", "direct", "portkey"),
+        default=os.environ.get("DSPY_PROVIDER", "auto"),
+        help="Connection mode (or DSPY_PROVIDER); auto prefers a matching Portkey key",
+    )
     parser.add_argument("--api-base", default=os.environ.get("DSPY_API_BASE"), help="Optional model endpoint")
     parser.add_argument("--max-examples", type=positive_integer, default=3)
     parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
@@ -64,12 +70,12 @@ def main() -> int:
         if args.prepare_only:
             output = json.dumps(inputs, indent=2, ensure_ascii=False)
         else:
+            model, options = model_connection(args.model, args.provider, args.api_base)
             import dspy
             from ruling_diff_predictor import ReviewRulingChange, review_changes
 
             dspy.configure_cache(enable_disk_cache=False, enable_memory_cache=False)
-            options = {"api_base": args.api_base} if args.api_base else {}
-            lm = dspy.LM(args.model, cache=False, **options)
+            lm = dspy.LM(model, cache=False, **options)
             with dspy.context(lm=lm):
                 reports = review_changes(inputs, dspy.Predict(ReviewRulingChange), args.max_examples)
             output = json.dumps(reports, indent=2, ensure_ascii=False) if args.format == "json" else render_markdown(reports)
