@@ -18,7 +18,7 @@ class PrepareRulingArtifactTests(unittest.TestCase):
         artifact_name: str = "actual_ruling",
         result_files: tuple[str, ...] = ("xml-S123.json",),
         symlink_results: bool = False,
-    ) -> tuple[subprocess.CompletedProcess[str], str | None, Path]:
+    ) -> tuple[subprocess.CompletedProcess[str], Path | None, Path]:
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         workspace = Path(self.directory.name)
@@ -41,39 +41,38 @@ class PrepareRulingArtifactTests(unittest.TestCase):
             env={
                 **os.environ,
                 "ARTIFACT_NAME": artifact_name,
-                "RUNNER_TEMP": str(workspace),
                 "GITHUB_OUTPUT": str(output),
             },
             capture_output=True,
             text=True,
         )
-        stage_path = output.read_text().removeprefix("path=").strip() if output.exists() else None
-        return result, stage_path, workspace
-
-    def test_stages_public_ruling_results(self) -> None:
-        result, stage_path, _ = self.run_preparer(("its/ruling/target/actual",))
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(
-            (Path(stage_path) / "expected/project/xml-S123.json").read_text(),
-            '{"rule": [1]}',
+        upload_path = (
+            workspace / output.read_text().removeprefix("path=").strip()
+            if output.exists() else None
         )
+        return result, upload_path, workspace
 
-    def test_stages_private_ruling_results(self) -> None:
-        result, stage_path, _ = self.run_preparer(("private/its/ruling/target/actual",))
+    def test_uploads_public_ruling_results_directly(self) -> None:
+        result, upload_path, workspace = self.run_preparer(("its/ruling/target/actual",))
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertTrue((Path(stage_path) / "expected/project/xml-S123.json").exists())
+        self.assertEqual(upload_path, workspace / "its/ruling/target/actual")
+        self.assertEqual((upload_path / "project/xml-S123.json").read_text(), '{"rule": [1]}')
+        self.assertFalse((upload_path / "expected").exists())
 
-    def test_stages_python_enterprise_ruling_results(self) -> None:
+    def test_uploads_private_ruling_results(self) -> None:
+        result, upload_path, workspace = self.run_preparer(("private/its/ruling/target/actual",))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(upload_path, workspace / "private/its/ruling/target/actual")
+        self.assertTrue((upload_path / "project/xml-S123.json").exists())
+
+    def test_uploads_python_enterprise_ruling_results(self) -> None:
         for build_directory in ("target", "build"):
             with self.subTest(build_directory=build_directory):
-                result, stage_path, _ = self.run_preparer(
-                    (f"private/its-enterprise/ruling/{build_directory}/actual",)
-                )
+                root = f"private/its-enterprise/ruling/{build_directory}/actual"
+                result, upload_path, workspace = self.run_preparer((root,))
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(
-                    (Path(stage_path) / "expected/project/xml-S123.json").read_text(),
-                    '{"rule": [1]}',
-                )
+                self.assertEqual(upload_path, workspace / root)
+                self.assertEqual((upload_path / "project/xml-S123.json").read_text(), '{"rule": [1]}')
 
     def test_rejects_enterprise_results_alongside_other_layouts(self) -> None:
         result, _, _ = self.run_preparer((
@@ -83,17 +82,17 @@ class PrepareRulingArtifactTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Multiple generated ruling directories", result.stderr)
 
-    def test_stages_gradle_ruling_results(self) -> None:
+    def test_uploads_gradle_ruling_results(self) -> None:
         for root in (
             "its/ruling/build/actual",
             "private/its/ruling/build/actual",
         ):
             with self.subTest(root=root):
-                result, stage_path, _ = self.run_preparer((root,))
+                result, upload_path, workspace = self.run_preparer((root,))
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertTrue((Path(stage_path) / "expected/project/xml-S123.json").exists())
+                self.assertEqual(upload_path, workspace / root)
 
-    def test_stages_sarif_ruling_results_in_all_standard_layouts(self) -> None:
+    def test_uploads_sarif_ruling_results_in_all_standard_layouts(self) -> None:
         for root in (
             "its/ruling/target/actual",
             "private/its/ruling/target/actual",
@@ -101,25 +100,26 @@ class PrepareRulingArtifactTests(unittest.TestCase):
             "private/its/ruling/build/actual",
         ):
             with self.subTest(root=root):
-                result, stage_path, _ = self.run_preparer(
+                result, upload_path, workspace = self.run_preparer(
                     (root,), result_files=("nested/report.sarif",)
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(upload_path, workspace / root)
                 self.assertEqual(
-                    (Path(stage_path) / "expected/project/nested/report.sarif").read_text(),
+                    (upload_path / "project/nested/report.sarif").read_text(),
                     '{"rule": [1]}',
                 )
 
-    def test_stages_mixed_json_and_sarif_results(self) -> None:
+    def test_uploads_mixed_json_and_sarif_results(self) -> None:
         filenames = ("xml-S123.json", "nested/report.sarif", "support.txt")
-        result, stage_path, _ = self.run_preparer(
+        result, upload_path, _ = self.run_preparer(
             ("its/ruling/target/actual",), result_files=filenames
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         for filename in filenames:
             with self.subTest(filename=filename):
                 self.assertEqual(
-                    (Path(stage_path) / "expected/project" / filename).read_text(),
+                    (upload_path / "project" / filename).read_text(),
                     '{"rule": [1]}',
                 )
 
@@ -151,23 +151,23 @@ class PrepareRulingArtifactTests(unittest.TestCase):
     def test_rejects_directory_without_json_or_sarif(self) -> None:
         for filenames in ((), ("report.txt",), ("report.json/note.txt", "report.sarif/note.txt")):
             with self.subTest(filenames=filenames):
-                result, stage_path, _ = self.run_preparer(
+                result, upload_path, _ = self.run_preparer(
                     ("its/ruling/target/actual",), result_files=filenames
                 )
                 self.assertNotEqual(result.returncode, 0)
-                self.assertIsNone(stage_path)
+                self.assertIsNone(upload_path)
                 self.assertIn("No generated ruling JSON or SARIF files", result.stderr)
 
     def test_rejects_symlink_only_results(self) -> None:
         for filename in ("xml-S123.json", "report.sarif"):
             with self.subTest(filename=filename):
-                result, stage_path, _ = self.run_preparer(
+                result, upload_path, _ = self.run_preparer(
                     ("its/ruling/target/actual",),
                     result_files=(filename,),
                     symlink_results=True,
                 )
                 self.assertNotEqual(result.returncode, 0)
-                self.assertIsNone(stage_path)
+                self.assertIsNone(upload_path)
                 self.assertIn("No generated ruling JSON or SARIF files", result.stderr)
 
     def test_rejects_ambiguous_maven_and_gradle_results(self) -> None:
