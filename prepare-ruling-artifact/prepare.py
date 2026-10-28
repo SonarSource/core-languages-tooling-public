@@ -40,10 +40,10 @@ def main() -> int:
 
     actual_root = select_actual_root()
     if not actual_root.is_dir() or not any(
-        path.is_file() and not path.is_symlink()
-        for path in actual_root.rglob("*.json")
+        path.suffix in (".json", ".sarif") and path.is_file() and not path.is_symlink()
+        for path in actual_root.rglob("*")
     ):
-        raise ValueError(f"No generated ruling JSON files found in {actual_root}")
+        raise ValueError(f"No generated ruling JSON or SARIF files found in {actual_root}")
 
     stage_root = Path(
         tempfile.mkdtemp(prefix="ruling-artifact.", dir=os.environ["RUNNER_TEMP"])
