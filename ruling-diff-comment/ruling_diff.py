@@ -20,10 +20,15 @@ def configure_logging() -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Generate and post ruling diff comment"
+        description="Generate a ruling diff comment and post it or preview it locally"
     )
-    parser.add_argument("--pr-number", required=True)
-    parser.add_argument("--repository", required=True)
+    parser.add_argument("--pr-number")
+    parser.add_argument("--repository")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the comment to stdout instead of posting it; no PR context required",
+    )
     parser.add_argument("--base-sha", required=True)
     parser.add_argument("--head-sha", required=True)
     parser.add_argument(
@@ -36,14 +41,20 @@ def parse_args() -> argparse.Namespace:
         help="Path to sources directory"
     )
     args = parser.parse_args()
-    if "/" not in args.repository:
+    if not args.dry_run:
+        for argument in ("pr_number", "repository"):
+            if getattr(args, argument) is None:
+                parser.error(f"--{argument.replace('_', '-')} is required unless --dry-run is set")
+    if args.repository is not None and "/" not in args.repository:
         raise ValueError("--repository must be in owner/repo format")
     return args
 
 
 def has_required_context(args: argparse.Namespace) -> bool:
     return bool(
-        args.pr_number.strip() and args.base_sha.strip() and args.head_sha.strip()
+        (args.dry_run or args.pr_number.strip())
+        and args.base_sha.strip()
+        and args.head_sha.strip()
     )
 
 
@@ -74,7 +85,10 @@ def main() -> None:
         return
 
     comment = format_comment(rule_diffs)
-    post_or_update_comment(args.pr_number, args.repository, comment)
+    if args.dry_run:
+        print(comment)
+    else:
+        post_or_update_comment(args.pr_number, args.repository, comment)
 
 
 if __name__ == "__main__":

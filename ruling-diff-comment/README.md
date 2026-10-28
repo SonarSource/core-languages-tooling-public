@@ -110,12 +110,51 @@ See `example-workflow.yml` for a reference implementation.
 
 ## Development
 
+### Previewing Real Ruling Changes Locally
+
+Use the same entry point as the action with `--dry-run` to generate the comment
+without posting to GitHub. PR number, repository, and GitHub credentials are not
+required in this mode. Python 3.10+ is sufficient; there are no package dependencies.
+
+```bash
+cd /path/to/analyzer-checkout
+python3 /path/to/core-languages-tooling-public/ruling-diff-comment/ruling_diff.py \
+  --dry-run \
+  --base-sha HEAD~1 \
+  --head-sha HEAD \
+  --sources-root its/sources \
+  > /tmp/ruling-comment.md
+```
+
+Open `/tmp/ruling-comment.md` in a Markdown previewer to inspect the result.
+Markdown goes to stdout; diagnostic logging goes to stderr. If there are no
+changed ruling JSON files or no issue deltas, stdout is empty.
+
+Run from the analyzer repository root. Both revisions must exist locally, and
+the comparison uses Git's three-dot diff (`base...head`), just like the action.
+Uncommitted expectations and generated `target/actual` or `build/actual` files
+are not compared: for freshly generated results, sync them into expectations
+in a disposable checkout and make a local-only commit first. No push is needed.
+
+Set `--sources-root` to the analyzer's source location (for example,
+`its/sources` or `private/its/sources`). Sources and any required submodule
+commits should be available locally for snippets; missing submodule content can
+trigger a Git fetch. Optional `--ruling-root` overrides the standard expected
+directories. The comment renderer currently compares JSON files, not SARIF.
+
+Without `--dry-run`, the existing posting behavior is unchanged and
+`--pr-number` and `--repository` are required.
+
 ### Running Tests
 
 ```bash
-cd .github/actions/ruling-diff-comment
-uv run python -m unittest discover -v -s . -p "test_ruling_diff.py"
+cd ruling-diff-comment
+python3 -m unittest discover -v -s . -p "test_ruling_diff.py"
 ```
+
+The tests cover CLI validation and preview/posting behavior, plus an integration
+test that renders real ruling changes from a temporary local Git repository.
+GitHub interactions are tested with mocks rather than creating real PRs.
 
 ### Project Structure
 
