@@ -1,9 +1,12 @@
-"""Copy downloaded ruling artifacts into the repository's expectation tree.
+"""Copy downloaded ruling results into the selected expected directory.
 
-The action merges ``actual_*`` artifacts into ``ruling-artifacts-temp``. This
-script checks the download, copies its contents into the detected ruling
-resources directory, and removes the temporary directory. A later step handles
-committing the updated expectations and creating a fix PR.
+The action merges ``actual_*`` artifacts into ``ARTIFACT_DIRECTORY``. Each
+artifact contains the generated results relative to the actual directory, so
+``project/report.json`` updates ``<expected-root>/project/report.json``. This
+script validates the download, copies only regular JSON and SARIF files, and
+removes the temporary directory. Expectations for projects absent from the
+artifacts are kept. A later step commits the updated expectations and creates
+a fix PR.
 """
 
 from __future__ import annotations
@@ -14,7 +17,8 @@ import sys
 from pathlib import Path
 
 
-ARTIFACT_DIRECTORY = Path("ruling-artifacts-temp")
+RESULT_SUFFIXES = (".json", ".sarif")
+LEGACY_WRAPPER = "expected"
 
 
 def print_diagnostics() -> None:
@@ -31,34 +35,64 @@ def print_diagnostics() -> None:
     print("  3. Insufficient permissions to access artifacts")
 
 
-def sync_artifacts(ruling_root: Path, artifact_directory: Path, download_outcome: str) -> None:
+def find_result_files(artifact_directory: Path) -> list[Path]:
+    """Return regular JSON and SARIF files, relative to the artifact directory."""
+    return sorted(
+        relative_path
+        for relative_path in (
+            path.relative_to(artifact_directory) for path in artifact_directory.rglob("*")
+        )
+        if relative_path.suffix in RESULT_SUFFIXES
+        and not has_symlink(artifact_directory, relative_path)
+        and (artifact_directory / relative_path).is_file()
+    )
+
+
+def has_symlink(root: Path, relative_path: Path) -> bool:
+    """Whether the path or one of its parents below root is a symlink."""
+    current = root
+    for part in relative_path.parts:
+        current = current / part
+        if current.is_symlink():
+            return True
+    return False
+
+
+def validate_download(artifact_directory: Path, download_outcome: str) -> list[Path]:
     if download_outcome != "success":
         print_diagnostics()
         raise RuntimeError(f"Failed to download artifacts (outcome: {download_outcome})")
     if not artifact_directory.is_dir():
         print_diagnostics()
         raise RuntimeError("No artifacts were downloaded (directory does not exist)")
-
-    artifacts = list(artifact_directory.iterdir())
-    if not artifacts:
+    if not any(artifact_directory.iterdir()):
         raise RuntimeError("Artifact directory is empty; no 'actual_*' artifacts found")
+    if (artifact_directory / LEGACY_WRAPPER).is_dir():
+        raise RuntimeError(
+            f"Artifacts use the obsolete '{LEGACY_WRAPPER}/' wrapper; upload the generated "
+            "actual directory with the matching prepare-ruling-artifact version"
+        )
+    result_files = find_result_files(artifact_directory)
+    if not result_files:
+        raise RuntimeError("Downloaded artifacts contain no regular JSON or SARIF result files")
+    return result_files
 
-    # prepare-ruling-artifact wraps results in expected/. Older producers upload
-    # target/actual contents directly, so those need the expected/ destination.
-    if not (artifact_directory / "expected").is_dir():
-        ruling_root = ruling_root / "expected"
-    ruling_root.mkdir(parents=True, exist_ok=True)
 
-    print(f"Copying {len(artifacts)} artifact entries into {ruling_root}")
+def sync_artifacts(expected_root: Path, artifact_directory: Path, download_outcome: str) -> None:
     try:
-        for artifact in artifacts:
-            destination = ruling_root / artifact.name
-            if artifact.is_dir():
-                shutil.copytree(artifact, destination, dirs_exist_ok=True, symlinks=True)
-            else:
-                shutil.copy2(artifact, destination, follow_symlinks=False)
+        result_files = validate_download(artifact_directory, download_outcome)
+        if not expected_root.is_dir():
+            raise RuntimeError(f"Expected ruling directory does not exist: {expected_root}")
+        print(f"Copying {len(result_files)} result files into {expected_root}")
+        for relative_path in result_files:
+            destination = expected_root / relative_path
+            if has_symlink(expected_root, relative_path):
+                raise RuntimeError(f"Refusing to write through a symlink: {destination}")
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(artifact_directory / relative_path, destination)
     finally:
-        shutil.rmtree(artifact_directory)
+        if artifact_directory.is_dir():
+            shutil.rmtree(artifact_directory)
     print("Artifact sync complete")
 
 
@@ -66,8 +100,8 @@ def main() -> int:
     print("::group::Syncing ruling artifacts")
     try:
         sync_artifacts(
-            Path(os.environ["RULING_ROOT"]),
-            ARTIFACT_DIRECTORY,
+            Path(os.environ["EXPECTED_ROOT"]),
+            Path(os.environ["ARTIFACT_DIRECTORY"]),
             os.environ["DOWNLOAD_OUTCOME"],
         )
     except (OSError, RuntimeError) as error:

@@ -1,19 +1,31 @@
 # Prepare Ruling Artifact Action
 
-Packages generated ruling results as an `actual_*` artifact for
+Uploads generated ruling results as an `actual_*` artifact for
 `ruling-update-and-notify`.
 
-By default, the action finds `target/actual` (Maven) or `build/actual` (Gradle)
-under `its/ruling`, `private/its/ruling`, or `private/its-enterprise/ruling`.
-It copies the contents under
-`expected/` in the uploaded artifact, so a generated `project/xml-S123.json`
-becomes `expected/project/xml-S123.json` when the notification action downloads it.
-Both JSON (`.json`) and SARIF (`.sarif`) results are supported, including mixed
-directories. Files retain their original names and contents; no format conversion
-is performed.
-It fails if none or multiple standard directories exist, or if the chosen
-one contains no regular, non-symlink JSON or SARIF result files. Errors list the checked directories.
-Python 3 must be available as `python3` or `python` on the runner.
+The action selects exactly one generated-result directory:
+
+| Layout | Maven | Gradle |
+|--------|-------|--------|
+| Public | `its/ruling/target/actual` | `its/ruling/build/actual` |
+| Private | `private/its/ruling/target/actual` | `private/its/ruling/build/actual` |
+| Python enterprise | `private/its-enterprise/ruling/target/actual` | `private/its-enterprise/ruling/build/actual` |
+
+It fails if none or several of these directories exist, and the error lists
+the checked directories. It also fails if the selected directory contains no
+regular (non-symlink) `.json` or `.sarif` file. JSON and SARIF results may be
+mixed in the same directory.
+
+The selected directory is uploaded directly, without copying or converting
+files: a generated `actual/project/report.json` is stored as
+`project/report.json` in the artifact, and `ruling-update-and-notify` copies it
+to `expected/project/report.json`. Python 3 must be available as `python3` or
+`python` on the runner.
+
+> **Artifact format change:** earlier versions wrapped the results in an
+> `expected/` directory. `ruling-update-and-notify` rejects artifacts using that
+> wrapper, so update both actions together, as well as any workflow step that
+> uploads `actual_*` artifacts manually.
 
 ## Why a Separate Action?
 
@@ -29,6 +41,8 @@ This action uploads those files for `ruling-update-and-notify` to consume later.
   id: prepare-ruling-artifact
   if: ${{ steps.ruling.outcome == 'failure' }}
   uses: SonarSource/core-languages-tooling-public/prepare-ruling-artifact@master
+  with:
+    artifact-name: actual_${{ matrix.os }}
 - name: Fail on ruling test failure
   if: ${{ !cancelled() && steps.ruling.outcome == 'failure' && steps.prepare-ruling-artifact.outcome == 'success' }}
 ```
@@ -63,4 +77,6 @@ misleading message when the artifact could not be uploaded; the job still fails
 because of the failing `Prepare ruling artifact` step.
 
 Run after the ruling test in each producer job. Invoke
-`ruling-update-and-notify` in a downstream job after the producers finish.
+`ruling-update-and-notify` in a downstream job after the producers finish; see
+its README for a complete workflow. Jobs running in parallel must produce
+results for disjoint projects, because the update job merges all artifacts.

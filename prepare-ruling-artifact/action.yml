@@ -18,8 +18,8 @@ outputs:
 runs:
   using: 'composite'
   steps:
-    - name: Stage ruling results
-      id: stage
+    - name: Select ruling results
+      id: select
       shell: bash
       env:
         ARTIFACT_NAME: ${{ inputs.artifact-name }}
@@ -35,7 +35,7 @@ runs:
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
       with:
         name: ${{ inputs.artifact-name }}
-        path: ${{ steps.stage.outputs.path }}/
+        path: ${{ steps.select.outputs.path }}/
         if-no-files-found: error
 
     - name: Report artifact link
