@@ -40,13 +40,17 @@ Use `artifact-url` to point to the exact uploaded artifact in diagnostic message
   if: ${{ steps.ruling.outcome == 'failure' }}
   uses: SonarSource/core-languages-tooling-public/prepare-ruling-artifact@master
 - name: Fail on ruling test failure
-  if: ${{ !cancelled() && steps.ruling.outcome == 'failure' }}
+  if: ${{ !cancelled() && steps.ruling.outcome == 'failure' && steps.prepare-ruling-artifact.outcome == 'success' }}
   env:
     ARTIFACT_URL: ${{ steps.prepare-ruling-artifact.outputs.artifact-url }}
   run: |
     echo "Ruling tests failed. Actual results: ${ARTIFACT_URL}"
     exit 1
 ```
+
+The `steps.prepare-ruling-artifact.outcome == 'success'` guard avoids printing a
+misleading message when the artifact could not be uploaded; the job still fails
+because of the failing `Prepare ruling artifact` step.
 
 Run after the ruling test in each producer job. Invoke
 `ruling-update-and-notify` in a downstream job after the producers finish.
