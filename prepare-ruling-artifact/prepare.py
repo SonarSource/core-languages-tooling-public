@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import os
 import re
-import shutil
 import sys
-import tempfile
 from pathlib import Path
 
 
+RESULT_SUFFIXES = (".json", ".sarif")
 ACTUAL_ROOTS = (
     Path("its/ruling/target/actual"),
     Path("private/its/ruling/target/actual"),
@@ -32,6 +31,13 @@ def select_actual_root() -> Path:
     return candidates[0]
 
 
+def has_result_files(root: Path) -> bool:
+    return any(
+        path.suffix in RESULT_SUFFIXES and path.is_file() and not path.is_symlink()
+        for path in root.rglob("*")
+    )
+
+
 def main() -> int:
     if not re.fullmatch(r"actual_[a-zA-Z0-9_.-]+", os.environ["ARTIFACT_NAME"]):
         raise ValueError(
@@ -39,18 +45,13 @@ def main() -> int:
         )
 
     actual_root = select_actual_root()
-    if not actual_root.is_dir() or not any(
-        path.suffix in (".json", ".sarif") and path.is_file() and not path.is_symlink()
-        for path in actual_root.rglob("*")
-    ):
+    if not has_result_files(actual_root):
         raise ValueError(f"No generated ruling JSON or SARIF files found in {actual_root}")
 
-    stage_root = Path(
-        tempfile.mkdtemp(prefix="ruling-artifact.", dir=os.environ["RUNNER_TEMP"])
-    )
-    shutil.copytree(actual_root, stage_root / "expected", symlinks=True)
+    # The directory is uploaded as is: actual/project/report.json is stored
+    # as project/report.json in the artifact.
     with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
-        output.write(f"path={stage_root}\n")
+        output.write(f"path={actual_root}\n")
     return 0
 
 

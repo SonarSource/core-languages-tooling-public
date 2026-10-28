@@ -29,9 +29,9 @@ def has_staged_changes(worktree: Path) -> bool:
     return result.returncode == 1
 
 
-def transfer_ruling_changes(ruling_root: str, worktree: Path) -> None:
+def transfer_ruling_changes(expected_root: str, worktree: Path) -> None:
     patch = subprocess.run(
-        ("git", "diff", "--binary", "HEAD", "--", ruling_root),
+        ("git", "diff", "--binary", "HEAD", "--", expected_root),
         stdout=subprocess.PIPE,
         check=True,
     ).stdout
@@ -43,7 +43,7 @@ def transfer_ruling_changes(ruling_root: str, worktree: Path) -> None:
         )
 
     untracked = output(
-        "git", "ls-files", "--others", "--exclude-standard", "-z", "--", ruling_root
+        "git", "ls-files", "--others", "--exclude-standard", "-z", "--", expected_root
     )
     for relative_path in filter(None, untracked.split("\0")):
         source = Path(relative_path)
@@ -54,7 +54,7 @@ def transfer_ruling_changes(ruling_root: str, worktree: Path) -> None:
         shutil.copy2(source, destination, follow_symlinks=False)
 
 
-def create_fix_pr(target_ref: str, ruling_root: str, pr_number: str) -> tuple[str, str, str]:
+def create_fix_pr(target_ref: str, expected_root: str, pr_number: str) -> tuple[str, str, str]:
     fix_branch = f"fix/update-ruling-for-{target_ref}"
     subject = f"PR #{pr_number}" if pr_number else target_ref
     title = f"Update ruling results for {subject}"
@@ -79,8 +79,8 @@ def create_fix_pr(target_ref: str, ruling_root: str, pr_number: str) -> tuple[st
         run("git", "worktree", "add", "--detach", str(worktree), f"origin/{target_ref}")
         try:
             fix_base_sha = output("git", "-C", str(worktree), "rev-parse", "HEAD")
-            transfer_ruling_changes(ruling_root, worktree)
-            run("git", "-C", str(worktree), "add", "-A", "--", ruling_root)
+            transfer_ruling_changes(expected_root, worktree)
+            run("git", "-C", str(worktree), "add", "-A", "--", expected_root)
             committed = has_staged_changes(worktree)
             if committed:
                 run(
@@ -126,7 +126,7 @@ def create_fix_pr(target_ref: str, ruling_root: str, pr_number: str) -> tuple[st
 def main() -> int:
     try:
         fix_pr_url, fix_base_sha, fix_sha = create_fix_pr(
-            os.environ["TARGET_REF"], os.environ["RULING_ROOT"], os.environ["PR_NUMBER"]
+            os.environ["TARGET_REF"], os.environ["EXPECTED_ROOT"], os.environ["PR_NUMBER"]
         )
         with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output_file:
             output_file.write(
