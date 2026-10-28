@@ -1,4 +1,6 @@
+import json
 import pathlib
+from pathlib import Path
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 import subprocess
@@ -23,6 +25,116 @@ IssueLocation = core.IssueLocation
 IssueDiff = core.IssueDiff
 RuleDiff = core.RuleDiff
 Snippet = core.Snippet
+
+
+class LocalCLITests(unittest.TestCase):
+    CLI_DIRECTORY = Path(__file__).resolve().parent
+
+    def git(self, repository: Path, *arguments: str) -> str:
+        return subprocess.run(
+            ["git", "-c", "user.name=Test", "-c", "user.email=test@example.test",
+             "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", *arguments],
+            cwd=repository, check=True, capture_output=True, text=True,
+        ).stdout.strip()
+
+    def run_cli(self, repository: Path, *arguments: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [sys.executable, str(self.CLI_DIRECTORY), "--dry-run",
+             "--base-sha", "HEAD~1", "--head-sha", "HEAD",
+             "--sources-root", "its/sources", *arguments],
+            cwd=repository, capture_output=True, text=True,
+        )
+
+    def write_ruling(self, path: Path, lines: list[int]) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.suffix == ".sarif":
+            data = {"version": "2.1.0", "runs": [{"results": [
+                {"ruleId": "python:S100", "locations": [{"physicalLocation": {
+                    "artifactLocation": {"uri": "sample:file.py"},
+                    "region": {"startLine": line},
+                }}]} for line in lines
+            ]}]}
+        else:
+            data = {"sample:file.py": lines}
+        path.write_text(json.dumps(data), encoding="utf-8")
+
+    def test_directory_cli_compares_committed_json_and_sarif(self) -> None:
+        for root in (
+            "its/ruling/src/test/resources/expected",
+            "private/its/ruling/src/test/resources/expected",
+            "private/its-enterprise/ruling/src/test/resources/expected",
+            "custom/expected",
+        ):
+            for extension in ("json", "sarif"):
+                for change in ("modified", "added", "deleted", "unchanged"):
+                    with self.subTest(root=root, extension=extension, change=change):
+                        with tempfile.TemporaryDirectory() as directory:
+                            repository = Path(directory)
+                            self.git(repository, "init")
+                            source = repository / "its/sources/sample/file.py"
+                            source.parent.mkdir(parents=True)
+                            source.write_text("first = 1\nsecond = 2\n", encoding="utf-8")
+                            expected = repository / root / f"sample/python-S100.{extension}"
+                            if change != "added":
+                                self.write_ruling(expected, [1])
+                            self.git(repository, "add", ".")
+                            self.git(repository, "commit", "-m", "Base ruling")
+                            if change == "deleted":
+                                expected.unlink()
+                            elif change != "unchanged":
+                                self.write_ruling(expected, [1, 2])
+                            self.git(repository, "add", ".")
+                            self.git(repository, "commit", "--allow-empty", "-m", "Updated ruling")
+                            original_head = self.git(repository, "rev-parse", "HEAD")
+                            arguments = ["--ruling-root", root] if root == "custom/expected" else []
+
+                            result = self.run_cli(repository, *arguments)
+
+                            self.assertEqual(result.returncode, 0, result.stderr)
+                            self.assertEqual(self.git(repository, "status", "--porcelain"), "")
+                            self.assertEqual(self.git(repository, "rev-parse", "HEAD"), original_head)
+                            if change == "unchanged":
+                                self.assertEqual(result.stdout, "")
+                                continue
+                            self.assertTrue(result.stdout.startswith("<!-- ruling-diff-comment -->"))
+                            self.assertIn("## Ruling Diff Summary", result.stdout)
+                            self.assertIn("<b>S100</b> (<code>python</code>)", result.stdout)
+                            if change == "deleted":
+                                self.assertIn("1 issues removed, 0 issues added", result.stdout)
+                                self.assertIn("first = 1", result.stdout)
+                            else:
+                                added = 2 if change == "added" else 1
+                                self.assertIn(f"0 issues removed, {added} issues added", result.stdout)
+                                self.assertIn("second = 2", result.stdout)
+
+    def test_invalid_revision_exits_nonzero_without_comment(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory)
+            self.git(repository, "init")
+            result = self.run_cli(repository)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("Failed to generate ruling diff comment", result.stderr)
+
+    def test_malformed_ruling_exits_nonzero_without_comment(self) -> None:
+        for extension in ("json", "sarif"):
+            with self.subTest(extension=extension), tempfile.TemporaryDirectory() as directory:
+                repository = Path(directory)
+                self.git(repository, "init")
+                expected = repository / f"its/ruling/src/test/resources/expected/sample/python-S100.{extension}"
+                self.write_ruling(expected, [1])
+                self.git(repository, "add", ".")
+                self.git(repository, "commit", "-m", "Base ruling")
+                expected.write_text('{"invalid":', encoding="utf-8")
+                self.git(repository, "add", ".")
+                self.git(repository, "commit", "-m", "Malformed ruling")
+
+                result = self.run_cli(repository)
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(result.stdout, "")
+                self.assertIn(f"python-S100.{extension} at HEAD", result.stderr)
+                self.assertIn("Malformed JSON", result.stderr)
 
 
 class RulingDiffCLITest(unittest.TestCase):
@@ -110,16 +222,16 @@ class RulingDiffCLITest(unittest.TestCase):
                 ).stdout.strip()
 
             git("init")
-            expected = repository / "its/ruling/src/test/resources/expected/sample/python-S100.json"
+            expected = repository / "its/ruling/src/test/resources/expected/sample/python-S100.sarif"
             expected.parent.mkdir(parents=True)
-            expected.write_text('{"sample:file.py": [1]}', encoding="utf-8")
+            expected.write_text('{"version":"2.1.0","runs":[{"results":[{"locations":[{"physicalLocation":{"artifactLocation":{"uri":"sample:file.py"},"region":{"startLine":1}}}]}]}]}', encoding="utf-8")
             source = repository / "its/sources/sample/file.py"
             source.parent.mkdir(parents=True)
             source.write_text("first = 1\nsecond = 2\n", encoding="utf-8")
             git("add", ".")
             git("commit", "-m", "Base ruling")
             base = git("rev-parse", "HEAD")
-            expected.write_text('{"sample:file.py": [1, 2]}', encoding="utf-8")
+            expected.write_text('{"version":"2.1.0","runs":[{"results":[{"locations":[{"physicalLocation":{"artifactLocation":{"uri":"sample:file.py"},"region":{"startLine":1}}}]},{"locations":[{"physicalLocation":{"artifactLocation":{"uri":"sample:file.py"},"region":{"startLine":2}}}]}]}]}', encoding="utf-8")
             git("add", ".")
             git("commit", "-m", "Updated ruling")
 
@@ -490,6 +602,38 @@ class SnippetRenderingTest(unittest.TestCase):
 
 
 class BuildRuleDiffsWithIOTest(unittest.TestCase):
+    @patch("ruling_diff_core_lib.snippet_generation.Path.read_text")
+    def test_limits_added_and_removed_snippets_for_a_file(self, mocked_read) -> None:
+        changed_file = "its/ruling/src/test/resources/expected/sample/python-S100.sarif"
+        removed_locations = [IssueLocation(number) for number in range(1, 6)]
+        added_locations = [IssueLocation(number) for number in range(6, 11)]
+        io_impl = FakeRulingDiffIO({
+            (changed_file, "base"): {"sample:file.py": removed_locations},
+            (changed_file, "head"): {"sample:file.py": added_locations},
+        })
+        mocked_read.return_value = "\n".join(f"line {number}" for number in range(1, 11))
+
+        diffs = core.build_rule_diffs([changed_file], "base", "head", io_impl)
+
+        self.assertEqual(
+            [(snippet.change_kind, snippet.location.start_line) for snippet in diffs[0].snippets],
+            [("removed", number) for number in range(1, 4)]
+            + [("added", number) for number in range(6, 9)],
+        )
+
+    @patch("ruling_diff_core_lib.snippet_generation.Path.read_text", return_value="source")
+    def test_limits_snippets_for_a_rule(self, mocked_read) -> None:
+        changed_file = "its/ruling/src/test/resources/expected/sample/python-S100.sarif"
+        file_paths = [f"file{number:02}.py" for number in range(20)]
+        io_impl = FakeRulingDiffIO({
+            (changed_file, "base"): {},
+            (changed_file, "head"): {f"sample:{path}": [IssueLocation(1)] for path in file_paths},
+        })
+
+        diffs = core.build_rule_diffs([changed_file], "base", "head", io_impl)
+
+        self.assertEqual([snippet.file_path for snippet in diffs[0].snippets], file_paths[:15])
+
     @patch("ruling_diff_core_lib.snippet_generation.Path.read_text")
     def test_build_rule_diffs_compares_refs_and_reads_checkout(self, mocked_read) -> None:
         changed_file = (

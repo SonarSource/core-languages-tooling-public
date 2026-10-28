@@ -32,6 +32,11 @@ jobs:
           cd ruling-diff-comment
           uv run python -m unittest discover -v -s . -p "test_ruling_diff.py"
 
+      - name: Run ruling-diff-comment enhancer unit tests
+        run: |
+          cd ruling-diff-comment
+          uv run --extra enhancer python -m unittest -v test_enhancer test_models
+
       - name: Run pvf-comment unit tests
         run: |
           cd pvf-comment
@@ -65,4 +70,3 @@ jobs:
           branch-patterns: ${{ format('{0},branch-*,dogfood-*', github.event.repository.default_branch) }}
           github-token: ${{ github.token }}
           branch: ${{ github.ref_name }}
-

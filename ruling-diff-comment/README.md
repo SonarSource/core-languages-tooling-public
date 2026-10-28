@@ -157,7 +157,7 @@ required in this mode. Python 3.10+ is sufficient; there are no package dependen
 
 ```bash
 cd /path/to/analyzer-checkout
-python3 /path/to/core-languages-tooling-public/ruling-diff-comment/ruling_diff.py \
+python3 /path/to/core-languages-tooling-public/ruling-diff-comment/ \
   --dry-run \
   --base-sha HEAD~1 \
   --head-sha HEAD \
@@ -167,7 +167,7 @@ python3 /path/to/core-languages-tooling-public/ruling-diff-comment/ruling_diff.p
 
 Open `/tmp/ruling-comment.md` in a Markdown previewer to inspect the result.
 Markdown goes to stdout; diagnostic logging goes to stderr. If there are no
-changed ruling JSON files or no issue deltas, stdout is empty.
+changed ruling JSON or SARIF files or no issue deltas, stdout is empty.
 
 Run from the analyzer repository root. Both revisions must exist locally, and
 the comparison uses Git's three-dot diff (`base...head`), just like the action.
@@ -179,16 +179,28 @@ Set `--sources-root` to the analyzer's source location (for example,
 `its/sources` or `private/its/sources`). Sources and any required submodule
 commits should be available locally for snippets; missing submodule content can
 trigger a Git fetch. Optional `--ruling-root` overrides the standard expected
-directories. The comment renderer currently compares JSON files, not SARIF.
+directories. Both JSON and SARIF per-rule files are supported, including added
+and deleted files. SARIF results are compared by primary source file and start
+line, preserving duplicate issues; message, column, and secondary-location-only
+changes do not produce issue deltas.
 
 Without `--dry-run`, the existing posting behavior is unchanged and
 `--pr-number` and `--repository` are required.
 
+### AI-Assisted Diff Review
+
+The optional [`ruling_diff_enhancer`](ruling_diff_enhancer) submodule reviews
+the generated Markdown against local rule metadata using DSPy. Install its
+dependencies with `uv sync --extra enhancer --frozen`, then run
+`uv run --extra enhancer python -m ruling_diff_enhancer --help` from this directory.
+Input preparation with `--prepare-only` uses only the standard library.
+Normal diff generation and the GitHub Action do not require AI dependencies.
+
 ### Running Tests
 
 ```bash
-cd .github/actions/ruling-diff-comment
-uv run python -m unittest discover -v -s . -p "test_*.py"
+cd ruling-diff-comment
+uv run --extra enhancer python -m unittest discover -v -s . -p "test_*.py"
 ```
 
 The tests cover CLI validation and preview/posting behavior, plus an integration
@@ -198,6 +210,7 @@ GitHub interactions are tested with mocks rather than creating real PRs.
 ### Project Structure
 
 - `action.yml` - Action metadata and workflow steps
+- `__main__.py` - Directory CLI entry point, reusing `ruling_diff.py`
 - `ruling_diff.py` - Main entry point
 - `ruling_diff_io.py` - Git and GitHub API interactions
 - `ruling_diff_core.py` - Core module exports
@@ -207,6 +220,8 @@ GitHub interactions are tested with mocks rather than creating real PRs.
   - `sarif.py` - SARIF report parsing
   - `snippet_generation.py` - Code snippet rendering
   - `comment_rendering.py` - Markdown comment formatting
+- `ruling_diff_enhancer/` - Optional AI-assisted diff review and input preparation
+- `test_enhancer.py` and `test_models.py` - Enhancer input, model, and transport tests
 - `test_ruling_diff.py` - Discovery, comparison, snippets, and GitHub interaction tests
 - `test_sarif_diff.py` - SARIF parsing, range comparison, and Git integration tests
 
