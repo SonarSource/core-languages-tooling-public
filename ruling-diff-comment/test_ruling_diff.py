@@ -1,4 +1,6 @@
 import pathlib
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
 import subprocess
 import sys
 import tempfile
@@ -12,11 +14,122 @@ if str(MODULE_DIR) not in sys.path:
 
 import ruling_diff_core as core
 import ruling_diff_io as io
+import ruling_diff as cli
 
 
 IssueDiff = core.IssueDiff
 RuleDiff = core.RuleDiff
 Snippet = core.Snippet
+
+
+class RulingDiffCLITest(unittest.TestCase):
+    def parse_args(self, *arguments: str):
+        with patch.object(sys, "argv", ["ruling_diff.py", *arguments]):
+            return cli.parse_args()
+
+    def test_dry_run_does_not_require_github_context(self) -> None:
+        args = self.parse_args("--dry-run", "--base-sha", "base", "--head-sha", "head")
+
+        self.assertTrue(args.dry_run)
+        self.assertTrue(cli.has_required_context(args))
+        self.assertIsNone(args.pr_number)
+        self.assertIsNone(args.repository)
+
+    def test_posting_requires_github_context(self) -> None:
+        for context in ([], ["--pr-number", "123"], ["--repository", "org/repo"]):
+            with self.subTest(context=context), redirect_stderr(StringIO()):
+                with self.assertRaises(SystemExit) as error:
+                    self.parse_args("--base-sha", "base", "--head-sha", "head", *context)
+                self.assertEqual(error.exception.code, 2)
+
+    def test_dry_run_still_requires_revisions(self) -> None:
+        for revisions in ([], ["--base-sha", "base"], ["--head-sha", "head"]):
+            with self.subTest(revisions=revisions), redirect_stderr(StringIO()):
+                with self.assertRaises(SystemExit) as error:
+                    self.parse_args("--dry-run", *revisions)
+                self.assertEqual(error.exception.code, 2)
+
+    def test_dry_run_and_posting_use_same_comment(self) -> None:
+        for dry_run in (True, False):
+            with self.subTest(dry_run=dry_run):
+                arguments = ["--base-sha", "base", "--head-sha", "head"]
+                arguments.extend(
+                    ["--dry-run"] if dry_run
+                    else ["--pr-number", "123", "--repository", "org/repo"]
+                )
+                args = self.parse_args(*arguments)
+                output = StringIO()
+                with (
+                    patch.object(cli, "parse_args", return_value=args),
+                    patch.object(cli, "get_changed_ruling_files", return_value=["ruling.json"]),
+                    patch.object(cli, "GitHubActionIO") as io_factory,
+                    patch.object(cli, "build_rule_diffs", return_value=["diff"]) as build,
+                    patch.object(cli, "format_comment", return_value="markdown") as render,
+                    patch.object(cli, "post_or_update_comment") as post,
+                    redirect_stdout(output),
+                ):
+                    cli.main()
+
+                build.assert_called_once_with(["ruling.json"], "base", "head", io_factory.return_value)
+                render.assert_called_once_with(["diff"])
+                if dry_run:
+                    self.assertEqual(output.getvalue(), "markdown\n")
+                    post.assert_not_called()
+                else:
+                    self.assertEqual(output.getvalue(), "")
+                    post.assert_called_once_with("123", "org/repo", "markdown")
+
+    def test_dry_run_without_deltas_prints_nothing(self) -> None:
+        args = self.parse_args("--dry-run", "--base-sha", "base", "--head-sha", "head")
+        for changed_files in ([], ["ruling.json"]):
+            with self.subTest(changed_files=changed_files):
+                output = StringIO()
+                with (
+                    patch.object(cli, "parse_args", return_value=args),
+                    patch.object(cli, "get_changed_ruling_files", return_value=changed_files),
+                    patch.object(cli, "build_rule_diffs", return_value=[]),
+                    patch.object(cli, "post_or_update_comment") as post,
+                    redirect_stdout(output),
+                ):
+                    cli.main()
+                self.assertEqual(output.getvalue(), "")
+                post.assert_not_called()
+
+    def test_dry_run_with_local_git_revisions(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repository = pathlib.Path(directory)
+
+            def git(*arguments: str) -> str:
+                return subprocess.run(
+                    ["git", "-c", "user.name=Test", "-c", "user.email=test@example.test",
+                     "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", *arguments],
+                    cwd=repository, check=True, capture_output=True, text=True,
+                ).stdout.strip()
+
+            git("init")
+            expected = repository / "its/ruling/src/test/resources/expected/sample/python-S100.json"
+            expected.parent.mkdir(parents=True)
+            expected.write_text('{"sample:file.py": [1]}', encoding="utf-8")
+            source = repository / "its/sources/sample/file.py"
+            source.parent.mkdir(parents=True)
+            source.write_text("first = 1\nsecond = 2\n", encoding="utf-8")
+            git("add", ".")
+            git("commit", "-m", "Base ruling")
+            base = git("rev-parse", "HEAD")
+            expected.write_text('{"sample:file.py": [1, 2]}', encoding="utf-8")
+            git("add", ".")
+            git("commit", "-m", "Updated ruling")
+
+            result = subprocess.run(
+                [sys.executable, str(MODULE_DIR.resolve() / "ruling_diff.py"),
+                 "--dry-run", "--base-sha", base, "--head-sha", "HEAD",
+                 "--sources-root", "its/sources"],
+                cwd=repository, check=True, capture_output=True, text=True,
+            )
+
+        self.assertIn("## Ruling Diff Summary", result.stdout)
+        self.assertIn("0 issues removed, 1 issues added", result.stdout)
+        self.assertIn("second = 2", result.stdout)
 
 
 class FakeRulingDiffIO:
