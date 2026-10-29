@@ -10,6 +10,7 @@ MODULE_DIR = pathlib.Path(__file__).parent
 if str(MODULE_DIR) not in sys.path:
     sys.path.insert(0, str(MODULE_DIR))
 
+import ruling_diff
 import ruling_diff_core as core
 import ruling_diff_io as io
 
@@ -578,6 +579,42 @@ class GitHubCommentLookupTest(unittest.TestCase):
     def test_parse_json_documents_handles_multiple_arrays(self) -> None:
         documents = io.parse_json_documents('[{"a":1}]\n[{"b":2}]')
         self.assertEqual(len(documents), 2)
+
+
+class RulingDiffMainTest(unittest.TestCase):
+    BASE_ARGS = ["--base-sha", "base", "--head-sha", "head"]
+
+    @patch.object(ruling_diff, "post_or_update_comment")
+    @patch.object(ruling_diff, "generate_comment", return_value="## Ruling Diff Summary")
+    def test_output_file_writes_comment_without_posting(self, generate, post) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output_file = pathlib.Path(tmp_dir) / "diff.md"
+            ruling_diff.main([*self.BASE_ARGS, "--output-file", str(output_file)])
+            self.assertEqual(output_file.read_text(encoding="utf-8"), "## Ruling Diff Summary")
+        generate.assert_called_once()
+        post.assert_not_called()
+
+    @patch.object(ruling_diff, "generate_comment", return_value=None)
+    def test_output_file_is_empty_without_issue_deltas(self, generate) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output_file = pathlib.Path(tmp_dir) / "diff.md"
+            ruling_diff.main([*self.BASE_ARGS, "--output-file", str(output_file)])
+            self.assertEqual(output_file.read_text(encoding="utf-8"), "")
+
+    @patch.object(ruling_diff, "post_or_update_comment")
+    @patch.object(ruling_diff, "generate_comment", return_value="## Ruling Diff Summary")
+    def test_posts_comment_without_output_file(self, generate, post) -> None:
+        ruling_diff.main([*self.BASE_ARGS, "--pr-number", "12", "--repository", "org/repo"])
+        post.assert_called_once_with("12", "org/repo", "## Ruling Diff Summary")
+
+    @patch.object(ruling_diff, "generate_comment")
+    def test_skips_without_pr_number_when_posting(self, generate) -> None:
+        ruling_diff.main([*self.BASE_ARGS, "--repository", "org/repo"])
+        generate.assert_not_called()
+
+    def test_repository_is_required_when_posting(self) -> None:
+        with self.assertRaises(ValueError):
+            ruling_diff.parse_args([*self.BASE_ARGS, "--pr-number", "12"])
 
 
 class GitHubActionIOTest(unittest.TestCase):

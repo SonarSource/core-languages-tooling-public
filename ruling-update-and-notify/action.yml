@@ -130,6 +130,8 @@ runs:
         TARGET_REF: ${{ steps.setup-env.outputs.target-ref }}
         PR_NUMBER: ${{ steps.setup-env.outputs.pr-number }}
         RULING_ROOT: ${{ steps.ruling-paths.outputs.ruling-root }}
+        SOURCES_ROOT: ${{ steps.ruling-paths.outputs.sources-root }}
+        RULING_DIFF_DIR: ${{ github.action_path }}/../ruling-diff-comment
       run: python3 "${{ github.action_path }}/create_fix_pr.py"
 
     - name: Post ruling diff comment

@@ -6,7 +6,7 @@ Automatically updates ruling expected results when tests fail and posts diff com
 
 - **Automatic Ruling Sync**: Copies downloaded ruling artifacts when ruling tests fail
 - **PR Comments**: Posts detailed ruling diff comments using the `ruling-diff-comment` action
-- **Fix PR Creation**: Automatically creates a fix PR with updated ruling results
+- **Fix PR Creation**: Automatically creates a fix PR with updated ruling results, whose description includes the ruling diff summary
 - **Loop Prevention**: Detects and prevents infinite auto-update loops
 - **Smart Cleanup**: Closes stale fix PRs when no longer needed
 
@@ -120,7 +120,7 @@ clean up a fix PR, but it does not post a comment on an original PR.
 1. **When ruling tests pass**: Closes an open stale fix PR, if any
 2. **When ruling tests fail with differences**:
    - Downloads `actual_*` artifacts and copies them into the detected ruling directory
-   - Creates or updates a fix PR with the updated results
+   - Creates or updates a fix PR with the updated results, including the ruling diff summary in its description
    - Posts a detailed diff comment to the original PR
    - Adds a comment linking to the fix PR
 3. **When ruling tests fail but auto-update already happened**: Skips to prevent loops
@@ -143,7 +143,9 @@ clean up a fix PR, but it does not post a comment on an original PR.
    - Creates a clean temporary worktree from the target branch and applies only ruling changes
    - Commits the changes with a bot signature and pushes the fix branch
    - Leaves the caller's checkout and unrelated changes untouched
-   - Creates or updates a fix PR
+   - Creates or updates a fix PR, embedding the output of the `ruling-diff-comment`
+     script in its description (pull requests created with `GITHUB_TOKEN` do not
+     trigger workflows, so the `ruling-diff-comment` action cannot run on them)
    - Posts a comment on the original PR linking to the fix PR
    - Uses the `ruling-diff-comment` action to compare the fix commit with its actual base
 5. If no differences or ruling passed:

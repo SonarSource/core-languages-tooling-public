@@ -40,6 +40,11 @@ Add this action to your workflow:
 | `head-sha` | Head commit SHA for comparison | Yes | - |
 | `sources-root` | Path to sources directory | No | `private/its-enterprise/sources_ruling` |
 
+The underlying `ruling_diff.py` script also accepts `--output-file <path>`: instead of posting
+a comment, it writes the generated markdown to that file (empty when there are no issue deltas).
+In this mode, `--pr-number` and `--repository` are not needed. The `ruling-update-and-notify`
+action uses it to include the ruling diff in the description of the fix PR.
+
 ## Requirements
 
 - `uv` must be installed in the workflow environment

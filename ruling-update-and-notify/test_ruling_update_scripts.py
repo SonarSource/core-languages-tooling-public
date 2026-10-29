@@ -94,7 +94,7 @@ class FixPullRequestTests(unittest.TestCase):
                 self.assertEqual(create_fix_pr.main(), 0)
             self.assertEqual(output_path.read_text(),
                 f"fix-pr-url=https://example.test/1\nfix-base-sha={'b' * 40}\nfix-sha={'a' * 40}\n")
-            create.assert_called_once_with("feature", "its/ruling", "1")
+            create.assert_called_once_with("feature", "its/ruling", "1", "", "")
 
     @patch.object(create_fix_pr.subprocess, "run")
     def test_output_does_not_capture_stderr(self, process) -> None:
@@ -105,10 +105,11 @@ class FixPullRequestTests(unittest.TestCase):
         })
 
     @patch.object(create_fix_pr, "run")
+    @patch.object(create_fix_pr, "generate_ruling_diff", return_value="## Ruling Diff Summary")
     @patch.object(create_fix_pr, "has_staged_changes", return_value=True)
     @patch.object(create_fix_pr, "transfer_ruling_changes")
     @patch.object(create_fix_pr.subprocess, "run", return_value=SimpleNamespace(returncode=2, stdout=""))
-    def test_new_branch_creates_a_pull_request(self, remote, transfer, staged, run) -> None:
+    def test_new_branch_creates_a_pull_request(self, remote, transfer, staged, diff, run) -> None:
         head_shas = iter(("b" * 40, "a" * 40))
 
         def command_output(*command: str, **kwargs) -> str:
@@ -118,8 +119,10 @@ class FixPullRequestTests(unittest.TestCase):
                 return next(head_shas)
             return ""
 
-        with patch.object(create_fix_pr, "output", side_effect=command_output):
-            url, base_sha, sha = create_fix_pr.create_fix_pr("feature", "its/ruling", "123")
+        with patch.object(create_fix_pr, "output", side_effect=command_output) as get_output:
+            url, base_sha, sha = create_fix_pr.create_fix_pr(
+                "feature", "its/ruling", "123", "/actions/ruling-diff-comment", "its/sources"
+            )
 
         self.assertEqual(url, "https://github.com/org/repo/pull/1")
         self.assertEqual(base_sha, "b" * 40)
@@ -134,6 +137,15 @@ class FixPullRequestTests(unittest.TestCase):
             "⚖️ Ruling update ready for review: https://github.com/org/repo/pull/1",
         )
         self.assertFalse(any("stash" in call.args or "switch" in call.args for call in run.call_args_list))
+        diff.assert_called_once_with(
+            "/actions/ruling-diff-comment", "its/ruling", "its/sources", "b" * 40, "a" * 40
+        )
+        get_output.assert_any_call(
+            "gh", "pr", "create", "--title", "Update ruling results for PR #123",
+            "--base", "feature", "--head", "fix/update-ruling-for-feature", "--body",
+            "Auto-generated ruling update for PR #123.\n\n## Ruling Diff Summary\n\n"
+            + create_fix_pr.GENERATED_MARKER,
+        )
         remote.assert_called_once()
         transfer.assert_called_once()
         staged.assert_called_once()
@@ -163,6 +175,58 @@ class FixPullRequestTests(unittest.TestCase):
         remote.assert_called_once()
         transfer.assert_called_once()
         staged.assert_called_once()
+
+    @patch.object(create_fix_pr, "run")
+    @patch.object(create_fix_pr, "generate_ruling_diff", return_value="## Ruling Diff Summary")
+    @patch.object(create_fix_pr, "has_staged_changes", return_value=True)
+    @patch.object(create_fix_pr, "transfer_ruling_changes")
+    @patch.object(create_fix_pr.subprocess, "run", return_value=SimpleNamespace(
+        returncode=0, stdout=f"{'c' * 40}\trefs/heads/fix/update-ruling-for-feature\n",
+    ))
+    def test_existing_pull_request_description_is_updated(self, remote, transfer, staged, diff, run) -> None:
+        def command_output(*command: str, **kwargs) -> str:
+            if command[:3] == ("gh", "pr", "list"):
+                return "https://github.com/org/repo/pull/1"
+            return ""
+
+        with patch.object(create_fix_pr, "output", side_effect=command_output) as get_output:
+            create_fix_pr.create_fix_pr("feature", "its/ruling", "")
+
+        run.assert_any_call(
+            "gh", "pr", "edit", "https://github.com/org/repo/pull/1", "--body",
+            "Auto-generated ruling update for feature.\n\n## Ruling Diff Summary\n\n"
+            + create_fix_pr.GENERATED_MARKER,
+        )
+        self.assertFalse(any(call.args[:3] == ("gh", "pr", "create") for call in get_output.call_args_list))
+
+    def test_pr_body_without_ruling_diff(self) -> None:
+        self.assertEqual(create_fix_pr.pr_body("feature", ""),
+            f"Auto-generated ruling update for feature.\n\n{create_fix_pr.GENERATED_MARKER}")
+
+    def test_generate_ruling_diff_is_skipped_without_script(self) -> None:
+        with patch.object(create_fix_pr.subprocess, "run") as process:
+            self.assertEqual(create_fix_pr.generate_ruling_diff("", "its/ruling", "", "b", "a"), "")
+        process.assert_not_called()
+
+    def test_generate_ruling_diff_reads_output_file(self) -> None:
+        def fake_run(command, check):
+            output_file = Path(command[command.index("--output-file") + 1])
+            output_file.write_text("## Ruling Diff Summary\n", encoding="utf-8")
+            return SimpleNamespace(returncode=0)
+
+        with patch.object(create_fix_pr.subprocess, "run", side_effect=fake_run) as process:
+            diff = create_fix_pr.generate_ruling_diff("/diff", "its/ruling", "its/sources", "b", "a")
+        self.assertEqual(diff, "## Ruling Diff Summary")
+        command = process.call_args.args[0]
+        self.assertEqual(command[:5], ["uv", "run", "--project", "/diff", "python"])
+        self.assertIn("--ruling-root", command)
+        self.assertEqual(command[command.index("--ruling-root") + 1], "its/ruling/expected")
+        self.assertEqual(command[command.index("--sources-root") + 1], "its/sources")
+
+    def test_generate_ruling_diff_failure_returns_empty(self) -> None:
+        with patch.object(create_fix_pr.subprocess, "run", return_value=SimpleNamespace(returncode=1)), \
+                redirect_stdout(StringIO()):
+            self.assertEqual(create_fix_pr.generate_ruling_diff("/diff", "its/ruling", "", "b", "a"), "")
 
     def test_dirty_checkout_does_not_block_clean_worktree(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -211,10 +275,16 @@ class FixPullRequestTests(unittest.TestCase):
                     return "https://example.test/fix"
                 return original_output(*command, **kwargs)
 
+            original_run = create_fix_pr.run
+            def fake_run(*command: str) -> None:
+                if command[0] != "gh":
+                    original_run(*command)
+
             previous_directory = Path.cwd()
             try:
                 os.chdir(source)
-                with patch.object(create_fix_pr, "output", side_effect=fake_output):
+                with patch.object(create_fix_pr, "output", side_effect=fake_output), \
+                        patch.object(create_fix_pr, "run", side_effect=fake_run):
                     url, base, head = create_fix_pr.create_fix_pr("feature", str(ruling_root), "")
                     self.assertEqual(url, "https://example.test/fix")
                     self.assertEqual(base, git("rev-parse", "HEAD", cwd=target))

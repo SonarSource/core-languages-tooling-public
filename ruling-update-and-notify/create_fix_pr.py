@@ -54,11 +54,44 @@ def transfer_ruling_changes(ruling_root: str, worktree: Path) -> None:
         shutil.copy2(source, destination, follow_symlinks=False)
 
 
-def create_fix_pr(target_ref: str, ruling_root: str, pr_number: str) -> tuple[str, str, str]:
+def generate_ruling_diff(
+    ruling_diff_dir: str, ruling_root: str, sources_root: str, base_sha: str, head_sha: str
+) -> str:
+    if not ruling_diff_dir:
+        return ""
+    with tempfile.TemporaryDirectory(prefix="ruling-diff-") as temporary_directory:
+        diff_file = Path(temporary_directory) / "ruling-diff.md"
+        command = [
+            "uv", "run", "--project", ruling_diff_dir,
+            "python", str(Path(ruling_diff_dir) / "ruling_diff.py"),
+            "--base-sha", base_sha, "--head-sha", head_sha,
+            "--ruling-root", f"{ruling_root}/expected",
+            "--output-file", str(diff_file),
+        ]
+        if sources_root:
+            command += ["--sources-root", sources_root]
+        result = subprocess.run(command, check=False)
+        if result.returncode != 0 or not diff_file.is_file():
+            print("::warning::Could not generate the ruling diff for the fix PR description")
+            return ""
+        return diff_file.read_text(encoding="utf-8").strip()
+
+
+def pr_body(subject: str, ruling_diff: str) -> str:
+    sections = [f"Auto-generated ruling update for {subject}.", ruling_diff, GENERATED_MARKER]
+    return "\n\n".join(filter(None, sections))
+
+
+def create_fix_pr(
+    target_ref: str,
+    ruling_root: str,
+    pr_number: str,
+    ruling_diff_dir: str = "",
+    sources_root: str = "",
+) -> tuple[str, str, str]:
     fix_branch = f"fix/update-ruling-for-{target_ref}"
     subject = f"PR #{pr_number}" if pr_number else target_ref
     title = f"Update ruling results for {subject}"
-    body = f"Auto-generated ruling update for {subject}.\n\n{GENERATED_MARKER}"
 
     run("git", "fetch", "origin", "--", target_ref)
     remote_branch = subprocess.run(
@@ -109,11 +142,17 @@ def create_fix_pr(target_ref: str, ruling_root: str, pr_number: str) -> tuple[st
             "--state", "open", "--json", "url", "--jq", ".[0].url // empty",
             check=False,
         )
-    if (branch_exists or committed) and not fix_pr_url:
-        fix_pr_url = output(
-            "gh", "pr", "create", "--title", title, "--base", target_ref,
-            "--head", fix_branch, "--body", body,
-        )
+    if committed or (branch_exists and not fix_pr_url):
+        body = pr_body(subject, generate_ruling_diff(
+            ruling_diff_dir, ruling_root, sources_root, fix_base_sha, fix_sha
+        ))
+        if fix_pr_url:
+            run("gh", "pr", "edit", fix_pr_url, "--body", body)
+        else:
+            fix_pr_url = output(
+                "gh", "pr", "create", "--title", title, "--base", target_ref,
+                "--head", fix_branch, "--body", body,
+            )
 
     if pr_number and fix_pr_url:
         run(
@@ -126,7 +165,8 @@ def create_fix_pr(target_ref: str, ruling_root: str, pr_number: str) -> tuple[st
 def main() -> int:
     try:
         fix_pr_url, fix_base_sha, fix_sha = create_fix_pr(
-            os.environ["TARGET_REF"], os.environ["RULING_ROOT"], os.environ["PR_NUMBER"]
+            os.environ["TARGET_REF"], os.environ["RULING_ROOT"], os.environ["PR_NUMBER"],
+            os.environ.get("RULING_DIFF_DIR", ""), os.environ.get("SOURCES_ROOT", ""),
         )
         with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output_file:
             output_file.write(
