@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import os
 import shutil
 import subprocess
@@ -84,6 +85,8 @@ def create_fix_pr(
     ruling_root: str,
     pr_number: str,
     sources_root: str = "",
+    *,
+    dry_run: bool = False,
 ) -> tuple[str, str, str]:
     fix_branch = f"fix/update-ruling-for-{target_ref}"
     subject = f"PR #{pr_number}" if pr_number else target_ref
@@ -118,6 +121,7 @@ def create_fix_pr(
                     "-c", "user.email=github-actions[bot]@users.noreply.github.com",
                     "commit", "-m", f"Update ruling results\n\n{GENERATED_MARKER}",
                 )
+            if committed and not dry_run:
                 refspec = f"HEAD:refs/heads/{fix_branch}"
                 if branch_exists:
                     run(
@@ -130,6 +134,17 @@ def create_fix_pr(
             fix_sha = output("git", "-C", str(worktree), "rev-parse", "HEAD")
         finally:
             run("git", "worktree", "remove", "--force", str(worktree))
+
+    if dry_run:
+        print("Dry run: skipping push and all GitHub PR/comment operations.")
+        if committed:
+            print(f"Title: {title}\nBase: {target_ref}\nHead: {fix_branch}")
+            print(pr_body(subject, generate_ruling_diff(
+                ruling_root, sources_root, fix_base_sha, fix_sha
+            )))
+        else:
+            print("No ruling changes to commit.")
+        return "", fix_base_sha, fix_sha
 
     fix_pr_url = ""
     if branch_exists:
@@ -158,16 +173,24 @@ def create_fix_pr(
     return fix_pr_url, fix_base_sha, fix_sha
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Create a ruling update fix PR")
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Prepare a temporary fix commit and preview the PR without pushing or calling gh",
+    )
+    args = parser.parse_args(argv)
     try:
         fix_pr_url, fix_base_sha, fix_sha = create_fix_pr(
-            os.environ["TARGET_REF"], os.environ["RULING_ROOT"], os.environ["PR_NUMBER"],
+            os.environ["TARGET_REF"], os.environ["RULING_ROOT"], os.environ.get("PR_NUMBER", ""),
             os.environ.get("SOURCES_ROOT", ""),
+            dry_run=args.dry_run,
         )
-        with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output_file:
-            output_file.write(
-                f"fix-pr-url={fix_pr_url}\nfix-base-sha={fix_base_sha}\nfix-sha={fix_sha}\n"
-            )
+        if not args.dry_run:
+            with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output_file:
+                output_file.write(
+                    f"fix-pr-url={fix_pr_url}\nfix-base-sha={fix_base_sha}\nfix-sha={fix_sha}\n"
+                )
     except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
         print(f"::error::{error}", file=sys.stderr)
         return 1

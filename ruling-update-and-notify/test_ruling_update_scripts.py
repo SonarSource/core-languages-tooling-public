@@ -91,10 +91,65 @@ class FixPullRequestTests(unittest.TestCase):
                 "TARGET_REF": "feature", "RULING_ROOT": "its/ruling",
                 "PR_NUMBER": "1", "GITHUB_OUTPUT": str(output_path),
             }):
-                self.assertEqual(create_fix_pr.main(), 0)
+                self.assertEqual(create_fix_pr.main([]), 0)
             self.assertEqual(output_path.read_text(),
                 f"fix-pr-url=https://example.test/1\nfix-base-sha={'b' * 40}\nfix-sha={'a' * 40}\n")
-            create.assert_called_once_with("feature", "its/ruling", "1", "")
+            create.assert_called_once_with("feature", "its/ruling", "1", "", dry_run=False)
+
+    @patch.object(create_fix_pr, "create_fix_pr", return_value=("", "b" * 40, "a" * 40))
+    def test_main_dry_run_needs_no_github_environment(self, create) -> None:
+        with patch.dict(create_fix_pr.os.environ, {
+            "TARGET_REF": "feature", "RULING_ROOT": "its/ruling", "SOURCES_ROOT": "its/sources",
+        }, clear=True):
+            self.assertEqual(create_fix_pr.main(["--dry-run"]), 0)
+        create.assert_called_once_with("feature", "its/ruling", "", "its/sources", dry_run=True)
+
+    @patch.object(create_fix_pr, "create_fix_pr", return_value=("", "b" * 40, "a" * 40))
+    def test_main_dry_run_does_not_write_github_outputs(self, create) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output_path = Path(directory) / "output"
+            output_path.write_text("existing outputs\n")
+            with patch.dict(create_fix_pr.os.environ, {
+                "TARGET_REF": "feature", "RULING_ROOT": "its/ruling",
+                "GITHUB_OUTPUT": str(output_path),
+            }):
+                self.assertEqual(create_fix_pr.main(["--dry-run"]), 0)
+            self.assertEqual(output_path.read_text(), "existing outputs\n")
+
+    def test_dry_run_never_pushes_or_calls_github(self) -> None:
+        for branch_exists in (False, True):
+            for changed in (False, True):
+                with self.subTest(branch_exists=branch_exists, changed=changed):
+                    remote = SimpleNamespace(
+                        returncode=0 if branch_exists else 2,
+                        stdout=f"{'c' * 40}\trefs/heads/fix/update-ruling-for-feature\n"
+                        if branch_exists else "",
+                    )
+                    head_sha = "a" * 40 if changed else "b" * 40
+                    with patch.object(create_fix_pr.subprocess, "run", return_value=remote), \
+                            patch.object(create_fix_pr, "run") as run, \
+                            patch.object(create_fix_pr, "output", side_effect=["b" * 40, head_sha]) as get_output, \
+                            patch.object(create_fix_pr, "transfer_ruling_changes"), \
+                            patch.object(create_fix_pr, "has_staged_changes", return_value=changed), \
+                            patch.object(create_fix_pr, "generate_ruling_diff", return_value="## Ruling Diff Summary") as diff, \
+                            redirect_stdout(StringIO()) as preview:
+                        result = create_fix_pr.create_fix_pr(
+                            "feature", "its/ruling", "123", "its/sources", dry_run=True
+                        )
+                    self.assertEqual(result, ("", "b" * 40, head_sha))
+                    self.assertFalse(any("push" in call.args or call.args[0] == "gh"
+                        for call in run.call_args_list))
+                    self.assertFalse(any(call.args[0] == "gh" for call in get_output.call_args_list))
+                    self.assertIn("Dry run: skipping push", preview.getvalue())
+                    if changed:
+                        diff.assert_called_once_with("its/ruling", "its/sources", "b" * 40, head_sha)
+                        self.assertIn("Title: Update ruling results for PR #123", preview.getvalue())
+                        self.assertIn("Base: feature\nHead: fix/update-ruling-for-feature", preview.getvalue())
+                        self.assertIn("Auto-generated ruling update for PR #123.", preview.getvalue())
+                        self.assertIn("## Ruling Diff Summary", preview.getvalue())
+                    else:
+                        diff.assert_not_called()
+                        self.assertIn("No ruling changes to commit.", preview.getvalue())
 
     @patch.object(create_fix_pr.subprocess, "run")
     def test_output_does_not_capture_stderr(self, process) -> None:
@@ -279,6 +334,27 @@ class FixPullRequestTests(unittest.TestCase):
             previous_directory = Path.cwd()
             try:
                 os.chdir(source)
+                refs_before = git("--git-dir", str(origin), "show-ref", cwd=root)
+                status_before = git("status", "--porcelain", cwd=source)
+                original_process_run = subprocess.run
+
+                def dry_run_command(command, **kwargs):
+                    self.assertNotEqual(command[0], "gh")
+                    self.assertNotIn("push", command)
+                    return original_process_run(command, **kwargs)
+
+                with patch.object(create_fix_pr.subprocess, "run", side_effect=dry_run_command), \
+                        redirect_stdout(StringIO()) as preview:
+                    url, base, head = create_fix_pr.create_fix_pr(
+                        "feature", str(ruling_root), "123", dry_run=True
+                    )
+                self.assertEqual(url, "")
+                self.assertEqual(base, git("rev-parse", "HEAD", cwd=target))
+                self.assertNotEqual(head, base)
+                self.assertEqual(git("--git-dir", str(origin), "show-ref", cwd=root), refs_before)
+                self.assertEqual(git("status", "--porcelain", cwd=source), status_before)
+                self.assertEqual(git("worktree", "list", "--porcelain", cwd=source).count("worktree "), 1)
+                self.assertIn("Title: Update ruling results for PR #123", preview.getvalue())
                 with patch.object(create_fix_pr, "output", side_effect=fake_output), \
                         patch.object(create_fix_pr, "run", side_effect=fake_run):
                     url, base, head = create_fix_pr.create_fix_pr("feature", str(ruling_root), "")

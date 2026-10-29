@@ -66,6 +66,32 @@ jobs:
           ruling-failed: ${{ needs.ruling.outputs.ruling-failed }}
 ```
 
+## Local Dry Run
+
+After copying the actual ruling results into your analyzer checkout's expectation
+directory, run the fix-PR script from that checkout:
+
+```bash
+TARGET_REF=my-feature-branch \
+RULING_ROOT=its/ruling/src/test/resources \
+SOURCES_ROOT=its/sources \
+python3 /path/to/core-languages-tooling-public/ruling-update-and-notify/create_fix_pr.py --dry-run
+```
+
+Use the ruling and sources paths for your repository's layout. Optionally set
+`PR_NUMBER` to preview a description referring to the original PR.
+
+Dry-run fetches the target branch from `origin`, applies staged, unstaged, and
+untracked ruling changes in a temporary worktree, and creates a temporary local
+commit. It prints the proposed PR title, branches, and description, including
+the ruling diff summary. It never pushes, calls `gh`, or writes `GITHUB_OUTPUT`.
+No GitHub token or `GITHUB_OUTPUT` is needed; Git access to `origin` is still
+required. The temporary worktree is removed, and your current branch, index,
+and working files are left untouched. Fetching updates local remote-tracking refs.
+
+This previews fix-PR creation only: it does not download or sync artifacts, post
+the action's separate PR comments, or run stale-PR cleanup.
+
 ## Why Separate Jobs?
 
 Test jobs generate local `target/actual` or `build/actual` results and upload
