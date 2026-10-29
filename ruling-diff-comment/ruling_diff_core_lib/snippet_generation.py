@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from ruling_diff_core_lib.models_and_constants import (
-    IssueDiff,
     MAX_SNIPPETS_PER_FILE,
     MAX_SNIPPETS_PER_RULE,
     SNIPPET_CONTEXT,
+    IssueDiff,
     OptionalSourceLines,
     RulingDiffIO,
     Snippet,
@@ -21,7 +23,7 @@ def render_snippet(
     lines: OptionalSourceLines, issue_line: int, context: int = SNIPPET_CONTEXT
 ) -> str:
     if lines is None:
-        return "(source file not found at this revision)"
+        return "(source file not found in checkout)"
     if issue_line == 0:
         return render_file_level_snippet(lines, context)
     return render_line_snippet(lines, issue_line, context)
@@ -62,8 +64,6 @@ def build_snippets_for_rule(
     project: str,
     file_diffs: list[IssueDiff],
     source_cache: SourceCache,
-    base_sha: str,
-    head_sha: str,
     io: RulingDiffIO,
 ) -> list[Snippet]:
     snippets: list[Snippet] = []
@@ -73,8 +73,6 @@ def build_snippets_for_rule(
                 project=project,
                 file_diff=file_diff,
                 source_cache=source_cache,
-                base_sha=base_sha,
-                head_sha=head_sha,
                 io=io,
             )
         )
@@ -88,8 +86,6 @@ def collect_snippets_for_file(
     project: str,
     file_diff: IssueDiff,
     source_cache: SourceCache,
-    base_sha: str,
-    head_sha: str,
     io: RulingDiffIO,
 ) -> list[Snippet]:
     snippets: list[Snippet] = []
@@ -105,8 +101,6 @@ def collect_snippets_for_file(
                     line_number=line_number,
                     change_kind=change_kind,
                     source_cache=source_cache,
-                    base_sha=base_sha,
-                    head_sha=head_sha,
                     io=io,
                 )
             )
@@ -120,15 +114,12 @@ def create_issue_snippet(
     line_number: int,
     change_kind: str,
     source_cache: SourceCache,
-    base_sha: str,
-    head_sha: str,
     io: RulingDiffIO,
 ) -> Snippet:
-    ref = head_sha if change_kind == "added" else base_sha
     source_path = io.resolve_source_path(project, file_path)
-    lines = load_source_lines_with_cache(source_cache, ref, source_path, io)
+    lines = load_source_lines_with_cache(source_cache, source_path)
     body = (
-        f"(source file not found at this revision: {file_path})"
+        f"(source file not found in checkout: {file_path})"
         if lines is None
         else render_snippet(lines, line_number)
     )
@@ -140,14 +131,12 @@ def create_issue_snippet(
     )
 
 
-def load_source_lines_with_cache(
-    cache: SourceCache,
-    ref: str,
-    path: str,
-    io: RulingDiffIO,
-) -> OptionalSourceLines:
-    key = (ref, path)
-    if key not in cache:
-        content = io.load_text_at_ref(path, ref)
-        cache[key] = None if content is None else content.splitlines()
-    return cache[key]
+def load_source_lines_with_cache(cache: SourceCache, path: str) -> OptionalSourceLines:
+    if path not in cache:
+        try:
+            content = Path(path).read_text(encoding="utf-8")
+        except FileNotFoundError:
+            cache[path] = None
+        else:
+            cache[path] = content.splitlines()
+    return cache[path]

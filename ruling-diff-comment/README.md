@@ -45,6 +45,7 @@ Add this action to your workflow:
 - `uv` must be installed in the workflow environment
 - `gh` CLI must be configured with appropriate permissions
 - Repository must contain ruling files in the expected structure
+- Source files and any required source submodules must be checked out before calling the action
 
 ## Environment Variables
 
@@ -74,6 +75,12 @@ private/its-enterprise/sources_ruling/{project}/
 ```
 
 Override with the `sources-root` input parameter for different analyzers.
+
+Snippets for both added and removed issues use source files from the current
+checkout, not from the base or head revision. Only the ruling JSON comparison
+is revision-based. Initialize the required source submodules in the calling
+workflow; the action does not fetch source content. Missing files produce a
+placeholder snippet.
 
 ### Ruling JSON Key Formats
 
