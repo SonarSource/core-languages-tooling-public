@@ -43,7 +43,8 @@ jobs:
         with:
           fetch-depth: 0
 
-      # If your analyzer uses submodules for ruling sources, initialize them here
+      # If your analyzer uses submodules for ruling sources, initialize them here.
+      # Snippets use the current checkout; the action does not fetch missing sources.
       # - name: Checkout ruling sources submodule
       #   run: git submodule update --init --recursive --depth 1 private/its-enterprise/sources_ruling
 

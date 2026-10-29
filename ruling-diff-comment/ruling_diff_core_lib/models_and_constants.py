@@ -32,7 +32,7 @@ SarifReport = dict[str, list[IssueLocation]]
 OptionalSarifReport = SarifReport | None
 SourceLines = list[str]
 OptionalSourceLines = SourceLines | None
-SourceCache = dict[tuple[str, str], OptionalSourceLines]
+SourceCache = dict[str, OptionalSourceLines]
 
 
 class RulingDiffIO(Protocol):
@@ -40,9 +40,6 @@ class RulingDiffIO(Protocol):
     sources_root: str
 
     def load_sarif_at_ref(self, path: str, ref: str) -> OptionalSarifReport:
-        ...
-
-    def load_text_at_ref(self, path: str, ref: str) -> str | None:
         ...
 
     def resolve_source_path(self, project: str, file_path: str) -> str:

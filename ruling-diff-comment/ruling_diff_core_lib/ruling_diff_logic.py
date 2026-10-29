@@ -159,8 +159,6 @@ def build_rule_diff_for_file(
         project,
         file_diffs,
         source_cache,
-        base_sha,
-        head_sha,
         io,
     )
     return RuleDiff(
