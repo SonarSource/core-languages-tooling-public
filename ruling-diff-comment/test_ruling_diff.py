@@ -605,6 +605,9 @@ class RulingDiffMainTest(unittest.TestCase):
     @patch.object(ruling_diff, "generate_comment", return_value="## Ruling Diff Summary")
     def test_posts_comment_without_output_file(self, generate, post) -> None:
         ruling_diff.main([*self.BASE_ARGS, "--pr-number", "12", "--repository", "org/repo"])
+        generate.assert_called_once_with(
+            "base", "head", None, "private/its-enterprise/sources_ruling"
+        )
         post.assert_called_once_with("12", "org/repo", "## Ruling Diff Summary")
 
     @patch.object(ruling_diff, "generate_comment")

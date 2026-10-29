@@ -9,6 +9,7 @@ from pathlib import Path
 from ruling_diff_core import build_rule_diffs, format_comment
 from ruling_diff_io import (
     GitHubActionIO,
+    RULING_SOURCES_SUBMODULE,
     get_changed_ruling_files,
     post_or_update_comment,
 )
@@ -54,20 +55,25 @@ def has_required_context(args: argparse.Namespace) -> bool:
     )
 
 
-def generate_comment(args: argparse.Namespace) -> str | None:
+def generate_comment(
+    base_sha: str,
+    head_sha: str,
+    ruling_root: str | None = None,
+    sources_root: str = RULING_SOURCES_SUBMODULE,
+) -> str | None:
     changed_files = get_changed_ruling_files(
-        args.base_sha, args.head_sha, args.ruling_root
+        base_sha, head_sha, ruling_root
     )
     if not changed_files:
         logging.info("No changed ruling json files found. Nothing to do.")
         return None
 
     logging.info("Found %d changed ruling json files", len(changed_files))
-    io = GitHubActionIO(args.ruling_root, args.sources_root)
+    io = GitHubActionIO(ruling_root, sources_root)
     rule_diffs = build_rule_diffs(
         changed_files,
-        args.base_sha,
-        args.head_sha,
+        base_sha,
+        head_sha,
         io,
     )
     if not rule_diffs:
@@ -83,7 +89,9 @@ def main(argv: list[str] | None = None) -> None:
         logging.info("Missing pr/base/head arguments. Skipping ruling diff comment.")
         return
 
-    comment = generate_comment(args)
+    comment = generate_comment(
+        args.base_sha, args.head_sha, args.ruling_root, args.sources_root
+    )
     if args.output_file:
         Path(args.output_file).write_text(comment or "", encoding="utf-8")
     elif comment:

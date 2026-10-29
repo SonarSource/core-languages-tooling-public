@@ -8,6 +8,12 @@ import tempfile
 from pathlib import Path
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "ruling-diff-comment"))
+
+from ruling_diff import generate_comment
+from ruling_diff_io import RULING_SOURCES_SUBMODULE
+
+
 GENERATED_MARKER = "🤖 Generated with GitHub Actions"
 
 
@@ -55,26 +61,17 @@ def transfer_ruling_changes(ruling_root: str, worktree: Path) -> None:
 
 
 def generate_ruling_diff(
-    ruling_diff_dir: str, ruling_root: str, sources_root: str, base_sha: str, head_sha: str
+    ruling_root: str, sources_root: str, base_sha: str, head_sha: str
 ) -> str:
-    if not ruling_diff_dir:
+    try:
+        comment = generate_comment(
+            base_sha, head_sha, f"{ruling_root}/expected",
+            sources_root or RULING_SOURCES_SUBMODULE,
+        )
+    except Exception as error:
+        print(f"::warning::Could not generate the ruling diff for the fix PR description: {error}")
         return ""
-    with tempfile.TemporaryDirectory(prefix="ruling-diff-") as temporary_directory:
-        diff_file = Path(temporary_directory) / "ruling-diff.md"
-        command = [
-            "uv", "run", "--project", ruling_diff_dir,
-            "python", str(Path(ruling_diff_dir) / "ruling_diff.py"),
-            "--base-sha", base_sha, "--head-sha", head_sha,
-            "--ruling-root", f"{ruling_root}/expected",
-            "--output-file", str(diff_file),
-        ]
-        if sources_root:
-            command += ["--sources-root", sources_root]
-        result = subprocess.run(command, check=False)
-        if result.returncode != 0 or not diff_file.is_file():
-            print("::warning::Could not generate the ruling diff for the fix PR description")
-            return ""
-        return diff_file.read_text(encoding="utf-8").strip()
+    return (comment or "").strip()
 
 
 def pr_body(subject: str, ruling_diff: str) -> str:
@@ -86,7 +83,6 @@ def create_fix_pr(
     target_ref: str,
     ruling_root: str,
     pr_number: str,
-    ruling_diff_dir: str = "",
     sources_root: str = "",
 ) -> tuple[str, str, str]:
     fix_branch = f"fix/update-ruling-for-{target_ref}"
@@ -144,7 +140,7 @@ def create_fix_pr(
         )
     if committed or (branch_exists and not fix_pr_url):
         body = pr_body(subject, generate_ruling_diff(
-            ruling_diff_dir, ruling_root, sources_root, fix_base_sha, fix_sha
+            ruling_root, sources_root, fix_base_sha, fix_sha
         ))
         if fix_pr_url:
             run("gh", "pr", "edit", fix_pr_url, "--body", body)
@@ -166,7 +162,7 @@ def main() -> int:
     try:
         fix_pr_url, fix_base_sha, fix_sha = create_fix_pr(
             os.environ["TARGET_REF"], os.environ["RULING_ROOT"], os.environ["PR_NUMBER"],
-            os.environ.get("RULING_DIFF_DIR", ""), os.environ.get("SOURCES_ROOT", ""),
+            os.environ.get("SOURCES_ROOT", ""),
         )
         with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output_file:
             output_file.write(

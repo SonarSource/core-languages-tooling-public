@@ -94,7 +94,7 @@ class FixPullRequestTests(unittest.TestCase):
                 self.assertEqual(create_fix_pr.main(), 0)
             self.assertEqual(output_path.read_text(),
                 f"fix-pr-url=https://example.test/1\nfix-base-sha={'b' * 40}\nfix-sha={'a' * 40}\n")
-            create.assert_called_once_with("feature", "its/ruling", "1", "", "")
+            create.assert_called_once_with("feature", "its/ruling", "1", "")
 
     @patch.object(create_fix_pr.subprocess, "run")
     def test_output_does_not_capture_stderr(self, process) -> None:
@@ -121,7 +121,7 @@ class FixPullRequestTests(unittest.TestCase):
 
         with patch.object(create_fix_pr, "output", side_effect=command_output) as get_output:
             url, base_sha, sha = create_fix_pr.create_fix_pr(
-                "feature", "its/ruling", "123", "/actions/ruling-diff-comment", "its/sources"
+                "feature", "its/ruling", "123", "its/sources"
             )
 
         self.assertEqual(url, "https://github.com/org/repo/pull/1")
@@ -138,7 +138,7 @@ class FixPullRequestTests(unittest.TestCase):
         )
         self.assertFalse(any("stash" in call.args or "switch" in call.args for call in run.call_args_list))
         diff.assert_called_once_with(
-            "/actions/ruling-diff-comment", "its/ruling", "its/sources", "b" * 40, "a" * 40
+            "its/ruling", "its/sources", "b" * 40, "a" * 40
         )
         get_output.assert_any_call(
             "gh", "pr", "create", "--title", "Update ruling results for PR #123",
@@ -203,30 +203,26 @@ class FixPullRequestTests(unittest.TestCase):
         self.assertEqual(create_fix_pr.pr_body("feature", ""),
             f"Auto-generated ruling update for feature.\n\n{create_fix_pr.GENERATED_MARKER}")
 
-    def test_generate_ruling_diff_is_skipped_without_script(self) -> None:
+    @patch.object(create_fix_pr, "generate_comment", return_value="## Ruling Diff Summary\n")
+    def test_generate_ruling_diff_calls_python_directly(self, generate) -> None:
         with patch.object(create_fix_pr.subprocess, "run") as process:
-            self.assertEqual(create_fix_pr.generate_ruling_diff("", "its/ruling", "", "b", "a"), "")
+            diff = create_fix_pr.generate_ruling_diff("its/ruling", "its/sources", "b", "a")
+        self.assertEqual(diff, "## Ruling Diff Summary")
+        generate.assert_called_once_with("b", "a", "its/ruling/expected", "its/sources")
         process.assert_not_called()
 
-    def test_generate_ruling_diff_reads_output_file(self) -> None:
-        def fake_run(command, check):
-            output_file = Path(command[command.index("--output-file") + 1])
-            output_file.write_text("## Ruling Diff Summary\n", encoding="utf-8")
-            return SimpleNamespace(returncode=0)
-
-        with patch.object(create_fix_pr.subprocess, "run", side_effect=fake_run) as process:
-            diff = create_fix_pr.generate_ruling_diff("/diff", "its/ruling", "its/sources", "b", "a")
-        self.assertEqual(diff, "## Ruling Diff Summary")
-        command = process.call_args.args[0]
-        self.assertEqual(command[:5], ["uv", "run", "--project", "/diff", "python"])
-        self.assertIn("--ruling-root", command)
-        self.assertEqual(command[command.index("--ruling-root") + 1], "its/ruling/expected")
-        self.assertEqual(command[command.index("--sources-root") + 1], "its/sources")
+    @patch.object(create_fix_pr, "generate_comment", return_value=None)
+    def test_generate_ruling_diff_without_changes_returns_empty(self, generate) -> None:
+        self.assertEqual(create_fix_pr.generate_ruling_diff("its/ruling", "", "b", "a"), "")
+        generate.assert_called_once_with(
+            "b", "a", "its/ruling/expected", "private/its-enterprise/sources_ruling"
+        )
 
     def test_generate_ruling_diff_failure_returns_empty(self) -> None:
-        with patch.object(create_fix_pr.subprocess, "run", return_value=SimpleNamespace(returncode=1)), \
-                redirect_stdout(StringIO()):
-            self.assertEqual(create_fix_pr.generate_ruling_diff("/diff", "its/ruling", "", "b", "a"), "")
+        with patch.object(create_fix_pr, "generate_comment", side_effect=RuntimeError("git failed")), \
+                redirect_stdout(StringIO()) as warning:
+            self.assertEqual(create_fix_pr.generate_ruling_diff("its/ruling", "", "b", "a"), "")
+        self.assertIn("::warning::Could not generate the ruling diff", warning.getvalue())
 
     def test_dirty_checkout_does_not_block_clean_worktree(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
