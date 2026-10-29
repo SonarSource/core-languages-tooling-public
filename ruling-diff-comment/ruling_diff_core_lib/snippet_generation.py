@@ -3,6 +3,7 @@ from __future__ import annotations
 from ruling_diff_core_lib.models_and_constants import (
     IssueDiff,
     IssueLocation,
+    PROJECT_SOURCE_OVERRIDES,
     MAX_SNIPPETS_PER_FILE,
     MAX_SNIPPETS_PER_RULE,
     SNIPPET_CONTEXT,
@@ -112,7 +113,12 @@ def create_issue_snippet(
     location: IssueLocation,
 ) -> Snippet:
     source_path = io.resolve_source_path(project, file_path)
-    lines = load_source_lines_with_cache(source_cache, source_path)
+    allowed_root = (
+        io.sources_root
+        if project == "project"
+        else PROJECT_SOURCE_OVERRIDES.get(project, f"{io.sources_root}/{project}")
+    )
+    lines = load_source_lines_with_cache(source_cache, source_path, allowed_root)
     body = (
         f"(source file not found in checkout: {file_path})"
         if lines is None
@@ -127,12 +133,16 @@ def create_issue_snippet(
 
 
 def load_source_lines_with_cache(
-    cache: SourceCache,
-    path: str,
+    cache: SourceCache, path: str, allowed_root: str
 ) -> OptionalSourceLines:
     if path not in cache:
+        resolved = Path(path).resolve()
+        root = Path(allowed_root).resolve()
+        if not resolved.is_relative_to(root):
+            cache[path] = None
+            return None
         try:
-            content = Path(path).read_text(encoding="utf-8")
+            content = resolved.read_text(encoding="utf-8")
         except FileNotFoundError:
             cache[path] = None
         else:
