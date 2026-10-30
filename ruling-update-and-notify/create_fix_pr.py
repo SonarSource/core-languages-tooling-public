@@ -1,11 +1,20 @@
 from __future__ import annotations
 
+import argparse
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+from find_ruling_directory import find_ruling_paths
+
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "ruling-diff-comment"))
+
+from ruling_diff import generate_comment
+from ruling_diff_io import RULING_SOURCES_SUBMODULE
 
 
 GENERATED_MARKER = "🤖 Generated with GitHub Actions"
@@ -54,11 +63,53 @@ def transfer_ruling_changes(ruling_root: str, worktree: Path) -> None:
         shutil.copy2(source, destination, follow_symlinks=False)
 
 
-def create_fix_pr(target_ref: str, ruling_root: str, pr_number: str) -> tuple[str, str, str]:
+def generate_ruling_diff(
+    ruling_root: str, sources_root: str, base_sha: str, head_sha: str
+) -> str:
+    try:
+        comment = generate_comment(
+            base_sha, head_sha, f"{ruling_root}/expected",
+            sources_root or RULING_SOURCES_SUBMODULE,
+        )
+    except Exception as error:
+        print(f"::warning::Could not generate the ruling diff for the fix PR description: {error}")
+        return ""
+    return (comment or "").strip()
+
+
+def pr_body(subject: str, ruling_diff: str) -> str:
+    sections = [f"Auto-generated ruling update for {subject}.", ruling_diff, GENERATED_MARKER]
+    return "\n\n".join(filter(None, sections))
+
+
+def find_default_target_ref() -> str:
+    result = subprocess.run(
+        ("git", "ls-remote", "--exit-code", "--heads", "origin",
+         "refs/heads/master", "refs/heads/main"),
+        stdout=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    if result.returncode not in (0, 2):
+        raise RuntimeError("Could not inspect the default target branch on origin")
+    remote_refs = {line.split()[-1] for line in result.stdout.splitlines() if line.strip()}
+    for target_ref in ("master", "main"):
+        if f"refs/heads/{target_ref}" in remote_refs:
+            return target_ref
+    raise RuntimeError("Neither master nor main exists on origin; pass --target-ref explicitly")
+
+
+def create_fix_pr(
+    target_ref: str,
+    ruling_root: str,
+    pr_number: str,
+    sources_root: str = "",
+    *,
+    dry_run: bool = False,
+) -> tuple[str, str, str]:
     fix_branch = f"fix/update-ruling-for-{target_ref}"
     subject = f"PR #{pr_number}" if pr_number else target_ref
     title = f"Update ruling results for {subject}"
-    body = f"Auto-generated ruling update for {subject}.\n\n{GENERATED_MARKER}"
 
     run("git", "fetch", "origin", "--", target_ref)
     remote_branch = subprocess.run(
@@ -89,6 +140,7 @@ def create_fix_pr(target_ref: str, ruling_root: str, pr_number: str) -> tuple[st
                     "-c", "user.email=github-actions[bot]@users.noreply.github.com",
                     "commit", "-m", f"Update ruling results\n\n{GENERATED_MARKER}",
                 )
+            if committed and not dry_run:
                 refspec = f"HEAD:refs/heads/{fix_branch}"
                 if branch_exists:
                     run(
@@ -102,6 +154,17 @@ def create_fix_pr(target_ref: str, ruling_root: str, pr_number: str) -> tuple[st
         finally:
             run("git", "worktree", "remove", "--force", str(worktree))
 
+    if dry_run:
+        print("Dry run: skipping push and all GitHub PR/comment operations.")
+        if committed:
+            print(f"Title: {title}\nBase: {target_ref}\nHead: {fix_branch}")
+            print(pr_body(subject, generate_ruling_diff(
+                ruling_root, sources_root, fix_base_sha, fix_sha
+            )))
+        else:
+            print("No ruling changes to commit.")
+        return "", fix_base_sha, fix_sha
+
     fix_pr_url = ""
     if branch_exists:
         fix_pr_url = output(
@@ -109,11 +172,17 @@ def create_fix_pr(target_ref: str, ruling_root: str, pr_number: str) -> tuple[st
             "--state", "open", "--json", "url", "--jq", ".[0].url // empty",
             check=False,
         )
-    if (branch_exists or committed) and not fix_pr_url:
-        fix_pr_url = output(
-            "gh", "pr", "create", "--title", title, "--base", target_ref,
-            "--head", fix_branch, "--body", body,
-        )
+    if committed or (branch_exists and not fix_pr_url):
+        body = pr_body(subject, generate_ruling_diff(
+            ruling_root, sources_root, fix_base_sha, fix_sha
+        ))
+        if fix_pr_url:
+            run("gh", "pr", "edit", fix_pr_url, "--body", body)
+        else:
+            fix_pr_url = output(
+                "gh", "pr", "create", "--title", title, "--base", target_ref,
+                "--head", fix_branch, "--body", body,
+            )
 
     if pr_number and fix_pr_url:
         run(
@@ -123,16 +192,44 @@ def create_fix_pr(target_ref: str, ruling_root: str, pr_number: str) -> tuple[st
     return fix_pr_url, fix_base_sha, fix_sha
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Create a ruling update fix PR")
+    parser.add_argument(
+        "--target-ref", default="",
+        help="Target branch (default: master on origin, falling back to main)",
+    )
+    parser.add_argument(
+        "--ruling-root", default="",
+        help="Ruling resources directory (default: detect from the repository layout)",
+    )
+    parser.add_argument(
+        "--sources-root", default="",
+        help="Sources directory (default: the sources root paired with the detected ruling root)",
+    )
+    parser.add_argument("--pr-number", default="", help="Original PR number, if applicable")
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Prepare a temporary fix commit and preview the PR without pushing or calling gh",
+    )
+    args = parser.parse_args(argv)
     try:
+        ruling_root = args.ruling_root
+        sources_root = args.sources_root
+        if not ruling_root:
+            detected_ruling_root, detected_sources_root = find_ruling_paths(Path.cwd())
+            ruling_root = str(detected_ruling_root)
+            sources_root = sources_root or str(detected_sources_root)
+        target_ref = args.target_ref or find_default_target_ref()
         fix_pr_url, fix_base_sha, fix_sha = create_fix_pr(
-            os.environ["TARGET_REF"], os.environ["RULING_ROOT"], os.environ["PR_NUMBER"]
+            target_ref, ruling_root, args.pr_number, sources_root,
+            dry_run=args.dry_run,
         )
-        with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output_file:
-            output_file.write(
-                f"fix-pr-url={fix_pr_url}\nfix-base-sha={fix_base_sha}\nfix-sha={fix_sha}\n"
-            )
-    except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
+        if not args.dry_run:
+            with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output_file:
+                output_file.write(
+                    f"fix-pr-url={fix_pr_url}\nfix-base-sha={fix_base_sha}\nfix-sha={fix_sha}\n"
+                )
+    except (OSError, RuntimeError, ValueError, subprocess.CalledProcessError) as error:
         print(f"::error::{error}", file=sys.stderr)
         return 1
     return 0

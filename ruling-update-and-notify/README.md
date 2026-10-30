@@ -6,7 +6,7 @@ Automatically updates ruling expected results when tests fail and posts diff com
 
 - **Automatic Ruling Sync**: Copies downloaded ruling artifacts when ruling tests fail
 - **PR Comments**: Posts detailed ruling diff comments using the `ruling-diff-comment` action
-- **Fix PR Creation**: Automatically creates a fix PR with updated ruling results
+- **Fix PR Creation**: Automatically creates a fix PR with updated ruling results, whose description includes the ruling diff summary
 - **Loop Prevention**: Detects and prevents infinite auto-update loops
 - **Smart Cleanup**: Closes stale fix PRs when no longer needed
 
@@ -66,6 +66,45 @@ jobs:
           ruling-failed: ${{ needs.ruling.outputs.ruling-failed }}
 ```
 
+## Local Dry Run
+
+After copying the actual ruling results into your analyzer checkout's expectation
+directory, run the fix-PR script from that checkout:
+
+```bash
+python3 /path/to/core-languages-tooling-public/ruling-update-and-notify/create_fix_pr.py --dry-run
+```
+
+The script detects the ruling and sources roots using the supported repository
+layouts. The target defaults to `master` on `origin`, or `main` if `master` does
+not exist. Missing or ambiguous ruling layouts, or an origin with neither
+branch, produce an error.
+
+Optional command-line overrides are available:
+
+| Option | Description |
+|--------|-------------|
+| `--target-ref BRANCH` | Target another branch instead of `master`/`main` |
+| `--ruling-root PATH` | Use a specific ruling resources directory |
+| `--sources-root PATH` | Use a specific sources directory |
+| `--pr-number NUMBER` | Refer to the original PR in the preview |
+
+Run with `--help` for all options. The action uses the same script and passes
+its context through these command-line options; the script does not read
+`TARGET_REF`, `RULING_ROOT`, `SOURCES_ROOT`, or `PR_NUMBER` from the environment.
+Credentials and GitHub output plumbing still use `GH_TOKEN` and `GITHUB_OUTPUT`.
+
+Dry-run fetches the target branch from `origin`, applies staged, unstaged, and
+untracked ruling changes in a temporary worktree, and creates a temporary local
+commit. It prints the proposed PR title, branches, and description, including
+the ruling diff summary. It never pushes, calls `gh`, or writes `GITHUB_OUTPUT`.
+No GitHub token or `GITHUB_OUTPUT` is needed; Git access to `origin` is still
+required. The temporary worktree is removed, and your current branch, index,
+and working files are left untouched. Fetching updates local remote-tracking refs.
+
+This previews fix-PR creation only: it does not download or sync artifacts, post
+the action's separate PR comments, or run stale-PR cleanup.
+
 ## Why Separate Jobs?
 
 Test jobs generate local `target/actual` or `build/actual` results and upload
@@ -120,7 +159,7 @@ clean up a fix PR, but it does not post a comment on an original PR.
 1. **When ruling tests pass**: Closes an open stale fix PR, if any
 2. **When ruling tests fail with differences**:
    - Downloads `actual_*` artifacts and copies them into the detected ruling directory
-   - Creates or updates a fix PR with the updated results
+   - Creates or updates a fix PR with the updated results, including the ruling diff summary in its description
    - Posts a detailed diff comment to the original PR
    - Adds a comment linking to the fix PR
 3. **When ruling tests fail but auto-update already happened**: Skips to prevent loops
@@ -143,7 +182,9 @@ clean up a fix PR, but it does not post a comment on an original PR.
    - Creates a clean temporary worktree from the target branch and applies only ruling changes
    - Commits the changes with a bot signature and pushes the fix branch
    - Leaves the caller's checkout and unrelated changes untouched
-   - Creates or updates a fix PR
+   - Creates or updates a fix PR, embedding the output of the `ruling-diff-comment`
+     script in its description (pull requests created with `GITHUB_TOKEN` do not
+     trigger workflows, so the `ruling-diff-comment` action cannot run on them)
    - Posts a comment on the original PR linking to the fix PR
    - Uses the `ruling-diff-comment` action to compare the fix commit with its actual base
 5. If no differences or ruling passed:
