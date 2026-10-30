@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 
 from ruling_diff_core_lib.models_and_constants import (
@@ -7,6 +8,8 @@ from ruling_diff_core_lib.models_and_constants import (
     MAX_SNIPPETS_PER_RULE,
     PROJECT_SOURCE_OVERRIDES,
     SNIPPET_CONTEXT,
+    SOURCES_INTERNAL_NAMESPACE_RULING_ROOT,
+    SOURCES_INTERNAL_RULING_ROOT,
     IssueDiff,
     OptionalSourceLines,
     RulingDiffIO,
@@ -118,12 +121,16 @@ def create_issue_snippet(
     io: RulingDiffIO,
 ) -> Snippet:
     source_path = io.resolve_source_path(project, file_path)
-    source_root = (
-        io.sources_root
+    source_roots = (
+        (
+            io.sources_root,
+            SOURCES_INTERNAL_RULING_ROOT,
+            SOURCES_INTERNAL_NAMESPACE_RULING_ROOT,
+        )
         if project == "project"
-        else PROJECT_SOURCE_OVERRIDES.get(project, f"{io.sources_root}/{project}")
+        else (PROJECT_SOURCE_OVERRIDES.get(project, f"{io.sources_root}/{project}"),)
     )
-    lines = load_source_lines_with_cache(source_cache, source_path, source_root)
+    lines = load_source_lines_with_cache(source_cache, source_path, source_roots)
     body = (
         f"(source file not found in checkout: {file_path})"
         if lines is None
@@ -138,12 +145,13 @@ def create_issue_snippet(
 
 
 def load_source_lines_with_cache(
-    cache: SourceCache, path: str, source_root: str
+    cache: SourceCache, path: str, source_roots: Sequence[str]
 ) -> OptionalSourceLines:
     if path not in cache:
         resolved = Path(path).resolve()
-        root = Path(source_root).resolve()
-        if not resolved.is_relative_to(root):
+        if not any(
+            resolved.is_relative_to(Path(root).resolve()) for root in source_roots
+        ):
             cache[path] = None
             return None
         try:

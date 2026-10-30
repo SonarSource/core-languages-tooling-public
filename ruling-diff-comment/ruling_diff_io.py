@@ -9,15 +9,13 @@ from ruling_diff_core_lib.models_and_constants import (
     COMMENT_MARKER,
     EXPECTED_RULING_ROOTS,
     PROJECT_SOURCE_OVERRIDES,
+    SOURCES_INTERNAL_NAMESPACE_RULING_ROOT,
+    SOURCES_INTERNAL_RULING_ROOT,
 )
 
 logger = logging.getLogger(__name__)
 
 RULING_SOURCES_SUBMODULE = "private/its-enterprise/sources_ruling"
-SOURCES_INTERNAL_RULING_ROOT = "private/its-enterprise/sources_internal_ruling"
-SOURCES_INTERNAL_NAMESPACE_RULING_ROOT = (
-    "private/its-enterprise/sources_internal_namespace_ruling"
-)
 
 
 class CommandError(RuntimeError):

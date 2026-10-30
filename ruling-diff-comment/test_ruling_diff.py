@@ -12,6 +12,7 @@ if str(MODULE_DIR) not in sys.path:
 
 import ruling_diff_core as core
 import ruling_diff_io as io
+from ruling_diff_core_lib import snippet_generation
 from ruling_diff_core_lib.snippet_generation import load_source_lines_with_cache
 
 
@@ -537,11 +538,11 @@ class SourceLoadingTest(unittest.TestCase):
             source.write_text("café\nsecond line\n", encoding="utf-8")
             cache = {}
 
-            lines = load_source_lines_with_cache(cache, str(source), tmp_dir)
+            lines = load_source_lines_with_cache(cache, str(source), (tmp_dir,))
             source.unlink()
 
             self.assertEqual(lines, ["café", "second line"])
-            self.assertIs(load_source_lines_with_cache(cache, str(source), tmp_dir), lines)
+            self.assertIs(load_source_lines_with_cache(cache, str(source), (tmp_dir,)), lines)
             self.assertEqual(cache, {str(source): lines})
 
     def test_caches_missing_source(self) -> None:
@@ -549,10 +550,10 @@ class SourceLoadingTest(unittest.TestCase):
             source = pathlib.Path(tmp_dir) / "missing.py"
             cache = {}
 
-            self.assertIsNone(load_source_lines_with_cache(cache, str(source), tmp_dir))
+            self.assertIsNone(load_source_lines_with_cache(cache, str(source), (tmp_dir,)))
             source.write_text("created after first lookup", encoding="utf-8")
 
-            self.assertIsNone(load_source_lines_with_cache(cache, str(source), tmp_dir))
+            self.assertIsNone(load_source_lines_with_cache(cache, str(source), (tmp_dir,)))
             self.assertEqual(cache, {str(source): None})
 
     def test_distinguishes_empty_source_from_missing_source(self) -> None:
@@ -560,7 +561,7 @@ class SourceLoadingTest(unittest.TestCase):
             source = pathlib.Path(tmp_dir) / "empty.py"
             source.write_text("", encoding="utf-8")
 
-            self.assertEqual(load_source_lines_with_cache({}, str(source), tmp_dir), [])
+            self.assertEqual(load_source_lines_with_cache({}, str(source), (tmp_dir,)), [])
 
     def test_caches_different_source_paths_independently(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -571,11 +572,42 @@ class SourceLoadingTest(unittest.TestCase):
             cache = {}
 
             self.assertEqual(
-                load_source_lines_with_cache(cache, str(first_source), tmp_dir), ["first"]
+                load_source_lines_with_cache(cache, str(first_source), (tmp_dir,)),
+                ["first"],
             )
             self.assertEqual(
-                load_source_lines_with_cache(cache, str(second_source), tmp_dir), ["second"]
+                load_source_lines_with_cache(cache, str(second_source), (tmp_dir,)),
+                ["second"],
             )
+
+    def test_project_sources_accepts_internal_source_roots(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            sources_root = pathlib.Path(tmp_dir) / "sources_ruling"
+            internal_root = pathlib.Path(tmp_dir) / "sources_internal_ruling"
+            sources_root.mkdir()
+            internal_root.mkdir()
+            source = internal_root / "source.py"
+            source.write_text("internal source\n", encoding="utf-8")
+            io_impl = FakeRulingDiffIO({}, sources_root=str(sources_root))
+
+            with (
+                patch.object(
+                    snippet_generation,
+                    "SOURCES_INTERNAL_RULING_ROOT",
+                    str(internal_root),
+                ),
+                patch.object(io_impl, "resolve_source_path", return_value=str(source)),
+            ):
+                snippet = snippet_generation.create_issue_snippet(
+                    project="project",
+                    file_path="source.py",
+                    line_number=1,
+                    change_kind="added",
+                    source_cache={},
+                    io=io_impl,
+                )
+
+            self.assertIn("internal source", snippet.body)
 
     def test_rejects_paths_outside_source_root(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -587,7 +619,7 @@ class SourceLoadingTest(unittest.TestCase):
             cache = {}
 
             self.assertIsNone(
-                load_source_lines_with_cache(cache, str(source_path), str(root))
+                load_source_lines_with_cache(cache, str(source_path), (str(root),))
             )
             self.assertEqual(cache, {str(source_path): None})
 
@@ -601,7 +633,7 @@ class SourceLoadingTest(unittest.TestCase):
             link.symlink_to(outside)
 
             self.assertIsNone(
-                load_source_lines_with_cache({}, str(link), str(root))
+                load_source_lines_with_cache({}, str(link), (str(root),))
             )
 
 
