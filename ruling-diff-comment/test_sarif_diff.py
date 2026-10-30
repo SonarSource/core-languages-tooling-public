@@ -56,11 +56,46 @@ class SarifDiffTest(unittest.TestCase):
         self.assertEqual(diffs[0].added_locations, [IssueLocation(10, 2, 12, 5)])
         self.assertEqual(diffs[1].removed_locations, [IssueLocation(10, 2, 12, 5)])
 
-    def test_rule_id_messages_and_other_metadata_are_ignored(self):
-        before = result(region=self.region, ruleId="java:S100", message={"text": "old"}, level="warning")
-        after = result(region=self.region, ruleId="different", message={"text": "new"}, level="error")
+    def test_rule_id_and_other_metadata_are_ignored(self):
+        before = result(region=self.region, ruleId="java:S100", message={"text": "same"}, level="warning")
+        after = result(region=self.region, ruleId="different", message={"text": "same"}, level="error")
         after["relatedLocations"] = [{"message": {"text": "secondary"}}]
         self.assertEqual(core.diff_sarif_reports(parse(report(before)), parse(report(after))), [])
+
+    def test_message_only_change_is_a_removal_and_addition(self):
+        before = parse(report(result(region=self.region, message={"text": "old"})))
+        for message in ("new", "Old", "old "):
+            with self.subTest(message=message):
+                after = parse(report(result(region=self.region, message={"text": message})))
+                diff = core.diff_sarif_reports(before, after)[0]
+                self.assertEqual(diff.removed_locations, [IssueLocation(10, 2, 12, 5, "old")])
+                self.assertEqual(diff.added_locations, [IssueLocation(10, 2, 12, 5, message)])
+
+    def test_different_messages_at_same_location_remain_distinct_and_sorted(self):
+        first = result(region=self.region, message={"text": "first"})
+        second = result(region=self.region, message={"text": "second"})
+        before = parse(report(second, first, first))
+        self.assertEqual(core.diff_sarif_reports(before, parse(report(first, second))), [])
+        removed = core.diff_sarif_reports(before, None)[0].removed_locations
+        self.assertEqual([location.message for location in removed], ["first", "second"])
+        diff = core.diff_sarif_reports(before, parse(report(first)))[0]
+        self.assertEqual(diff.removed_locations, [IssueLocation(10, 2, 12, 5, "second")])
+        self.assertEqual(diff.added_locations, [])
+
+    def test_message_defaults_and_invalid_types(self):
+        self.assertEqual(parse(report(result())), parse(report(result(message={"text": ""}))))
+        for message in (None, "message", {"text": None}, {"text": 123}):
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(ValueError, "java-S100.sarif at head.*message"):
+                    parse(report(result(message=message)))
+
+    def test_comparison_collects_changes_after_first_mismatch(self):
+        before = parse(report(result(message={"text": "old"}), result(filename="alpha:src/B.java")))
+        after = parse(report(result(message={"text": "new"}), result(filename="alpha:src/C.java")))
+        diffs = core.diff_sarif_reports(before, after)
+        self.assertEqual([diff.file_path for diff in diffs], ["src/A.java", "src/B.java", "src/C.java"])
+        self.assertEqual(sum(len(diff.removed_locations) for diff in diffs), 2)
+        self.assertEqual(sum(len(diff.added_locations) for diff in diffs), 2)
 
     def test_order_and_duplicate_counts_do_not_matter(self):
         first = result(region=self.region)
@@ -87,7 +122,7 @@ class SarifDiffTest(unittest.TestCase):
 
     def test_missing_coordinates_default_to_zero_without_rendering_them(self):
         location = parse(report(result(region={"startLine": 10})))["alpha:src/A.java"][0]
-        self.assertEqual(location.sort_key(), (10, 0, 10, 0))
+        self.assertEqual(location.sort_key(), (10, 0, 10, 0, ""))
         snippet = core.Snippet("src/A.java", location, "added", "code")
         comment = core.format_comment([core.RuleDiff(
             "alpha", "java", "S100", [core.IssueDiff("src/A.java", [location], [])],
@@ -130,15 +165,32 @@ class SarifDiffTest(unittest.TestCase):
                       "columnKind": "utf16CodeUnits", "results": [first, second]}],
         }
         parsed = parse(json.dumps(document))
-        self.assertEqual(parsed, {"file": [IssueLocation(2, 2, 3, 4), IssueLocation(2, 5, 2, 8)]})
+        self.assertEqual(parsed, {"file": [IssueLocation(2, 2, 3, 4, "first"), IssueLocation(2, 5, 2, 8, "second")]})
         first["locations"][0]["physicalLocation"]["region"].update(
             charOffset=0, charLength=0, byteOffset=0, byteLength=0
         )
         self.assertEqual(core.diff_sarif_reports(parsed, parse(json.dumps(document))), [])
         first["locations"][0]["physicalLocation"]["region"]["endColumn"] = 6
         changed = core.diff_sarif_reports(parsed, parse(json.dumps(document)))[0]
-        self.assertEqual(changed.removed_locations, [IssueLocation(2, 2, 3, 4)])
-        self.assertEqual(changed.added_locations, [IssueLocation(2, 2, 3, 6)])
+        self.assertEqual(changed.removed_locations, [IssueLocation(2, 2, 3, 4, "first")])
+        self.assertEqual(changed.added_locations, [IssueLocation(2, 2, 3, 6, "first")])
+
+    def test_message_only_changes_generate_snippets_and_escaped_messages(self):
+        path = "its/ruling/src/test/resources/expected/alpha/java-S100.sarif"
+        contents = {
+            ref: parse(report(result(region=self.region, message={"text": message})))
+            for ref, message in (("base", "old <message>"), ("head", "new & improved"))
+        }
+        action_io = io.GitHubActionIO()
+        with patch.object(action_io, "load_sarif_at_ref", side_effect=lambda _, ref: contents[ref]), patch.object(
+            action_io, "load_text_at_ref", return_value="source"
+        ):
+            diffs = core.build_rule_diffs([path], "base", "head", action_io)
+        self.assertEqual([snippet.change_kind for snippet in diffs[0].snippets], ["removed", "added"])
+        comment = core.format_comment(diffs)
+        self.assertIn("1 issues removed, 1 issues added", comment)
+        self.assertIn("<pre>old &lt;message&gt;</pre>", comment)
+        self.assertIn("<pre>new &amp; improved</pre>", comment)
 
     def test_lits_line_only_and_file_level_output(self):
         parsed = parse(report(

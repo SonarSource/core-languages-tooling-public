@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from html import escape
 from pathlib import PurePosixPath
 
 from ruling_diff_core_lib.models_and_constants import (
@@ -120,7 +121,10 @@ def _fence_language(file_path: str) -> str:
 
 def format_snippet_block(snippet: Snippet) -> str:
     lang = _fence_language(snippet.file_path)
-    return "\n".join([format_snippet_header(snippet), f"```{lang}", snippet.body, "```"])
+    lines = [format_snippet_header(snippet)]
+    if snippet.location.message:
+        lines.append(f"<pre>{escape(snippet.location.message)}</pre>")
+    return "\n".join([*lines, f"```{lang}", snippet.body, "```"])
 
 
 def format_snippet_header(snippet: Snippet) -> str:

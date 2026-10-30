@@ -7,7 +7,7 @@ from ruling_diff_core_lib.models_and_constants import IssueLocation, SarifReport
 
 
 def parse_sarif_report(content: str, path: str, ref: str) -> SarifReport:
-    """Extract primary locations; rule identity comes from the report filename."""
+    """Extract primary locations and messages; rule identity comes from the filename."""
     context = f"SARIF ruling file {path} at {ref}"
     try:
         data = json.loads(content)
@@ -19,13 +19,18 @@ def parse_sarif_report(content: str, path: str, ref: str) -> SarifReport:
     for run in runs:
         results = require_list(require_object(run, context).get("results", []), f"{context}: results")
         for result in results:
+            result = require_object(result, context)
+            message_data = require_object(result.get("message", {}), f"{context}: message")
+            message = message_data.get("text", "")
+            if not isinstance(message, str):
+                raise ValueError(f"{context}: message text must be a string")
             locations = require_list(
-                require_object(result, context).get("locations"), f"{context}: locations"
+                result.get("locations"), f"{context}: locations"
             )
             if not locations:
                 raise ValueError(f"{context}: result must have a source location")
             for location in locations:
-                filename, region = parse_sarif_location(location, context)
+                filename, region = parse_sarif_location(location, context, message)
                 normalized.setdefault(filename, []).append(region)
     return normalized
 
@@ -42,7 +47,9 @@ def require_list(value: object, context: str) -> list:
     return value
 
 
-def parse_sarif_location(location: object, context: str) -> tuple[str, IssueLocation]:
+def parse_sarif_location(
+    location: object, context: str, message: str = ""
+) -> tuple[str, IssueLocation]:
     physical = require_object(
         require_object(location, context).get("physicalLocation"), f"{context}: physicalLocation"
     )
@@ -64,5 +71,6 @@ def parse_sarif_location(location: object, context: str) -> tuple[str, IssueLoca
         start_column=coordinates["startColumn"],
         end_line=coordinates["endLine"],
         end_column=coordinates["endColumn"],
+        message=message,
     )
 

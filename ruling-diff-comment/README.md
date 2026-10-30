@@ -74,8 +74,11 @@ Each project has one expectation file per rule, named:
 Findings are read from
 `runs[].results[].locations[].physicalLocation`. Within a rule report, findings
 are compared by `artifactLocation.uri` (the source filename/component key) and
-`region.startLine`, `startColumn`, `endLine`, and `endColumn`. Rule IDs, messages,
-and other metadata do not participate in comparison. Locations are compared as
+`region.startLine`, `startColumn`, `endLine`, `endColumn`, and the result's
+`message.text`, as emitted by LITS.
+Missing messages use an empty string. Messages are compared exactly, including
+whitespace and case. Rule IDs and other metadata do not participate in comparison.
+Findings are compared as
 sets, so duplicate occurrences and result ordering do not affect comparison.
 
 The parser follows the location information emitted by LITS:
@@ -88,11 +91,12 @@ The parser follows the location information emitted by LITS:
 An omitted `endLine` defaults to `startLine`, matching LITS. Missing columns use
 integer `0` internally; all `IssueLocation` coordinates remain non-nullable.
 Explicit coordinates must be positive integers. Character/byte offsets,
-lengths, messages, and rule IDs do not affect comparison.
+lengths, and rule IDs do not affect comparison.
 
 Invalid locations produce an error identifying the report and revision. Changes
 to any comparison field appear as removed and added findings. Comments include
-range coordinates, using base sources for removals and head sources for additions.
+range coordinates and issue messages, using base sources for removals and head
+sources for additions. All findings are compared; a mismatch does not stop the diff.
 
 ### Source File Resolution
 

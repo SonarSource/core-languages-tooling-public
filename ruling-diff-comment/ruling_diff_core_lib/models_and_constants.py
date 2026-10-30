@@ -11,18 +11,20 @@ class IssueLocation:
     start_column: int = 0
     end_line: int = 0
     end_column: int = 0
+    message: str = ""
 
     def __post_init__(self) -> None:
         for name in ("start_line", "start_column", "end_line", "end_column"):
             if type(getattr(self, name)) is not int:
                 raise TypeError(f"{name} must be an integer")
 
-    def sort_key(self) -> tuple[int, int, int, int]:
+    def sort_key(self) -> tuple[int, int, int, int, str]:
         return (
             self.start_line,
             self.start_column,
             self.end_line,
             self.end_column,
+            self.message,
         )
 
 
