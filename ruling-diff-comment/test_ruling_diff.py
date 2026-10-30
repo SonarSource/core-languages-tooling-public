@@ -12,8 +12,10 @@ if str(MODULE_DIR) not in sys.path:
 
 import ruling_diff_core as core
 import ruling_diff_io as io
+from ruling_diff_core_lib.models_and_constants import SarifReport
 
 
+IssueLocation = core.IssueLocation
 IssueDiff = core.IssueDiff
 RuleDiff = core.RuleDiff
 Snippet = core.Snippet
@@ -22,22 +24,22 @@ Snippet = core.Snippet
 class FakeRulingDiffIO:
     def __init__(
         self,
-        json_by_ref_path: dict[tuple[str, str], dict[str, list[int]] | None],
+        reports_by_ref_path: dict[tuple[str, str], SarifReport | None],
         text_by_ref_path: dict[tuple[str, str], str | None],
         ruling_root: str | None = None,
         sources_root: str = "private/its-enterprise/sources_ruling",
     ) -> None:
-        self.json_by_ref_path = json_by_ref_path
+        self.sarif_by_ref_path = reports_by_ref_path
         self.text_by_ref_path = text_by_ref_path
         self.ruling_root = ruling_root
         self.sources_root = sources_root
-        self.load_json_calls: list[tuple[str, str]] = []
+        self.load_sarif_calls: list[tuple[str, str]] = []
         self.load_text_calls: list[tuple[str, str]] = []
         self.resolve_calls: list[tuple[str, str]] = []
 
-    def load_json_at_ref(self, path: str, ref: str) -> dict[str, list[int]] | None:
-        self.load_json_calls.append((path, ref))
-        return self.json_by_ref_path.get((path, ref))
+    def load_sarif_at_ref(self, path: str, ref: str) -> SarifReport | None:
+        self.load_sarif_calls.append((path, ref))
+        return self.sarif_by_ref_path.get((path, ref))
 
     def load_text_at_ref(self, path: str, ref: str) -> str | None:
         self.load_text_calls.append((path, ref))
@@ -50,14 +52,14 @@ class FakeRulingDiffIO:
 
 class ChangedRulingFilesTest(unittest.TestCase):
     def test_discovers_all_expected_roots(self) -> None:
-        standard = "its/ruling/src/test/resources/expected/alpha/java-S100.json"
-        enterprise = "private/its/ruling/src/test/resources/expected/beta/java-S200.json"
-        python_enterprise = "private/its-enterprise/ruling/src/test/resources/expected/gamma/python-S100.json"
-        maven_actual = "its/ruling/target/actual/alpha/java-S300.json"
-        gradle_actual = "private/its/ruling/build/actual/beta/java-S300.json"
+        standard = "its/ruling/src/test/resources/expected/alpha/java-S100.sarif"
+        enterprise = "private/its/ruling/src/test/resources/expected/beta/java-S200.sarif"
+        python_enterprise = "private/its-enterprise/ruling/src/test/resources/expected/gamma/python-S100.sarif"
+        maven_actual = "its/ruling/target/actual/alpha/java-S300.sarif"
+        gradle_actual = "private/its/ruling/build/actual/beta/java-S300.sarif"
         obsolete = (
             "private/its-enterprise/ruling/src/test/resources/expected_ruling/"
-            "alpha/java-S400.json"
+            "alpha/java-S400.sarif"
         )
         with patch.object(
             io,
@@ -82,14 +84,22 @@ class ChangedRulingFilesTest(unittest.TestCase):
             ]
         )
 
+    def test_only_sarif_reports_are_discovered(self) -> None:
+        root = "its/ruling/src/test/resources/expected/alpha/"
+        paths = [root + name for name in (
+            "java-S100.sarif", "java-S100.json", "java-S100.sarif.json", "java-S100.txt",
+        )]
+        with patch.object(io, "run_command", return_value="\n".join(paths)):
+            self.assertEqual(io.get_changed_ruling_files("base", "head"), [paths[0]])
+
     def test_explicit_root_restricts_discovery(self) -> None:
         root = "custom/expected"
         with patch.object(
-            io, "run_command", return_value=f"{root}/alpha/java-S100.json"
+            io, "run_command", return_value=f"{root}/alpha/java-S100.sarif"
         ) as run_command:
             changed = io.get_changed_ruling_files("base", "head", root)
 
-        self.assertEqual(changed, [f"{root}/alpha/java-S100.json"])
+        self.assertEqual(changed, [f"{root}/alpha/java-S100.sarif"])
         run_command.assert_called_once_with(
             ["git", "diff", "--name-only", "base...head", "--", f"{root}/"]
         )
@@ -97,15 +107,15 @@ class ChangedRulingFilesTest(unittest.TestCase):
 
 class ParsePathTest(unittest.TestCase):
     def test_parse_standard_ruling_path(self) -> None:
-        path = "its/ruling/src/test/resources/expected/airflow/python-S1066.json"
+        path = "its/ruling/src/test/resources/expected/airflow/python-S1066.sarif"
         self.assertEqual(core.parse_ruling_path(path), ("airflow", "python", "S1066"))
 
     def test_rejects_generated_actual_path(self) -> None:
         with self.assertRaises(ValueError):
-            core.parse_ruling_path("its/ruling/target/actual/airflow/python-S1066.json")
+            core.parse_ruling_path("its/ruling/target/actual/airflow/python-S1066.sarif")
 
     def test_parse_ruling_path(self) -> None:
-        path = "private/its/ruling/src/test/resources/expected/airflow/python-S1066.json"
+        path = "private/its/ruling/src/test/resources/expected/airflow/python-S1066.sarif"
         self.assertEqual(core.parse_ruling_path(path), ("airflow", "python", "S1066"))
 
     def test_parse_python_enterprise_layout(self) -> None:
@@ -113,19 +123,19 @@ class ParsePathTest(unittest.TestCase):
             with self.subTest(repository=repository):
                 path = (
                     "private/its-enterprise/ruling/src/test/resources/expected/"
-                    f"specific-rules/{repository}-S7471.json"
+                    f"specific-rules/{repository}-S7471.sarif"
                 )
                 self.assertEqual(core.parse_ruling_path(path), ("specific-rules", repository, "S7471"))
 
     def test_parse_ruling_path_with_pythonenterprise(self) -> None:
-        path = "private/its/ruling/src/test/resources/expected/specific-rules/pythonenterprise-S7471.json"
+        path = "private/its/ruling/src/test/resources/expected/specific-rules/pythonenterprise-S7471.sarif"
         self.assertEqual(
             core.parse_ruling_path(path),
             ("specific-rules", "pythonenterprise", "S7471"),
         )
 
     def test_parse_ruling_path_with_legacy_key(self) -> None:
-        path = "private/its/ruling/src/test/resources/expected/scikit-learn/python-LineLength.json"
+        path = "private/its/ruling/src/test/resources/expected/scikit-learn/python-LineLength.sarif"
         self.assertEqual(
             core.parse_ruling_path(path),
             ("scikit-learn", "python", "LineLength"),
@@ -133,11 +143,17 @@ class ParsePathTest(unittest.TestCase):
 
     def test_parse_rule_filename_rejects_empty_rule_key(self) -> None:
         with self.assertRaises(ValueError):
-            core.parse_rule_filename("python-.json")
+            core.parse_rule_filename("python-.sarif")
 
     def test_parse_rule_filename_rejects_empty_repository(self) -> None:
         with self.assertRaises(ValueError):
-            core.parse_rule_filename("-S1066.json")
+            core.parse_rule_filename("-S1066.sarif")
+
+    def test_rejects_non_sarif_filenames(self) -> None:
+        for filename in ("java-S100.json", "java-S100.sarif.json", "java-S100.xml"):
+            with self.subTest(filename=filename):
+                with self.assertRaisesRegex(ValueError, "Expected a .sarif report filename"):
+                    core.parse_rule_filename(filename)
 
     def test_strip_project_key_python_format(self) -> None:
         # Python format: project:path
@@ -182,137 +198,53 @@ class ParsePathTest(unittest.TestCase):
         )
 
 
-class NormalizeJsonTest(unittest.TestCase):
-    def test_normalize_standard_format(self) -> None:
-        # Standard format: rule -> list of line numbers
-        data = {"S1234": [10, 20, 30]}
-        result = io.normalize_ruling_json(data, "test.json", "HEAD")
-        self.assertEqual(result, {"S1234": [10, 20, 30]})
-
-    def test_normalize_dotnet_format(self) -> None:
-        # .NET format with Issues array
-        data = {
-            "Issues": [
-                {
-                    "Id": "S1135",
-                    "Message": "Complete the task",
-                    "Location": {"StartLine": 270, "StartColumn": 16, "EndLine": 270, "EndColumn": 20}
-                },
-                {
-                    "Id": "S1135",
-                    "Message": "Complete the task",
-                    "Location": {"StartLine": 54, "StartColumn": 12, "EndLine": 54, "EndColumn": 16}
-                },
-                {
-                    "Id": "S1192",
-                    "Message": "Define a constant",
-                    "Location": {"StartLine": 100, "StartColumn": 10, "EndLine": 100, "EndColumn": 20}
-                }
-            ]
-        }
-        result = io.normalize_ruling_json(data, "test.json", "HEAD")
-        # Should group by rule ID and sort line numbers
-        self.assertEqual(result, {"S1135": [54, 270], "S1192": [100]})
-
-    def test_normalize_dotnet_format_empty_issues(self) -> None:
-        # .NET format with empty Issues array
-        data = {"Issues": []}
-        result = io.normalize_ruling_json(data, "test.json", "HEAD")
-        self.assertEqual(result, {})
-
-    def test_normalize_dotnet_format_non_dict_issue(self) -> None:
-        # .NET format with non-dict issue in Issues array
-        data = {"Issues": ["not a dict"]}
-        with self.assertRaises(ValueError) as ctx:
-            io.normalize_ruling_json(data, "test.json", "HEAD")
-        self.assertIn("non-dict issue", str(ctx.exception))
-
-    def test_normalize_dotnet_format_missing_id(self) -> None:
-        # .NET format with missing Id field
-        data = {"Issues": [{"Location": {"StartLine": 10}}]}
-        with self.assertRaises(ValueError) as ctx:
-            io.normalize_ruling_json(data, "test.json", "HEAD")
-        self.assertIn("without string Id", str(ctx.exception))
-
-    def test_normalize_dotnet_format_non_string_id(self) -> None:
-        # .NET format with non-string Id field
-        data = {"Issues": [{"Id": 123, "Location": {"StartLine": 10}}]}
-        with self.assertRaises(ValueError) as ctx:
-            io.normalize_ruling_json(data, "test.json", "HEAD")
-        self.assertIn("without string Id", str(ctx.exception))
-
-    def test_normalize_dotnet_format_missing_location(self) -> None:
-        # .NET format with missing Location field - should default to line 0
-        data = {"Issues": [{"Id": "S1234"}]}
-        result = io.normalize_ruling_json(data, "test.json", "HEAD")
-        self.assertEqual(result, {"S1234": [0]})
-
-    def test_normalize_dotnet_format_non_dict_location(self) -> None:
-        # .NET format with non-dict Location field - should default to line 0
-        data = {"Issues": [{"Id": "S1234", "Location": "not a dict"}]}
-        result = io.normalize_ruling_json(data, "test.json", "HEAD")
-        self.assertEqual(result, {"S1234": [0]})
-
-    def test_normalize_dotnet_format_missing_start_line(self) -> None:
-        # .NET format with missing StartLine field - should default to line 0
-        data = {"Issues": [{"Id": "S1234", "Location": {}}]}
-        result = io.normalize_ruling_json(data, "test.json", "HEAD")
-        self.assertEqual(result, {"S1234": [0]})
-
-    def test_normalize_dotnet_format_non_int_start_line(self) -> None:
-        # .NET format with non-integer StartLine field - should default to line 0
-        data = {"Issues": [{"Id": "S1234", "Location": {"StartLine": "10"}}]}
-        result = io.normalize_ruling_json(data, "test.json", "HEAD")
-        self.assertEqual(result, {"S1234": [0]})
-
-
 class DiffLogicTest(unittest.TestCase):
-    def test_diff_ruling_jsons_added_issues(self) -> None:
-        diffs = core.diff_ruling_jsons({"proj:a.py": [1, 2]}, {"proj:a.py": [1, 2, 3]})
+    def test_diff_sarif_reports_added_issues(self) -> None:
+        diffs = core.diff_sarif_reports({"proj:a.py": [IssueLocation(1), IssueLocation(2)]}, {"proj:a.py": [IssueLocation(1), IssueLocation(2), IssueLocation(3)]})
         self.assertEqual(len(diffs), 1)
         self.assertEqual(diffs[0].file_path, "a.py")
-        self.assertEqual(diffs[0].added_lines, [3])
+        self.assertEqual(diffs[0].added_locations, [IssueLocation(3)])
 
-    def test_diff_ruling_jsons_removed_issues(self) -> None:
-        diffs = core.diff_ruling_jsons({"proj:a.py": [1, 2, 3]}, {"proj:a.py": [1]})
-        self.assertEqual(diffs[0].removed_lines, [2, 3])
+    def test_diff_sarif_reports_removed_issues(self) -> None:
+        diffs = core.diff_sarif_reports({"proj:a.py": [IssueLocation(1), IssueLocation(2), IssueLocation(3)]}, {"proj:a.py": [IssueLocation(1)]})
+        self.assertEqual(diffs[0].removed_locations, [IssueLocation(2), IssueLocation(3)])
 
-    def test_diff_ruling_jsons_new_file_entry(self) -> None:
-        diffs = core.diff_ruling_jsons(
-            {"proj:a.py": [1]},
-            {"proj:a.py": [1], "proj:b.py": [5]},
+    def test_diff_sarif_reports_new_file_entry(self) -> None:
+        diffs = core.diff_sarif_reports(
+            {"proj:a.py": [IssueLocation(1)]},
+            {"proj:a.py": [IssueLocation(1)], "proj:b.py": [IssueLocation(5)]},
         )
         self.assertEqual(diffs[0].file_path, "b.py")
-        self.assertEqual(diffs[0].added_lines, [5])
+        self.assertEqual(diffs[0].added_locations, [IssueLocation(5)])
 
-    def test_diff_ruling_jsons_removed_file_entry(self) -> None:
-        diffs = core.diff_ruling_jsons(
-            {"proj:a.py": [1], "proj:b.py": [5]},
-            {"proj:a.py": [1]},
+    def test_diff_sarif_reports_removed_file_entry(self) -> None:
+        diffs = core.diff_sarif_reports(
+            {"proj:a.py": [IssueLocation(1)], "proj:b.py": [IssueLocation(5)]},
+            {"proj:a.py": [IssueLocation(1)]},
         )
         self.assertEqual(diffs[0].file_path, "b.py")
-        self.assertEqual(diffs[0].removed_lines, [5])
+        self.assertEqual(diffs[0].removed_locations, [IssueLocation(5)])
 
-    def test_diff_ruling_jsons_new_ruling_file(self) -> None:
-        diffs = core.diff_ruling_jsons(None, {"proj:a.py": [10]})
-        self.assertEqual(diffs[0].added_lines, [10])
+    def test_diff_sarif_reports_new_ruling_file(self) -> None:
+        diffs = core.diff_sarif_reports(None, {"proj:a.py": [IssueLocation(10)]})
+        self.assertEqual(diffs[0].added_locations, [IssueLocation(10)])
 
-    def test_diff_ruling_jsons_deleted_ruling_file(self) -> None:
-        diffs = core.diff_ruling_jsons({"proj:a.py": [10]}, None)
-        self.assertEqual(diffs[0].removed_lines, [10])
+    def test_diff_sarif_reports_deleted_ruling_file(self) -> None:
+        diffs = core.diff_sarif_reports({"proj:a.py": [IssueLocation(10)]}, None)
+        self.assertEqual(diffs[0].removed_locations, [IssueLocation(10)])
 
-    def test_diff_ruling_jsons_no_changes(self) -> None:
+    def test_diff_sarif_reports_no_changes(self) -> None:
         self.assertEqual(
-            core.diff_ruling_jsons(
-                {"proj:a.py": [10], "proj:b.py": [11, 12]},
-                {"proj:a.py": [10], "proj:b.py": [11, 12]},
+            core.diff_sarif_reports(
+                {"proj:a.py": [IssueLocation(10)], "proj:b.py": [IssueLocation(11), IssueLocation(12)]},
+                {"proj:a.py": [IssueLocation(10)], "proj:b.py": [IssueLocation(11), IssueLocation(12)]},
             ),
             [],
         )
 
-    def test_duplicate_line_numbers_preserved(self) -> None:
-        diffs = core.diff_ruling_jsons({"proj:a.py": [297]}, {"proj:a.py": [297, 297]})
-        self.assertEqual(diffs[0].added_lines, [297])
+    def test_duplicate_locations_ignored(self) -> None:
+        diffs = core.diff_sarif_reports({"proj:a.py": [IssueLocation(297)]}, {"proj:a.py": [IssueLocation(297), IssueLocation(297)]})
+        self.assertEqual(diffs, [])
 
 
 class FormattingTest(unittest.TestCase):
@@ -321,11 +253,11 @@ class FormattingTest(unittest.TestCase):
             project="airflow",
             repo="python",
             rule_key="S107",
-            file_diffs=[IssueDiff("airflow/hooks/a.py", [10, 11], [8])],
+            file_diffs=[IssueDiff("airflow/hooks/a.py", [IssueLocation(10), IssueLocation(11)], [IssueLocation(8)])],
             snippets=[
                 Snippet(
                     file_path="airflow/hooks/a.py",
-                    line_number=10,
+                    location=IssueLocation(10),
                     change_kind="added",
                     body=">>>     10 | x = 1",
                 )
@@ -346,9 +278,9 @@ class FormattingTest(unittest.TestCase):
                 project="airflow",
                 repo="python",
                 rule_key="S107",
-                file_diffs=[IssueDiff("airflow/hooks/a.py", [10], [])],
+                file_diffs=[IssueDiff("airflow/hooks/a.py", [IssueLocation(10)], [])],
                 snippets=[
-                    Snippet("airflow/hooks/a.py", 10, "added", ">>>     10 | return 1")
+                    Snippet("airflow/hooks/a.py", IssueLocation(10), "added", ">>>     10 | return 1")
                 ],
                 is_new_file=False,
                 is_deleted_file=False,
@@ -357,10 +289,10 @@ class FormattingTest(unittest.TestCase):
                 project="django",
                 repo="python",
                 rule_key="S3699",
-                file_diffs=[IssueDiff("django/core/b.py", [20], [15])],
+                file_diffs=[IssueDiff("django/core/b.py", [IssueLocation(20)], [IssueLocation(15)])],
                 snippets=[
                     Snippet(
-                        "django/core/b.py", 15, "removed", ">>>     15 | return None"
+                        "django/core/b.py", IssueLocation(15), "removed", ">>>     15 | return None"
                     )
                 ],
                 is_new_file=False,
@@ -377,9 +309,9 @@ class FormattingTest(unittest.TestCase):
             project="airflow",
             repo="python",
             rule_key="S107",
-            file_diffs=[IssueDiff("airflow/hooks/a.py", [10], [])],
+            file_diffs=[IssueDiff("airflow/hooks/a.py", [IssueLocation(10)], [])],
             snippets=[
-                Snippet("airflow/hooks/a.py", 10, "added", ">>>     10 | return 1")
+                Snippet("airflow/hooks/a.py", IssueLocation(10), "added", ">>>     10 | return 1")
             ],
             is_new_file=False,
             is_deleted_file=False,
@@ -398,8 +330,8 @@ class FormattingTest(unittest.TestCase):
             project="specific-rules",
             repo="python",
             rule_key="S1451",
-            file_diffs=[IssueDiff("S1716.py", [0], [0])],
-            snippets=[Snippet("S1716.py", 0, "added", ">>> FILE-LEVEL ISSUE")],
+            file_diffs=[IssueDiff("S1716.py", [IssueLocation(0)], [IssueLocation(0)])],
+            snippets=[Snippet("S1716.py", IssueLocation(0), "added", ">>> FILE-LEVEL ISSUE")],
             is_new_file=False,
             is_deleted_file=False,
         )
@@ -413,10 +345,10 @@ class FormattingTest(unittest.TestCase):
                 project=f"project-{index}",
                 repo="python",
                 rule_key=f"S{1000 + index}",
-                file_diffs=[IssueDiff("a.py", [1], [2])],
+                file_diffs=[IssueDiff("a.py", [IssueLocation(1)], [IssueLocation(2)])],
                 snippets=[
                     Snippet(
-                        "a.py", 1, "added", "\n".join([f"line {i}" for i in range(50)])
+                        "a.py", IssueLocation(1), "added", "\n".join([f"line {i}" for i in range(50)])
                     )
                 ],
                 is_new_file=False,
@@ -454,12 +386,12 @@ class BuildRuleDiffsWithIOTest(unittest.TestCase):
     def test_build_rule_diffs_uses_io_object_and_respects_refs(self) -> None:
         changed_file = (
             "its/ruling/src/test/resources/expected/"
-            "airflow/python-S107.json"
+            "airflow/python-S107.sarif"
         )
         io_impl = FakeRulingDiffIO(
-            json_by_ref_path={
-                (changed_file, "base-sha"): {"airflow:a.py": [2]},
-                (changed_file, "head-sha"): {"airflow:a.py": [2, 7]},
+            reports_by_ref_path={
+                (changed_file, "base-sha"): {"airflow:a.py": [IssueLocation(2)]},
+                (changed_file, "head-sha"): {"airflow:a.py": [IssueLocation(2), IssueLocation(7)]},
             },
             text_by_ref_path={
                 ("sources/airflow/a.py", "head-sha"): "\n".join(
@@ -474,22 +406,22 @@ class BuildRuleDiffsWithIOTest(unittest.TestCase):
         self.assertEqual(diffs[0].project, "airflow")
         self.assertEqual(diffs[0].repo, "python")
         self.assertEqual(diffs[0].rule_key, "S107")
-        self.assertEqual(diffs[0].file_diffs[0].added_lines, [7])
-        self.assertEqual(diffs[0].file_diffs[0].removed_lines, [])
-        self.assertIn((changed_file, "base-sha"), io_impl.load_json_calls)
-        self.assertIn((changed_file, "head-sha"), io_impl.load_json_calls)
+        self.assertEqual(diffs[0].file_diffs[0].added_locations, [IssueLocation(7)])
+        self.assertEqual(diffs[0].file_diffs[0].removed_locations, [])
+        self.assertIn((changed_file, "base-sha"), io_impl.load_sarif_calls)
+        self.assertIn((changed_file, "head-sha"), io_impl.load_sarif_calls)
         self.assertEqual(io_impl.resolve_calls, [("airflow", "a.py")])
         self.assertEqual(io_impl.load_text_calls, [("sources/airflow/a.py", "head-sha")])
 
     def test_build_rule_diffs_caches_source_loads_per_ref_and_path(self) -> None:
         changed_file = (
             "private/its/ruling/src/test/resources/expected/"
-            "airflow/python-S107.json"
+            "airflow/python-S107.sarif"
         )
         io_impl = FakeRulingDiffIO(
-            json_by_ref_path={
-                (changed_file, "base-sha"): {"airflow:a.py": [1]},
-                (changed_file, "head-sha"): {"airflow:a.py": [2, 2]},
+            reports_by_ref_path={
+                (changed_file, "base-sha"): {"airflow:a.py": [IssueLocation(1)]},
+                (changed_file, "head-sha"): {"airflow:a.py": [IssueLocation(2), IssueLocation(2)]},
             },
             text_by_ref_path={
                 ("sources/airflow/a.py", "base-sha"): "base\ncontent\n",
@@ -505,12 +437,12 @@ class BuildRuleDiffsWithIOTest(unittest.TestCase):
     def test_build_rule_diffs_missing_source_produces_placeholder_snippet(self) -> None:
         changed_file = (
             "private/its/ruling/src/test/resources/expected/"
-            "airflow/python-S107.json"
+            "airflow/python-S107.sarif"
         )
         io_impl = FakeRulingDiffIO(
-            json_by_ref_path={
-                (changed_file, "base-sha"): {"airflow:a.py": [1]},
-                (changed_file, "head-sha"): {"airflow:a.py": [1, 3]},
+            reports_by_ref_path={
+                (changed_file, "base-sha"): {"airflow:a.py": [IssueLocation(1)]},
+                (changed_file, "head-sha"): {"airflow:a.py": [IssueLocation(1), IssueLocation(3)]},
             },
             text_by_ref_path={("sources/airflow/a.py", "head-sha"): None},
         )
