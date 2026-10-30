@@ -12,6 +12,8 @@ if str(MODULE_DIR) not in sys.path:
 
 import ruling_diff_core as core
 import ruling_diff_io as io
+from ruling_diff_core_lib import snippet_generation
+from ruling_diff_core_lib.snippet_generation import load_source_lines_with_cache
 
 
 IssueDiff = core.IssueDiff
@@ -23,29 +25,22 @@ class FakeRulingDiffIO:
     def __init__(
         self,
         json_by_ref_path: dict[tuple[str, str], dict[str, list[int]] | None],
-        text_by_ref_path: dict[tuple[str, str], str | None],
         ruling_root: str | None = None,
         sources_root: str = "private/its-enterprise/sources_ruling",
     ) -> None:
         self.json_by_ref_path = json_by_ref_path
-        self.text_by_ref_path = text_by_ref_path
         self.ruling_root = ruling_root
         self.sources_root = sources_root
         self.load_json_calls: list[tuple[str, str]] = []
-        self.load_text_calls: list[tuple[str, str]] = []
         self.resolve_calls: list[tuple[str, str]] = []
 
     def load_json_at_ref(self, path: str, ref: str) -> dict[str, list[int]] | None:
         self.load_json_calls.append((path, ref))
         return self.json_by_ref_path.get((path, ref))
 
-    def load_text_at_ref(self, path: str, ref: str) -> str | None:
-        self.load_text_calls.append((path, ref))
-        return self.text_by_ref_path.get((path, ref))
-
     def resolve_source_path(self, project: str, file_path: str) -> str:
         self.resolve_calls.append((project, file_path))
-        return f"sources/{project}/{file_path.lstrip('/')}"
+        return f"{self.sources_root}/{project}/{file_path.lstrip('/')}"
 
 
 class ChangedRulingFilesTest(unittest.TestCase):
@@ -447,11 +442,12 @@ class SnippetRenderingTest(unittest.TestCase):
 
     def test_render_snippet_missing_source_placeholder(self) -> None:
         rendered = core.render_snippet(None, issue_line=12, context=5)
-        self.assertEqual(rendered, "(source file not found at this revision)")
+        self.assertEqual(rendered, "(source file not found in checkout)")
 
 
 class BuildRuleDiffsWithIOTest(unittest.TestCase):
-    def test_build_rule_diffs_uses_io_object_and_respects_refs(self) -> None:
+    @patch("ruling_diff_core_lib.snippet_generation.Path.read_text")
+    def test_build_rule_diffs_compares_json_refs_and_reads_checkout(self, mocked_read) -> None:
         changed_file = (
             "its/ruling/src/test/resources/expected/"
             "airflow/python-S107.json"
@@ -461,11 +457,9 @@ class BuildRuleDiffsWithIOTest(unittest.TestCase):
                 (changed_file, "base-sha"): {"airflow:a.py": [2]},
                 (changed_file, "head-sha"): {"airflow:a.py": [2, 7]},
             },
-            text_by_ref_path={
-                ("sources/airflow/a.py", "head-sha"): "\n".join(
-                    [f"line {index}" for index in range(1, 12)]
-                ),
-            },
+        )
+        mocked_read.return_value = "\n".join(
+            [f"line {index}" for index in range(1, 12)]
         )
 
         diffs = core.build_rule_diffs([changed_file], "base-sha", "head-sha", io_impl)
@@ -479,30 +473,43 @@ class BuildRuleDiffsWithIOTest(unittest.TestCase):
         self.assertIn((changed_file, "base-sha"), io_impl.load_json_calls)
         self.assertIn((changed_file, "head-sha"), io_impl.load_json_calls)
         self.assertEqual(io_impl.resolve_calls, [("airflow", "a.py")])
-        self.assertEqual(io_impl.load_text_calls, [("sources/airflow/a.py", "head-sha")])
+        self.assertIn(">>>      7 | line 7", diffs[0].snippets[0].body)
+        mocked_read.assert_called_once_with(encoding="utf-8")
 
-    def test_build_rule_diffs_caches_source_loads_per_ref_and_path(self) -> None:
-        changed_file = (
-            "private/its/ruling/src/test/resources/expected/"
-            "airflow/python-S107.json"
-        )
+    @patch("ruling_diff_core_lib.snippet_generation.Path.read_text")
+    def test_build_rule_diffs_caches_source_per_path_across_changes_and_rules(
+        self, mocked_read
+    ) -> None:
+        ruling_root = "private/its/ruling/src/test/resources/expected/airflow"
+        changed_file = f"{ruling_root}/python-S107.json"
+        other_changed_file = f"{ruling_root}/python-S108.json"
         io_impl = FakeRulingDiffIO(
             json_by_ref_path={
                 (changed_file, "base-sha"): {"airflow:a.py": [1]},
                 (changed_file, "head-sha"): {"airflow:a.py": [2, 2]},
-            },
-            text_by_ref_path={
-                ("sources/airflow/a.py", "base-sha"): "base\ncontent\n",
-                ("sources/airflow/a.py", "head-sha"): "head\ncontent\n",
+                (other_changed_file, "head-sha"): {"airflow:a.py": [3]},
             },
         )
+        mocked_read.return_value = "checkout first\ncheckout second\ncheckout third\n"
 
-        core.build_rule_diffs([changed_file], "base-sha", "head-sha", io_impl)
+        diffs = core.build_rule_diffs(
+            [changed_file, other_changed_file], "base-sha", "head-sha", io_impl
+        )
 
-        self.assertEqual(io_impl.load_text_calls.count(("sources/airflow/a.py", "base-sha")), 1)
-        self.assertEqual(io_impl.load_text_calls.count(("sources/airflow/a.py", "head-sha")), 1)
+        snippets = [snippet for diff in diffs for snippet in diff.snippets]
+        self.assertEqual(len(snippets), 3)
+        self.assertEqual({snippet.change_kind for snippet in snippets}, {"added", "removed"})
+        for snippet in snippets:
+            self.assertIn("checkout", snippet.body)
+        mocked_read.assert_called_once_with(encoding="utf-8")
 
-    def test_build_rule_diffs_missing_source_produces_placeholder_snippet(self) -> None:
+    @patch(
+        "ruling_diff_core_lib.snippet_generation.Path.read_text",
+        side_effect=FileNotFoundError,
+    )
+    def test_build_rule_diffs_missing_source_produces_placeholder_snippet(
+        self, mocked_read
+    ) -> None:
         changed_file = (
             "private/its/ruling/src/test/resources/expected/"
             "airflow/python-S107.json"
@@ -512,7 +519,6 @@ class BuildRuleDiffsWithIOTest(unittest.TestCase):
                 (changed_file, "base-sha"): {"airflow:a.py": [1]},
                 (changed_file, "head-sha"): {"airflow:a.py": [1, 3]},
             },
-            text_by_ref_path={("sources/airflow/a.py", "head-sha"): None},
         )
 
         diffs = core.build_rule_diffs([changed_file], "base-sha", "head-sha", io_impl)
@@ -520,45 +526,86 @@ class BuildRuleDiffsWithIOTest(unittest.TestCase):
         self.assertEqual(len(diffs[0].snippets), 1)
         self.assertEqual(
             diffs[0].snippets[0].body,
-            "(source file not found at this revision: a.py)",
+            "(source file not found in checkout: a.py)",
         )
+        mocked_read.assert_called_once_with(encoding="utf-8")
 
 
 class SourceLoadingTest(unittest.TestCase):
-    @patch("ruling_diff_io.subprocess.run")
-    def test_load_text_at_ref_reads_from_submodule_commit(self, mocked_run) -> None:
-        mocked_run.side_effect = [
-            subprocess.CompletedProcess(
-                args=["git", "rev-parse"],
-                returncode=0,
-                stdout="subsha123\n",
-                stderr="",
-            ),
-            subprocess.CompletedProcess(
-                args=["git", "-C", "sources", "show"],
-                returncode=0,
-                stdout="print('from submodule')\n",
-                stderr="",
-            ),
-        ]
+    def test_reads_utf8_source_from_checkout_and_caches_it(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source = pathlib.Path(tmp_dir) / "source.py"
+            source.write_text("café\nsecond line\n", encoding="utf-8")
+            cache = {}
 
-        content = io.load_text_at_ref(
-            "private/its-enterprise/sources_ruling/project/foo.py", "deadbeef"
-        )
+            lines = load_source_lines_with_cache(cache, str(source), (tmp_dir,))
+            source.unlink()
 
-        self.assertEqual(content, "print('from submodule')\n")
-    @patch("ruling_diff_io.subprocess.run")
-    def test_load_text_at_ref_warns_when_source_missing(self, mocked_run) -> None:
-        mocked_run.return_value = subprocess.CompletedProcess(
-            args=["git"],
-            returncode=128,
-            stdout="",
-            stderr="fatal: path 'missing.py' exists on disk, but not in 'deadbeef'",
-        )
-        with self.assertLogs(level="WARNING") as logs:
-            content = io.load_text_at_ref("missing.py", "deadbeef")
-        self.assertIsNone(content)
-        self.assertTrue(any("not found at deadbeef" in log for log in logs.output))
+            self.assertEqual(lines, ["café", "second line"])
+            self.assertIs(load_source_lines_with_cache(cache, str(source), (tmp_dir,)), lines)
+            self.assertEqual(cache, {str(source): lines})
+
+    def test_caches_missing_source(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source = pathlib.Path(tmp_dir) / "missing.py"
+            cache = {}
+
+            self.assertIsNone(load_source_lines_with_cache(cache, str(source), (tmp_dir,)))
+            source.write_text("created after first lookup", encoding="utf-8")
+
+            self.assertIsNone(load_source_lines_with_cache(cache, str(source), (tmp_dir,)))
+            self.assertEqual(cache, {str(source): None})
+
+    def test_distinguishes_empty_source_from_missing_source(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source = pathlib.Path(tmp_dir) / "empty.py"
+            source.write_text("", encoding="utf-8")
+
+            self.assertEqual(load_source_lines_with_cache({}, str(source), (tmp_dir,)), [])
+
+    def test_caches_different_source_paths_independently(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            first_source = pathlib.Path(tmp_dir) / "first.py"
+            second_source = pathlib.Path(tmp_dir) / "second.py"
+            first_source.write_text("first", encoding="utf-8")
+            second_source.write_text("second", encoding="utf-8")
+            cache = {}
+
+            self.assertEqual(
+                load_source_lines_with_cache(cache, str(first_source), (tmp_dir,)),
+                ["first"],
+            )
+            self.assertEqual(
+                load_source_lines_with_cache(cache, str(second_source), (tmp_dir,)),
+                ["second"],
+            )
+
+    def test_rejects_paths_outside_source_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = pathlib.Path(tmp_dir) / "allowed"
+            root.mkdir()
+            outside = pathlib.Path(tmp_dir) / "secret.py"
+            outside.write_text("secret", encoding="utf-8")
+            source_path = root / ".." / "secret.py"
+            cache = {}
+
+            self.assertIsNone(
+                load_source_lines_with_cache(cache, str(source_path), (str(root),))
+            )
+            self.assertEqual(cache, {str(source_path): None})
+
+    def test_rejects_symlinks_outside_source_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = pathlib.Path(tmp_dir) / "allowed"
+            root.mkdir()
+            outside = pathlib.Path(tmp_dir) / "secret.py"
+            outside.write_text("secret", encoding="utf-8")
+            link = root / "source.py"
+            link.symlink_to(outside)
+
+            self.assertIsNone(
+                load_source_lines_with_cache({}, str(link), (str(root),))
+            )
 
 
 class GitHubCommentLookupTest(unittest.TestCase):
@@ -581,79 +628,6 @@ class GitHubCommentLookupTest(unittest.TestCase):
 
 
 class GitHubActionIOTest(unittest.TestCase):
-    def test_resolve_source_path_for_project_rulings_uses_path_directly(self) -> None:
-        io_impl = io.GitHubActionIO()
-        self.assertEqual(
-            io_impl.resolve_source_path("project", "biopython/Bio/Nexus/Nexus.py"),
-            "private/its-enterprise/sources_ruling/biopython/Bio/Nexus/Nexus.py",
-        )
-
-    def test_resolve_source_path_for_project_rulings_falls_back_to_sources_internal(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            sources_ruling = f"{tmp_dir}/sources_ruling"
-            sources_internal = f"{tmp_dir}/sources_internal_ruling"
-            sources_namespace = f"{tmp_dir}/sources_internal_namespace_ruling"
-            pathlib.Path(sources_ruling).mkdir(parents=True, exist_ok=True)
-            pathlib.Path(sources_internal).mkdir(parents=True, exist_ok=True)
-            pathlib.Path(sources_namespace).mkdir(parents=True, exist_ok=True)
-            target = f"{sources_internal}/foo.py"
-            pathlib.Path(target).write_text("x\n", encoding="utf-8")
-            with (
-                patch.object(io, "RULING_SOURCES_SUBMODULE", sources_ruling),
-                patch.object(io, "SOURCES_INTERNAL_RULING_ROOT", sources_internal),
-                patch.object(
-                    io,
-                    "SOURCES_INTERNAL_NAMESPACE_RULING_ROOT",
-                    sources_namespace,
-                ),
-            ):
-                io_impl = io.GitHubActionIO(sources_root=sources_ruling)
-                self.assertEqual(io_impl.resolve_source_path("project", "foo.py"), target)
-
-    def test_resolve_source_path_for_project_rulings_falls_back_to_namespace_child(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            sources_ruling = f"{tmp_dir}/sources_ruling"
-            sources_internal = f"{tmp_dir}/sources_internal_ruling"
-            sources_namespace = f"{tmp_dir}/sources_internal_namespace_ruling"
-            namespace_child = f"{sources_namespace}/basic_namespace"
-            pathlib.Path(sources_ruling).mkdir(parents=True, exist_ok=True)
-            pathlib.Path(sources_internal).mkdir(parents=True, exist_ok=True)
-            pathlib.Path(namespace_child).mkdir(parents=True, exist_ok=True)
-            target = f"{namespace_child}/foo.py"
-            pathlib.Path(target).write_text("x\n", encoding="utf-8")
-            with (
-                patch.object(io, "RULING_SOURCES_SUBMODULE", sources_ruling),
-                patch.object(io, "SOURCES_INTERNAL_RULING_ROOT", sources_internal),
-                patch.object(
-                    io,
-                    "SOURCES_INTERNAL_NAMESPACE_RULING_ROOT",
-                    sources_namespace,
-                ),
-            ):
-                io_impl = io.GitHubActionIO(sources_root=sources_ruling)
-                self.assertEqual(io_impl.resolve_source_path("project", "foo.py"), target)
-
-    def test_resolve_source_path_for_project_rulings_returns_primary_on_miss(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            sources_ruling = f"{tmp_dir}/sources_ruling"
-            sources_internal = f"{tmp_dir}/sources_internal_ruling"
-            sources_namespace = f"{tmp_dir}/sources_internal_namespace_ruling"
-            pathlib.Path(sources_ruling).mkdir(parents=True, exist_ok=True)
-            pathlib.Path(sources_internal).mkdir(parents=True, exist_ok=True)
-            pathlib.Path(sources_namespace).mkdir(parents=True, exist_ok=True)
-            primary = f"{sources_ruling}/missing.py"
-            with (
-                patch.object(io, "RULING_SOURCES_SUBMODULE", sources_ruling),
-                patch.object(io, "SOURCES_INTERNAL_RULING_ROOT", sources_internal),
-                patch.object(
-                    io,
-                    "SOURCES_INTERNAL_NAMESPACE_RULING_ROOT",
-                    sources_namespace,
-                ),
-            ):
-                io_impl = io.GitHubActionIO(sources_root=sources_ruling)
-                self.assertEqual(io_impl.resolve_source_path("project", "missing.py"), primary)
-
     def test_resolve_source_path_uses_project_overrides(self) -> None:
         io_impl = io.GitHubActionIO()
         self.assertEqual(

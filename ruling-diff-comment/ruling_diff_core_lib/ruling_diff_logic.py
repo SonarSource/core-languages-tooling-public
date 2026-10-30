@@ -8,13 +8,15 @@ from ruling_diff_core_lib.models_and_constants import (
     EXPECTED_RULING_ROOTS,
     IssueDiff,
     OptionalRulingJson,
-    RulingDiffIO,
     RuleDiff,
+    RulingDiffIO,
     RulingJson,
-    SourceCache,
     Snippet,
+    SourceCache,
 )
 from ruling_diff_core_lib.snippet_generation import build_snippets_for_rule
+
+logger = logging.getLogger(__name__)
 
 
 def parse_ruling_path(path: str, ruling_root: str | None = None) -> tuple[str, str, str]:
@@ -155,7 +157,7 @@ def build_rule_diff_for_file(
     try:
         project, repository, rule_key = parse_ruling_path(path, io.ruling_root)
     except ValueError as exc:
-        logging.warning("Skipping unrecognized ruling path %s: %s", path, exc)
+        logger.warning("Skipping unrecognized ruling path %s: %s", path, exc)
         return None
     old_json: OptionalRulingJson = io.load_json_at_ref(path, base_sha)
     new_json: OptionalRulingJson = io.load_json_at_ref(path, head_sha)
@@ -166,8 +168,6 @@ def build_rule_diff_for_file(
         project,
         file_diffs,
         source_cache,
-        base_sha,
-        head_sha,
         io,
     )
     return RuleDiff(
