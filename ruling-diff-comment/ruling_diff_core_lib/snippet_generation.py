@@ -8,8 +8,6 @@ from ruling_diff_core_lib.models_and_constants import (
     MAX_SNIPPETS_PER_RULE,
     PROJECT_SOURCE_OVERRIDES,
     SNIPPET_CONTEXT,
-    SOURCES_INTERNAL_NAMESPACE_RULING_ROOT,
-    SOURCES_INTERNAL_RULING_ROOT,
     IssueDiff,
     OptionalSourceLines,
     RulingDiffIO,
@@ -122,13 +120,7 @@ def create_issue_snippet(
 ) -> Snippet:
     source_path = io.resolve_source_path(project, file_path)
     source_roots = (
-        (
-            io.sources_root,
-            SOURCES_INTERNAL_RULING_ROOT,
-            SOURCES_INTERNAL_NAMESPACE_RULING_ROOT,
-        )
-        if project == "project"
-        else (PROJECT_SOURCE_OVERRIDES.get(project, f"{io.sources_root}/{project}"),)
+        PROJECT_SOURCE_OVERRIDES.get(project, f"{io.sources_root}/{project}"),
     )
     lines = load_source_lines_with_cache(source_cache, source_path, source_roots)
     body = (

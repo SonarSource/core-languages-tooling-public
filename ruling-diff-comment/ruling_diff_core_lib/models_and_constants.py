@@ -32,11 +32,6 @@ SNIPPET_CONTEXT = 5
 MAX_SNIPPETS_PER_FILE = 3
 MAX_SNIPPETS_PER_RULE = 15
 
-SOURCES_INTERNAL_RULING_ROOT = "private/its-enterprise/sources_internal_ruling"
-SOURCES_INTERNAL_NAMESPACE_RULING_ROOT = (
-    "private/its-enterprise/sources_internal_namespace_ruling"
-)
-
 PROJECT_SOURCE_OVERRIDES = {
     "buildbot": "private/its-enterprise/sources_ruling/buildbot-0.8.6p1",
     "buildbot-slave": "private/its-enterprise/sources_ruling/buildbot-slave-0.8.6p1",

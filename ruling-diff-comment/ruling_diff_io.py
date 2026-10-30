@@ -3,14 +3,11 @@ from __future__ import annotations
 import json
 import logging
 import subprocess
-from pathlib import Path
 
 from ruling_diff_core_lib.models_and_constants import (
     COMMENT_MARKER,
     EXPECTED_RULING_ROOTS,
     PROJECT_SOURCE_OVERRIDES,
-    SOURCES_INTERNAL_NAMESPACE_RULING_ROOT,
-    SOURCES_INTERNAL_RULING_ROOT,
 )
 
 logger = logging.getLogger(__name__)
@@ -35,41 +32,10 @@ class GitHubActionIO:
         return load_json_at_ref(path, ref)
 
     def resolve_source_path(self, project: str, file_path: str) -> str:
-        if project == "project":
-            return self._resolve_project_source_path(file_path)
         source_root = PROJECT_SOURCE_OVERRIDES.get(
             project, f"{self.sources_root}/{project}"
         )
         return f"{source_root}/{file_path.lstrip('/')}"
-
-    def _resolve_project_source_path(self, file_path: str) -> str:
-        clean_path = file_path.lstrip("/")
-        primary_candidate = f"{self.sources_root}/{clean_path}"
-        candidates = [primary_candidate]
-        candidates.extend(
-            self._with_direct_children_prefixes(self.sources_root, clean_path)
-        )
-        candidates.append(f"{SOURCES_INTERNAL_RULING_ROOT}/{clean_path}")
-        candidates.append(f"{SOURCES_INTERNAL_NAMESPACE_RULING_ROOT}/{clean_path}")
-        candidates.extend(
-            self._with_direct_children_prefixes(
-                SOURCES_INTERNAL_NAMESPACE_RULING_ROOT, clean_path
-            )
-        )
-        for candidate in candidates:
-            if Path(candidate).is_file():
-                return candidate
-        return primary_candidate
-
-    def _with_direct_children_prefixes(self, root: str, file_path: str) -> list[str]:
-        root_path = Path(root)
-        if not root_path.is_dir():
-            return []
-        return [
-            f"{root}/{child.name}/{file_path}"
-            for child in sorted(root_path.iterdir(), key=lambda path: path.name)
-            if child.is_dir() and not child.name.startswith(".")
-        ]
 
 
 def run_command(command: list[str]) -> str:

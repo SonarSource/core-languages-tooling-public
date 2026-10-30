@@ -580,35 +580,6 @@ class SourceLoadingTest(unittest.TestCase):
                 ["second"],
             )
 
-    def test_project_sources_accepts_internal_source_roots(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            sources_root = pathlib.Path(tmp_dir) / "sources_ruling"
-            internal_root = pathlib.Path(tmp_dir) / "sources_internal_ruling"
-            sources_root.mkdir()
-            internal_root.mkdir()
-            source = internal_root / "source.py"
-            source.write_text("internal source\n", encoding="utf-8")
-            io_impl = FakeRulingDiffIO({}, sources_root=str(sources_root))
-
-            with (
-                patch.object(
-                    snippet_generation,
-                    "SOURCES_INTERNAL_RULING_ROOT",
-                    str(internal_root),
-                ),
-                patch.object(io_impl, "resolve_source_path", return_value=str(source)),
-            ):
-                snippet = snippet_generation.create_issue_snippet(
-                    project="project",
-                    file_path="source.py",
-                    line_number=1,
-                    change_kind="added",
-                    source_cache={},
-                    io=io_impl,
-                )
-
-            self.assertIn("internal source", snippet.body)
-
     def test_rejects_paths_outside_source_root(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = pathlib.Path(tmp_dir) / "allowed"
@@ -657,79 +628,6 @@ class GitHubCommentLookupTest(unittest.TestCase):
 
 
 class GitHubActionIOTest(unittest.TestCase):
-    def test_resolve_source_path_for_project_rulings_uses_path_directly(self) -> None:
-        io_impl = io.GitHubActionIO()
-        self.assertEqual(
-            io_impl.resolve_source_path("project", "biopython/Bio/Nexus/Nexus.py"),
-            "private/its-enterprise/sources_ruling/biopython/Bio/Nexus/Nexus.py",
-        )
-
-    def test_resolve_source_path_for_project_rulings_falls_back_to_sources_internal(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            sources_ruling = f"{tmp_dir}/sources_ruling"
-            sources_internal = f"{tmp_dir}/sources_internal_ruling"
-            sources_namespace = f"{tmp_dir}/sources_internal_namespace_ruling"
-            pathlib.Path(sources_ruling).mkdir(parents=True, exist_ok=True)
-            pathlib.Path(sources_internal).mkdir(parents=True, exist_ok=True)
-            pathlib.Path(sources_namespace).mkdir(parents=True, exist_ok=True)
-            target = f"{sources_internal}/foo.py"
-            pathlib.Path(target).write_text("x\n", encoding="utf-8")
-            with (
-                patch.object(io, "RULING_SOURCES_SUBMODULE", sources_ruling),
-                patch.object(io, "SOURCES_INTERNAL_RULING_ROOT", sources_internal),
-                patch.object(
-                    io,
-                    "SOURCES_INTERNAL_NAMESPACE_RULING_ROOT",
-                    sources_namespace,
-                ),
-            ):
-                io_impl = io.GitHubActionIO(sources_root=sources_ruling)
-                self.assertEqual(io_impl.resolve_source_path("project", "foo.py"), target)
-
-    def test_resolve_source_path_for_project_rulings_falls_back_to_namespace_child(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            sources_ruling = f"{tmp_dir}/sources_ruling"
-            sources_internal = f"{tmp_dir}/sources_internal_ruling"
-            sources_namespace = f"{tmp_dir}/sources_internal_namespace_ruling"
-            namespace_child = f"{sources_namespace}/basic_namespace"
-            pathlib.Path(sources_ruling).mkdir(parents=True, exist_ok=True)
-            pathlib.Path(sources_internal).mkdir(parents=True, exist_ok=True)
-            pathlib.Path(namespace_child).mkdir(parents=True, exist_ok=True)
-            target = f"{namespace_child}/foo.py"
-            pathlib.Path(target).write_text("x\n", encoding="utf-8")
-            with (
-                patch.object(io, "RULING_SOURCES_SUBMODULE", sources_ruling),
-                patch.object(io, "SOURCES_INTERNAL_RULING_ROOT", sources_internal),
-                patch.object(
-                    io,
-                    "SOURCES_INTERNAL_NAMESPACE_RULING_ROOT",
-                    sources_namespace,
-                ),
-            ):
-                io_impl = io.GitHubActionIO(sources_root=sources_ruling)
-                self.assertEqual(io_impl.resolve_source_path("project", "foo.py"), target)
-
-    def test_resolve_source_path_for_project_rulings_returns_primary_on_miss(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            sources_ruling = f"{tmp_dir}/sources_ruling"
-            sources_internal = f"{tmp_dir}/sources_internal_ruling"
-            sources_namespace = f"{tmp_dir}/sources_internal_namespace_ruling"
-            pathlib.Path(sources_ruling).mkdir(parents=True, exist_ok=True)
-            pathlib.Path(sources_internal).mkdir(parents=True, exist_ok=True)
-            pathlib.Path(sources_namespace).mkdir(parents=True, exist_ok=True)
-            primary = f"{sources_ruling}/missing.py"
-            with (
-                patch.object(io, "RULING_SOURCES_SUBMODULE", sources_ruling),
-                patch.object(io, "SOURCES_INTERNAL_RULING_ROOT", sources_internal),
-                patch.object(
-                    io,
-                    "SOURCES_INTERNAL_NAMESPACE_RULING_ROOT",
-                    sources_namespace,
-                ),
-            ):
-                io_impl = io.GitHubActionIO(sources_root=sources_ruling)
-                self.assertEqual(io_impl.resolve_source_path("project", "missing.py"), primary)
-
     def test_resolve_source_path_uses_project_overrides(self) -> None:
         io_impl = io.GitHubActionIO()
         self.assertEqual(
