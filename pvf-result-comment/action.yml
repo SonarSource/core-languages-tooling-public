@@ -40,7 +40,7 @@ runs:
         path: ${{ runner.temp }}/pvf-result-comment
         merge-multiple: false
 
-    - name: Find projects with result other than 0, 3 or 4
+    - name: Find projects failures
       id: find-failures
       shell: bash
       env:
@@ -49,7 +49,9 @@ runs:
         set -euo pipefail
         projects=''
         # Find the projects whose result is different than 0 (normal), 3 (runtime regression) or 4 (runtime improvement)
-        # to report the projects that failed with an unexpected error
+        # We only want to report on possible scanner errors in the pvf. Performance regressions are not accurate for issue validation.
+        # analysis error codes: 1 (unexpected failure), 2 (bad invocation of python/jmh), 5 (scanner error)
+        # acceptable: 0 (normal), 3 (runtime regression), 4 (runtime improvement)
         
         if [ -d "$REPORTS_DIR" ]; then
           projects="$(find "$REPORTS_DIR" -type f -name '*.json' -exec jq -r '
@@ -59,21 +61,15 @@ runs:
           ' {} + | LC_ALL=C sort -u)"
         fi
         
-        # The delimiter allow multi-line value in the GITHUB_OUTPUT
-        delimiter="PVF_PROJECTS_${RANDOM}_${RANDOM}_${RANDOM}"
-        
-        {
-          printf 'projects<<%s\n' "$delimiter"
-          printf '%s\n' "$projects"
-          printf '%s\n' "$delimiter"
-        } >> "$GITHUB_OUTPUT"
+        printf '%s\n' "$projects" > projects.txt
 
     - name: Post PVF result on PR
+      if: ${{ !cancelled() }}
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.token || github.token }}
         GH_REPO: ${{ inputs.repository || github.repository }}
-        FAILED_PROJECTS: ${{ steps.find-failures.outputs.projects }}
+        FAILED_PROJECTS_STEP_SUCCESS: ${{ steps.find-failures.outcome == 'success' }}
         PR: ${{ inputs.pr-number }}
         URL: ${{ inputs.dashboard-url }}
         NEW: ${{ inputs.new-issues }}
@@ -88,7 +84,14 @@ runs:
         else
           body="⚠️ **Performance Validation** finished without publishing a dashboard. [See run logs](${RUN_URL})."
         fi
-        if [ -n "$FAILED_PROJECTS" ]; then
-          body+=$'\n\n'"Projects with unexpected PVF results:"$'\n'"$FAILED_PROJECTS"
+        
+        if [ "$FAILED_PROJECTS_STEP_SUCCESS" = "false" ]; then
+          body+=$'\n\n'"⚠️ **Project failures could not be retrieved**"
+        else
+          failed_projects=$(cat projects.txt)
+          if [ -n "$failed_projects" ]; then
+            body+=$'\n\n'"Projects with unexpected PVF results:"$'\n'"$failed_projects"
+          fi
         fi
+
         gh pr comment "$PR" --body "$body"
