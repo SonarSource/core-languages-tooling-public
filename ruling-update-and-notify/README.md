@@ -72,14 +72,27 @@ After copying the actual ruling results into your analyzer checkout's expectatio
 directory, run the fix-PR script from that checkout:
 
 ```bash
-TARGET_REF=my-feature-branch \
-RULING_ROOT=its/ruling/src/test/resources \
-SOURCES_ROOT=its/sources \
 python3 /path/to/core-languages-tooling-public/ruling-update-and-notify/create_fix_pr.py --dry-run
 ```
 
-Use the ruling and sources paths for your repository's layout. Optionally set
-`PR_NUMBER` to preview a description referring to the original PR.
+The script detects the ruling and sources roots using the supported repository
+layouts. The target defaults to `master` on `origin`, or `main` if `master` does
+not exist. Missing or ambiguous ruling layouts, or an origin with neither
+branch, produce an error.
+
+Optional command-line overrides are available:
+
+| Option | Description |
+|--------|-------------|
+| `--target-ref BRANCH` | Target another branch instead of `master`/`main` |
+| `--ruling-root PATH` | Use a specific ruling resources directory |
+| `--sources-root PATH` | Use a specific sources directory |
+| `--pr-number NUMBER` | Refer to the original PR in the preview |
+
+Run with `--help` for all options. The action uses the same script and passes
+its context through these command-line options; the script does not read
+`TARGET_REF`, `RULING_ROOT`, `SOURCES_ROOT`, or `PR_NUMBER` from the environment.
+Credentials and GitHub output plumbing still use `GH_TOKEN` and `GITHUB_OUTPUT`.
 
 Dry-run fetches the target branch from `origin`, applies staged, unstaged, and
 untracked ruling changes in a temporary worktree, and creates a temporary local

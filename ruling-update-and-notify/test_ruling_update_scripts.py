@@ -88,21 +88,106 @@ class FixPullRequestTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             output_path = Path(directory) / "output"
             with patch.dict(create_fix_pr.os.environ, {
-                "TARGET_REF": "feature", "RULING_ROOT": "its/ruling",
-                "PR_NUMBER": "1", "GITHUB_OUTPUT": str(output_path),
+                "GITHUB_OUTPUT": str(output_path),
             }):
-                self.assertEqual(create_fix_pr.main([]), 0)
+                self.assertEqual(create_fix_pr.main([
+                    "--target-ref", "feature", "--ruling-root", "its/ruling", "--pr-number", "1",
+                ]), 0)
             self.assertEqual(output_path.read_text(),
                 f"fix-pr-url=https://example.test/1\nfix-base-sha={'b' * 40}\nfix-sha={'a' * 40}\n")
             create.assert_called_once_with("feature", "its/ruling", "1", "", dry_run=False)
 
     @patch.object(create_fix_pr, "create_fix_pr", return_value=("", "b" * 40, "a" * 40))
     def test_main_dry_run_needs_no_github_environment(self, create) -> None:
+        with patch.dict(create_fix_pr.os.environ, {}, clear=True):
+            self.assertEqual(create_fix_pr.main([
+                "--dry-run", "--target-ref", "feature", "--ruling-root", "its/ruling",
+                "--sources-root", "its/sources",
+            ]), 0)
+        create.assert_called_once_with("feature", "its/ruling", "", "its/sources", dry_run=True)
+
+    @patch.object(create_fix_pr, "create_fix_pr", return_value=("", "b" * 40, "a" * 40))
+    @patch.object(create_fix_pr, "find_default_target_ref", return_value="master")
+    def test_main_dry_run_detects_ruling_layout(self, default_target, create) -> None:
+        for ruling_root, sources_root in find_ruling_directory.RULING_LAYOUTS:
+            with self.subTest(ruling_root=ruling_root), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / ruling_root / "expected").mkdir(parents=True)
+                with patch.dict(create_fix_pr.os.environ, {}, clear=True), \
+                        patch.object(create_fix_pr.Path, "cwd", return_value=root):
+                    self.assertEqual(create_fix_pr.main(["--dry-run"]), 0)
+                create.assert_called_with("master", str(ruling_root), "", str(sources_root), dry_run=True)
+        self.assertEqual(default_target.call_count, len(find_ruling_directory.RULING_LAYOUTS))
+
+    @patch.object(create_fix_pr, "create_fix_pr", return_value=("", "b" * 40, "a" * 40))
+    @patch.object(create_fix_pr, "find_default_target_ref", return_value="main")
+    def test_main_dry_run_preserves_sources_override(self, default_target, create) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / find_ruling_directory.PUBLIC_ROOT / "expected").mkdir(parents=True)
+            with patch.dict(create_fix_pr.os.environ, {}, clear=True), \
+                    patch.object(create_fix_pr.Path, "cwd", return_value=root):
+                self.assertEqual(create_fix_pr.main(["--dry-run", "--sources-root", "custom/sources"]), 0)
+        create.assert_called_once_with(
+            "main", str(find_ruling_directory.PUBLIC_ROOT), "", "custom/sources", dry_run=True
+        )
+        default_target.assert_called_once_with()
+
+    @patch.object(create_fix_pr, "create_fix_pr", return_value=("", "b" * 40, "a" * 40))
+    @patch.object(create_fix_pr, "find_ruling_paths")
+    @patch.object(create_fix_pr, "find_default_target_ref")
+    def test_main_explicit_options_bypass_detection(self, default_target, paths, create) -> None:
+        with patch.dict(create_fix_pr.os.environ, {}, clear=True):
+            self.assertEqual(create_fix_pr.main([
+                "--dry-run", "--target-ref", "feature", "--ruling-root", "custom/ruling",
+                "--sources-root", "custom/sources", "--pr-number", "123",
+            ]), 0)
+        paths.assert_not_called()
+        default_target.assert_not_called()
+        create.assert_called_once_with("feature", "custom/ruling", "123", "custom/sources", dry_run=True)
+
+    @patch.object(create_fix_pr, "create_fix_pr", return_value=("", "b" * 40, "a" * 40))
+    @patch.object(create_fix_pr, "find_ruling_paths", return_value=(Path("detected/ruling"), Path("detected/sources")))
+    @patch.object(create_fix_pr, "find_default_target_ref", return_value="master")
+    def test_main_ignores_legacy_configuration_environment(self, default_target, paths, create) -> None:
         with patch.dict(create_fix_pr.os.environ, {
-            "TARGET_REF": "feature", "RULING_ROOT": "its/ruling", "SOURCES_ROOT": "its/sources",
+            "TARGET_REF": "old-target", "RULING_ROOT": "old/ruling",
+            "SOURCES_ROOT": "old/sources", "PR_NUMBER": "999",
         }, clear=True):
             self.assertEqual(create_fix_pr.main(["--dry-run"]), 0)
-        create.assert_called_once_with("feature", "its/ruling", "", "its/sources", dry_run=True)
+        paths.assert_called_once_with(Path.cwd())
+        default_target.assert_called_once_with()
+        create.assert_called_once_with("master", "detected/ruling", "", "detected/sources", dry_run=True)
+
+    @patch.object(create_fix_pr, "create_fix_pr")
+    @patch.object(create_fix_pr, "find_ruling_paths", side_effect=ValueError("No expected ruling directory found"))
+    def test_main_reports_ruling_detection_errors(self, paths, create) -> None:
+        with patch.dict(create_fix_pr.os.environ, {}, clear=True), \
+                patch.object(create_fix_pr.sys, "stderr", new_callable=StringIO) as errors:
+            self.assertEqual(create_fix_pr.main(["--dry-run"]), 1)
+        self.assertIn("No expected ruling directory found", errors.getvalue())
+        create.assert_not_called()
+
+    def test_default_target_prefers_master_then_main(self) -> None:
+        for branches, expected in ((["main", "master"], "master"), (["master"], "master"), (["main"], "main")):
+            with self.subTest(branches=branches):
+                remote = SimpleNamespace(returncode=0, stdout="\n".join(
+                    f"{'a' * 40}\trefs/heads/{branch}" for branch in branches
+                ))
+                with patch.object(create_fix_pr.subprocess, "run", return_value=remote) as process:
+                    self.assertEqual(create_fix_pr.find_default_target_ref(), expected)
+                self.assertEqual(process.call_args.args[0], (
+                    "git", "ls-remote", "--exit-code", "--heads", "origin",
+                    "refs/heads/master", "refs/heads/main",
+                ))
+
+    def test_default_target_reports_missing_branches_and_remote_errors(self) -> None:
+        for returncode, message in ((2, "Neither master nor main"), (128, "Could not inspect")):
+            with self.subTest(returncode=returncode), \
+                    patch.object(create_fix_pr.subprocess, "run", return_value=SimpleNamespace(
+                        returncode=returncode, stdout="",
+                    )), self.assertRaisesRegex(RuntimeError, message):
+                create_fix_pr.find_default_target_ref()
 
     @patch.object(create_fix_pr, "create_fix_pr", return_value=("", "b" * 40, "a" * 40))
     def test_main_dry_run_does_not_write_github_outputs(self, create) -> None:
@@ -110,10 +195,11 @@ class FixPullRequestTests(unittest.TestCase):
             output_path = Path(directory) / "output"
             output_path.write_text("existing outputs\n")
             with patch.dict(create_fix_pr.os.environ, {
-                "TARGET_REF": "feature", "RULING_ROOT": "its/ruling",
                 "GITHUB_OUTPUT": str(output_path),
             }):
-                self.assertEqual(create_fix_pr.main(["--dry-run"]), 0)
+                self.assertEqual(create_fix_pr.main([
+                    "--dry-run", "--target-ref", "feature", "--ruling-root", "its/ruling",
+                ]), 0)
             self.assertEqual(output_path.read_text(), "existing outputs\n")
 
     def test_dry_run_never_pushes_or_calls_github(self) -> None:

@@ -131,7 +131,12 @@ runs:
         PR_NUMBER: ${{ steps.setup-env.outputs.pr-number }}
         RULING_ROOT: ${{ steps.ruling-paths.outputs.ruling-root }}
         SOURCES_ROOT: ${{ steps.ruling-paths.outputs.sources-root }}
-      run: python3 "${{ github.action_path }}/create_fix_pr.py"
+      run: |
+        python3 "${{ github.action_path }}/create_fix_pr.py" \
+          --target-ref "$TARGET_REF" \
+          --ruling-root "$RULING_ROOT" \
+          --sources-root "$SOURCES_ROOT" \
+          --pr-number "$PR_NUMBER"
 
     - name: Post ruling diff comment
       if: steps.setup-env.outputs.is-pr == 'true' && steps.create-fix-pr.outputs.fix-pr-url != ''

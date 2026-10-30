@@ -8,6 +8,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from find_ruling_directory import find_ruling_paths
+
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "ruling-diff-comment"))
 
@@ -78,6 +80,23 @@ def generate_ruling_diff(
 def pr_body(subject: str, ruling_diff: str) -> str:
     sections = [f"Auto-generated ruling update for {subject}.", ruling_diff, GENERATED_MARKER]
     return "\n\n".join(filter(None, sections))
+
+
+def find_default_target_ref() -> str:
+    result = subprocess.run(
+        ("git", "ls-remote", "--exit-code", "--heads", "origin",
+         "refs/heads/master", "refs/heads/main"),
+        stdout=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    if result.returncode not in (0, 2):
+        raise RuntimeError("Could not inspect the default target branch on origin")
+    remote_refs = {line.split()[-1] for line in result.stdout.splitlines() if line.strip()}
+    for target_ref in ("master", "main"):
+        if f"refs/heads/{target_ref}" in remote_refs:
+            return target_ref
+    raise RuntimeError("Neither master nor main exists on origin; pass --target-ref explicitly")
 
 
 def create_fix_pr(
@@ -176,14 +195,33 @@ def create_fix_pr(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Create a ruling update fix PR")
     parser.add_argument(
+        "--target-ref", default="",
+        help="Target branch (default: master on origin, falling back to main)",
+    )
+    parser.add_argument(
+        "--ruling-root", default="",
+        help="Ruling resources directory (default: detect from the repository layout)",
+    )
+    parser.add_argument(
+        "--sources-root", default="",
+        help="Sources directory (default: the sources root paired with the detected ruling root)",
+    )
+    parser.add_argument("--pr-number", default="", help="Original PR number, if applicable")
+    parser.add_argument(
         "--dry-run", action="store_true",
         help="Prepare a temporary fix commit and preview the PR without pushing or calling gh",
     )
     args = parser.parse_args(argv)
     try:
+        ruling_root = args.ruling_root
+        sources_root = args.sources_root
+        if not ruling_root:
+            detected_ruling_root, detected_sources_root = find_ruling_paths(Path.cwd())
+            ruling_root = str(detected_ruling_root)
+            sources_root = sources_root or str(detected_sources_root)
+        target_ref = args.target_ref or find_default_target_ref()
         fix_pr_url, fix_base_sha, fix_sha = create_fix_pr(
-            os.environ["TARGET_REF"], os.environ["RULING_ROOT"], os.environ.get("PR_NUMBER", ""),
-            os.environ.get("SOURCES_ROOT", ""),
+            target_ref, ruling_root, args.pr_number, sources_root,
             dry_run=args.dry_run,
         )
         if not args.dry_run:
@@ -191,7 +229,7 @@ def main(argv: list[str] | None = None) -> int:
                 output_file.write(
                     f"fix-pr-url={fix_pr_url}\nfix-base-sha={fix_base_sha}\nfix-sha={fix_sha}\n"
                 )
-    except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
+    except (OSError, RuntimeError, ValueError, subprocess.CalledProcessError) as error:
         print(f"::error::{error}", file=sys.stderr)
         return 1
     return 0
