@@ -14,19 +14,29 @@ It runs as steps inside the caller's job. It is the output side of the PVF chain
 
 ## Inputs
 
-| Input | Description | Required | Default |
-|-------|-------------|----------|---------|
-| `pr-number` | Pull request number to comment on | Yes | |
-| `repository` | `owner/name` of the repo whose PR to comment on. Set to the analyzer repo for cross-repo. | No | current repo |
-| `dashboard-url` | Published dashboard URL (the validate job `pages-url`). Empty ⇒ posts the no-dashboard fallback comment. | No | `''` |
-| `new-issues` | Number of new issues found | No | `0` |
-| `lost-issues` | Number of lost issues | No | `0` |
-| `run-url` | URL to the workflow run logs (used in the fallback comment). | No | this run |
-| `token` | Token with `pull-requests:write` on `repository`. For cross-repo, pass a token that can comment on the analyzer repo. | No | `github.token` |
+| Input           | Description                                                                                                           | Required | Default        |
+|-----------------|-----------------------------------------------------------------------------------------------------------------------|----------|----------------|
+| `pr-number`     | Pull request number to comment on                                                                                     | Yes      |                |
+| `repository`    | `owner/name` of the repo whose PR to comment on. Set to the analyzer repo for cross-repo.                             | No       | current repo   |
+| `dashboard-url` | Published dashboard URL (the validate job `pages-url`). Empty ⇒ posts the no-dashboard fallback comment.              | No       | `''`           |
+| `new-issues`    | Number of new issues found                                                                                            | No       | `0`            |
+| `lost-issues`   | Number of lost issues                                                                                                 | No       | `0`            |
+| `run-url`       | URL to the workflow run logs (used in the fallback comment).                                                          | No       | this run       |
+| `token`         | Token with `pull-requests:write` on `repository`. For cross-repo, pass a token that can comment on the analyzer repo. | No       | `github.token` |
+
+## Project results
+
+The action downloads artifacts matching `*-results` from the current workflow run 
+and reads every JSON report inside them.
+The download action extracts the artifact ZIP automatically.
+
+Projects whose `metadata.result` is outside `0`, `3`, and `4` are listed by
+`metadata.name` in a warning appended to the existing PR comment.
 
 ## Requirements
 
 - `gh` CLI on the runner (pre-installed on GitHub-hosted runners).
+- Bash and `jq` on the runner.
 - **Same-repo:** the caller job grants `pull-requests: write`.
 - **Cross-repo:** the caller job grants `id-token: write` and provides a `token` with
   `pull-requests:write` on `repository` (e.g. the `pvf-commenter` Vault token).

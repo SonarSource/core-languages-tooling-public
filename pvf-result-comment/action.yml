@@ -1,5 +1,5 @@
 name: 'PVF Result Comment'
-description: 'Posts the Performance Validation result (dashboard link + new/lost issue counts) as a PR comment; falls back to a run-logs link when no dashboard was published. Works same-repo or cross-repo (analyzer PR).'
+description: 'Posts the Performance Validation dashboard, issue counts, and projects with unexpected results as a PR comment; falls back to a run-logs link when no dashboard was published. Works same-repo or cross-repo (analyzer PR).'
 
 inputs:
   pr-number:
@@ -33,11 +33,43 @@ inputs:
 runs:
   using: 'composite'
   steps:
+    - name: Download reports artifacts
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      with:
+        pattern: "*-results"
+        path: ${{ runner.temp }}/pvf-result-comment
+        merge-multiple: false
+
+    - name: Find projects failures
+      id: find-failures
+      shell: bash
+      env:
+        REPORTS_DIR: ${{ runner.temp }}/pvf-result-comment
+      run: |
+        set -euo pipefail
+        projects=''
+        # Find the projects whose result is different than 0 (normal), 3 (runtime regression) or 4 (runtime improvement)
+        # We only want to report on possible scanner errors in the pvf. Performance regressions are not accurate for issue validation.
+        # analysis error codes: 1 (unexpected failure), 2 (bad invocation of python/jmh), 5 (scanner error)
+        # acceptable: 0 (normal), 3 (runtime regression), 4 (runtime improvement)
+        
+        if [ -d "$REPORTS_DIR" ]; then
+          projects="$(find "$REPORTS_DIR" -type f -name '*.json' -exec jq -r '
+            .metadata
+            | select((.result | tostring) as $result | ["0", "3", "4"] | index($result) | not)
+            | "- \(.name)"
+          ' {} + | LC_ALL=C sort -u)"
+        fi
+        
+        printf '%s\n' "$projects" > projects.txt
+
     - name: Post PVF result on PR
+      if: ${{ !cancelled() }}
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.token || github.token }}
         GH_REPO: ${{ inputs.repository || github.repository }}
+        FAILED_PROJECTS_STEP_SUCCESS: ${{ steps.find-failures.outcome == 'success' }}
         PR: ${{ inputs.pr-number }}
         URL: ${{ inputs.dashboard-url }}
         NEW: ${{ inputs.new-issues }}
@@ -46,9 +78,20 @@ runs:
       run: |
         set -euo pipefail
         if [ -n "$URL" ]; then
-          gh pr comment "$PR" --body "📊 **Performance Validation** complete
+          body="📊 **Performance Validation** complete
         🆕 ${NEW:-0} new · 🗑️ ${LOST:-0} lost issues
         [View dashboard](${URL})"
         else
-          gh pr comment "$PR" --body "⚠️ **Performance Validation** finished without publishing a dashboard. [See run logs](${RUN_URL})."
+          body="⚠️ **Performance Validation** finished without publishing a dashboard. [See run logs](${RUN_URL})."
         fi
+        
+        if [ "$FAILED_PROJECTS_STEP_SUCCESS" = "false" ]; then
+          body+=$'\n\n'"⚠️ **Project failures could not be retrieved**"
+        else
+          failed_projects=$(cat projects.txt)
+          if [ -n "$failed_projects" ]; then
+            body+=$'\n\n'"Projects with unexpected PVF results:"$'\n'"$failed_projects"
+          fi
+        fi
+
+        gh pr comment "$PR" --body "$body"
