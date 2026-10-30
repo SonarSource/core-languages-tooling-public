@@ -30,6 +30,16 @@ class SarifDiffTest(unittest.TestCase):
     def setUp(self):
         self.region = {"startLine": 10, "startColumn": 2, "endLine": 12, "endColumn": 5}
 
+    def test_comment_rejects_each_negative_coordinate(self):
+        for field in ("start_line", "start_column", "end_line", "end_column"):
+            for change_kind in ("added", "removed"):
+                with self.subTest(field=field, change_kind=change_kind):
+                    location = IssueLocation(**{field: -1})
+                    snippet = core.Snippet("src/A.java", location, change_kind, "code")
+                    rule = core.RuleDiff("alpha", "java", "S100", [], [snippet], False, False)
+                    with self.assertRaisesRegex(ValueError, f"{field} must be non-negative"):
+                        core.format_comment([rule])
+
     def test_parses_all_selected_coordinates(self):
         self.assertEqual(
             parse(report(result(region=self.region))),

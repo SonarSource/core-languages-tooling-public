@@ -128,9 +128,12 @@ def format_snippet_block(snippet: Snippet) -> str:
 
 
 def format_snippet_header(snippet: Snippet) -> str:
+    region = snippet.location
+    for name in ("start_line", "start_column", "end_line", "end_column"):
+        if getattr(region, name) < 0:
+            raise ValueError(f"{name} must be non-negative for {snippet.file_path}")
     label = "Added" if snippet.change_kind == "added" else "Removed"
     location = "file-level" if snippet.location.start_line == 0 else f"line {snippet.location.start_line}"
-    region = snippet.location
     if region.start_column != 0:
         location += f", column {region.start_column}"
     if region.end_line not in (0, region.start_line):
