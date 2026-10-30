@@ -96,8 +96,9 @@ class SarifDiffTest(unittest.TestCase):
         self.assertEqual(parse(report(result())), parse(report(result(message={"text": ""}))))
         for message in (None, "message", {"text": None}, {"text": 123}):
             with self.subTest(message=message):
+                content = report(result(message=message))
                 with self.assertRaisesRegex(ValueError, "java-S100.sarif at head.*message"):
-                    parse(report(result(message=message)))
+                    parse(content)
 
     def test_comparison_collects_changes_after_first_mismatch(self):
         before = parse(report(result(message={"text": "old"}), result(filename="alpha:src/B.java")))
@@ -256,12 +257,14 @@ class SarifDiffTest(unittest.TestCase):
         for field in self.region:
             for value in (0, -1, True, "10", None):
                 with self.subTest(field=field, value=value):
+                    content = report(result(region={**self.region, field: value}))
                     with self.assertRaisesRegex(ValueError, field):
-                        parse(report(result(region={**self.region, field: value})))
+                        parse(content)
         for filename in (None, "", 123):
             with self.subTest(filename=filename):
+                content = report(result(filename=filename))
                 with self.assertRaisesRegex(ValueError, "filename"):
-                    parse(report(result(filename=filename)))
+                    parse(content)
 
     def test_distinct_columns_on_same_line_generate_distinct_snippets(self):
         path = "its/ruling/src/test/resources/expected/alpha/java-S100.sarif"
