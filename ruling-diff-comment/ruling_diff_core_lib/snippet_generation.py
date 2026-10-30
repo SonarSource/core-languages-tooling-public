@@ -118,12 +118,12 @@ def create_issue_snippet(
     io: RulingDiffIO,
 ) -> Snippet:
     source_path = io.resolve_source_path(project, file_path)
-    allowed_root = (
+    source_root = (
         io.sources_root
         if project == "project"
         else PROJECT_SOURCE_OVERRIDES.get(project, f"{io.sources_root}/{project}")
     )
-    lines = load_source_lines_with_cache(source_cache, source_path, allowed_root)
+    lines = load_source_lines_with_cache(source_cache, source_path, source_root)
     body = (
         f"(source file not found in checkout: {file_path})"
         if lines is None
@@ -138,11 +138,11 @@ def create_issue_snippet(
 
 
 def load_source_lines_with_cache(
-    cache: SourceCache, path: str, allowed_root: str
+    cache: SourceCache, path: str, source_root: str
 ) -> OptionalSourceLines:
     if path not in cache:
         resolved = Path(path).resolve()
-        root = Path(allowed_root).resolve()
+        root = Path(source_root).resolve()
         if not resolved.is_relative_to(root):
             cache[path] = None
             return None

@@ -577,7 +577,7 @@ class SourceLoadingTest(unittest.TestCase):
                 load_source_lines_with_cache(cache, str(second_source), tmp_dir), ["second"]
             )
 
-    def test_rejects_paths_outside_allowed_root(self) -> None:
+    def test_rejects_paths_outside_source_root(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = pathlib.Path(tmp_dir) / "allowed"
             root.mkdir()
@@ -591,7 +591,7 @@ class SourceLoadingTest(unittest.TestCase):
             )
             self.assertEqual(cache, {str(source_path): None})
 
-    def test_rejects_symlinks_outside_allowed_root(self) -> None:
+    def test_rejects_symlinks_outside_source_root(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = pathlib.Path(tmp_dir) / "allowed"
             root.mkdir()
