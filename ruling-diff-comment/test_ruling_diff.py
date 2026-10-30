@@ -459,7 +459,7 @@ class BuildRuleDiffsWithIOTest(unittest.TestCase):
 
 
 class SourceLoadingTest(unittest.TestCase):
-    def test_rejects_paths_outside_allowed_root(self) -> None:
+    def test_rejects_paths_outside_source_root(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = pathlib.Path(tmp_dir) / "allowed"
             root.mkdir()
@@ -470,7 +470,7 @@ class SourceLoadingTest(unittest.TestCase):
                 load_source_lines_with_cache({}, str(root / ".." / "secret.py"), str(root))
             )
 
-    def test_rejects_symlinks_outside_allowed_root(self) -> None:
+    def test_rejects_symlinks_outside_source_root(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = pathlib.Path(tmp_dir) / "allowed"
             root.mkdir()
