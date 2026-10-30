@@ -1,6 +1,6 @@
 # Ruling Diff Comment Action
 
-This GitHub Action analyzes changes in ruling expectations and posts a human-readable summary as a PR comment.
+This GitHub Action analyzes changes in ruling expectations, stored in SARIF format, and posts a human-readable summary as a PR comment.
 
 ## Purpose
 
