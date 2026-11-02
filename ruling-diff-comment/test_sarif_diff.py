@@ -193,8 +193,8 @@ class SarifDiffTest(unittest.TestCase):
             for ref, message in (("base", "old <message>"), ("head", "new & improved"))
         }
         action_io = io.GitHubActionIO()
-        with patch.object(action_io, "load_sarif_at_ref", side_effect=lambda _, ref: contents[ref]), patch.object(
-            action_io, "load_text_at_ref", return_value="source"
+        with patch.object(action_io, "load_sarif_at_ref", side_effect=lambda _, ref: contents[ref]), patch(
+            "ruling_diff_core_lib.snippet_generation.Path.read_text", return_value="source"
         ):
             diffs = core.build_rule_diffs([path], "base", "head", action_io)
         self.assertEqual([snippet.change_kind for snippet in diffs[0].snippets], ["removed", "added"])
@@ -276,14 +276,14 @@ class SarifDiffTest(unittest.TestCase):
             )),
         }
         action_io = io.GitHubActionIO()
-        with patch.object(action_io, "load_sarif_at_ref", side_effect=lambda _, ref: contents[ref]), patch.object(
-            action_io, "load_text_at_ref", side_effect=lambda _, ref: f"source at {ref}"
+        with patch.object(action_io, "load_sarif_at_ref", side_effect=lambda _, ref: contents[ref]), patch(
+            "ruling_diff_core_lib.snippet_generation.Path.read_text", return_value="source"
         ) as load_source:
             diffs = core.build_rule_diffs([path], "base", "head", action_io)
         self.assertEqual([snippet.location.start_column for snippet in diffs[0].snippets], [2, 3, 4])
-        self.assertIn("source at base", diffs[0].snippets[0].body)
-        self.assertIn("source at head", diffs[0].snippets[1].body)
-        self.assertEqual(load_source.call_count, 2)
+        self.assertIn("source", diffs[0].snippets[0].body)
+        self.assertIn("source", diffs[0].snippets[1].body)
+        self.assertEqual(load_source.call_count, 1)
         comment = core.format_comment(diffs)
         self.assertIn("1 issues removed, 2 issues added", comment)
         self.assertIn("line 10, column 2 to line 12, end column 5", comment)
@@ -296,7 +296,7 @@ class SarifDiffTest(unittest.TestCase):
             path = "its/ruling/src/test/resources/expected/alpha/java-S100.sarif"
             expectation = root / path
             expectation.parent.mkdir(parents=True)
-            source = root / "src/A.java"
+            source = root / "alpha/src/A.java"
             source.parent.mkdir(parents=True)
             source.write_text("\n".join(f"source line {line}" for line in range(1, 20)))
 
@@ -312,14 +312,14 @@ class SarifDiffTest(unittest.TestCase):
             git("add", ".")
             git("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--quiet", "-m", "head")
             head = git("rev-parse", "HEAD")
-            action_io = io.GitHubActionIO()
+            action_io = io.GitHubActionIO(sources_root=str(root))
             real_run = subprocess.run
 
             def run_in_repo(command, **kwargs):
                 return real_run(command, cwd=directory, **kwargs)
 
             with patch.object(io.subprocess, "run", side_effect=run_in_repo), patch.object(
-                action_io, "resolve_source_path", return_value="src/A.java"
+                action_io, "resolve_source_path", return_value=str(source)
             ):
                 changed = io.get_changed_ruling_files(base, head)
                 self.assertEqual(changed, [path])
