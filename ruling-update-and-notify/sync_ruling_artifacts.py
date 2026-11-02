@@ -2,8 +2,8 @@
 
 The action merges ``actual_*`` artifacts into ``ARTIFACT_DIRECTORY``. Each
 artifact contains the generated results relative to the actual directory, so
-``project/report.json`` updates ``<expected-root>/project/report.json``. This
-script validates the download, copies only regular JSON and SARIF files, and
+``project/report.sarif`` updates ``<expected-root>/project/report.sarif``. This
+script validates the download, copies only regular SARIF files, and
 removes the temporary directory. Expectations for projects absent from the
 artifacts are kept. A later step commits the updated expectations and creates
 a fix PR.
@@ -17,8 +17,7 @@ import sys
 from pathlib import Path
 
 
-RESULT_SUFFIXES = (".json", ".sarif")
-LEGACY_WRAPPER = "expected"
+RESULT_SUFFIX = ".sarif"
 
 
 def print_diagnostics() -> None:
@@ -36,13 +35,13 @@ def print_diagnostics() -> None:
 
 
 def find_result_files(artifact_directory: Path) -> list[Path]:
-    """Return regular JSON and SARIF files, relative to the artifact directory."""
+    """Return regular SARIF files, relative to the artifact directory."""
     return sorted(
         relative_path
         for relative_path in (
             path.relative_to(artifact_directory) for path in artifact_directory.rglob("*")
         )
-        if relative_path.suffix in RESULT_SUFFIXES
+        if relative_path.suffix == RESULT_SUFFIX
         and not has_symlink(artifact_directory, relative_path)
         and (artifact_directory / relative_path).is_file()
     )
@@ -67,14 +66,9 @@ def validate_download(artifact_directory: Path, download_outcome: str) -> list[P
         raise RuntimeError("No artifacts were downloaded (directory does not exist)")
     if not any(artifact_directory.iterdir()):
         raise RuntimeError("Artifact directory is empty; no 'actual_*' artifacts found")
-    if (artifact_directory / LEGACY_WRAPPER).is_dir():
-        raise RuntimeError(
-            f"Artifacts use the obsolete '{LEGACY_WRAPPER}/' wrapper; upload the generated "
-            "actual directory with the matching prepare-ruling-artifact version"
-        )
     result_files = find_result_files(artifact_directory)
     if not result_files:
-        raise RuntimeError("Downloaded artifacts contain no regular JSON or SARIF result files")
+        raise RuntimeError("Downloaded artifacts contain no regular SARIF result files")
     return result_files
 
 

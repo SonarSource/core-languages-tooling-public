@@ -16,7 +16,7 @@ class PrepareRulingArtifactTests(unittest.TestCase):
         self,
         roots: tuple[str, ...],
         artifact_name: str = "actual_ruling",
-        result_files: tuple[str, ...] = ("xml-S123.json",),
+        result_files: tuple[str, ...] = ("xml-S123.sarif",),
         symlink_results: bool = False,
     ) -> tuple[subprocess.CompletedProcess[str], Path | None, Path]:
         self.directory = tempfile.TemporaryDirectory()
@@ -56,14 +56,14 @@ class PrepareRulingArtifactTests(unittest.TestCase):
         result, upload_path, workspace = self.run_preparer(("its/ruling/target/actual",))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(upload_path, workspace / "its/ruling/target/actual")
-        self.assertEqual((upload_path / "project/xml-S123.json").read_text(), '{"rule": [1]}')
+        self.assertEqual((upload_path / "project/xml-S123.sarif").read_text(), '{"rule": [1]}')
         self.assertFalse((upload_path / "expected").exists())
 
     def test_uploads_private_ruling_results(self) -> None:
         result, upload_path, workspace = self.run_preparer(("private/its/ruling/target/actual",))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(upload_path, workspace / "private/its/ruling/target/actual")
-        self.assertTrue((upload_path / "project/xml-S123.json").exists())
+        self.assertTrue((upload_path / "project/xml-S123.sarif").exists())
 
     def test_uploads_python_enterprise_ruling_results(self) -> None:
         for build_directory in ("target", "build"):
@@ -72,7 +72,7 @@ class PrepareRulingArtifactTests(unittest.TestCase):
                 result, upload_path, workspace = self.run_preparer((root,))
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(upload_path, workspace / root)
-                self.assertEqual((upload_path / "project/xml-S123.json").read_text(), '{"rule": [1]}')
+                self.assertEqual((upload_path / "project/xml-S123.sarif").read_text(), '{"rule": [1]}')
 
     def test_rejects_enterprise_results_alongside_other_layouts(self) -> None:
         result, _, _ = self.run_preparer((
@@ -110,19 +110,6 @@ class PrepareRulingArtifactTests(unittest.TestCase):
                     '{"rule": [1]}',
                 )
 
-    def test_uploads_mixed_json_and_sarif_results(self) -> None:
-        filenames = ("xml-S123.json", "nested/report.sarif", "support.txt")
-        result, upload_path, _ = self.run_preparer(
-            ("its/ruling/target/actual",), result_files=filenames
-        )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        for filename in filenames:
-            with self.subTest(filename=filename):
-                self.assertEqual(
-                    (upload_path / "project" / filename).read_text(),
-                    '{"rule": [1]}',
-                )
-
     def test_rejects_missing_and_ambiguous_layouts(self) -> None:
         missing, _, _ = self.run_preparer(())
         ambiguous, _, _ = self.run_preparer(
@@ -148,18 +135,18 @@ class PrepareRulingArtifactTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("No generated ruling directory", result.stderr)
 
-    def test_rejects_directory_without_json_or_sarif(self) -> None:
-        for filenames in ((), ("report.txt",), ("report.json/note.txt", "report.sarif/note.txt")):
+    def test_rejects_directory_without_sarif(self) -> None:
+        for filenames in ((), ("report.txt",), ("report.sarif/note.txt",)):
             with self.subTest(filenames=filenames):
                 result, upload_path, _ = self.run_preparer(
                     ("its/ruling/target/actual",), result_files=filenames
                 )
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIsNone(upload_path)
-                self.assertIn("No generated ruling JSON or SARIF files", result.stderr)
+                self.assertIn("No generated ruling SARIF files", result.stderr)
 
     def test_rejects_symlink_only_results(self) -> None:
-        for filename in ("xml-S123.json", "report.sarif"):
+        for filename in ("xml-S123.sarif",):
             with self.subTest(filename=filename):
                 result, upload_path, _ = self.run_preparer(
                     ("its/ruling/target/actual",),
@@ -168,7 +155,7 @@ class PrepareRulingArtifactTests(unittest.TestCase):
                 )
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIsNone(upload_path)
-                self.assertIn("No generated ruling JSON or SARIF files", result.stderr)
+                self.assertIn("No generated ruling SARIF files", result.stderr)
 
     def test_rejects_ambiguous_maven_and_gradle_results(self) -> None:
         result, _, _ = self.run_preparer(

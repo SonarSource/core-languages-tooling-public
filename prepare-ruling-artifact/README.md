@@ -13,19 +13,13 @@ The action selects exactly one generated-result directory:
 
 It fails if none or several of these directories exist, and the error lists
 the checked directories. It also fails if the selected directory contains no
-regular (non-symlink) `.json` or `.sarif` file. JSON and SARIF results may be
-mixed in the same directory.
+regular (non-symlink) `.sarif` file.
 
 The selected directory is uploaded directly, without copying or converting
-files: a generated `actual/project/report.json` is stored as
-`project/report.json` in the artifact, and `ruling-update-and-notify` copies it
-to `expected/project/report.json`. Python 3 must be available as `python3` or
+files: a generated `actual/project/report.sarif` is stored as
+`project/report.sarif` in the artifact, and `ruling-update-and-notify` copies it
+to `expected/project/report.sarif`. Python 3 must be available as `python3` or
 `python` on the runner.
-
-> **Artifact format change:** earlier versions wrapped the results in an
-> `expected/` directory. `ruling-update-and-notify` rejects artifacts using that
-> wrapper, so update both actions together, as well as any workflow step that
-> uploads `actual_*` artifacts manually.
 
 ## Why a Separate Action?
 

@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 
-RESULT_SUFFIXES = (".json", ".sarif")
+RESULT_SUFFIX = ".sarif"
 ACTUAL_ROOTS = (
     Path("its/ruling/target/actual"),
     Path("private/its/ruling/target/actual"),
@@ -33,7 +33,7 @@ def select_actual_root() -> Path:
 
 def has_result_files(root: Path) -> bool:
     return any(
-        path.suffix in RESULT_SUFFIXES and path.is_file() and not path.is_symlink()
+        path.suffix == RESULT_SUFFIX and path.is_file() and not path.is_symlink()
         for path in root.rglob("*")
     )
 
@@ -46,10 +46,10 @@ def main() -> int:
 
     actual_root = select_actual_root()
     if not has_result_files(actual_root):
-        raise ValueError(f"No generated ruling JSON or SARIF files found in {actual_root}")
+        raise ValueError(f"No generated ruling SARIF files found in {actual_root}")
 
-    # The directory is uploaded as is: actual/project/report.json is stored
-    # as project/report.json in the artifact.
+    # The directory is uploaded as is: actual/project/report.sarif is stored
+    # as project/report.sarif in the artifact.
     with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
         output.write(f"path={actual_root}\n")
     return 0
