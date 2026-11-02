@@ -10,6 +10,7 @@ MODULE_DIR = pathlib.Path(__file__).parent
 if str(MODULE_DIR) not in sys.path:
     sys.path.insert(0, str(MODULE_DIR))
 
+import ruling_diff as cli
 import ruling_diff_core as core
 import ruling_diff_io as io
 from ruling_diff_core_lib.models_and_constants import SarifReport
@@ -20,6 +21,25 @@ IssueLocation = core.IssueLocation
 IssueDiff = core.IssueDiff
 RuleDiff = core.RuleDiff
 Snippet = core.Snippet
+
+
+class RulingDiffCLITest(unittest.TestCase):
+    def test_sources_root_defaults_to_its_sources(self) -> None:
+        with patch.object(sys, "argv", [
+            "ruling_diff.py", "--pr-number", "123", "--repository", "owner/repo",
+            "--base-sha", "base", "--head-sha", "head",
+        ]):
+            self.assertEqual(cli.parse_args().sources_root, "its/sources")
+
+    def test_sources_root_can_be_overridden(self) -> None:
+        with patch.object(sys, "argv", [
+            "ruling_diff.py", "--pr-number", "123", "--repository", "owner/repo",
+            "--base-sha", "base", "--head-sha", "head",
+            "--sources-root", "private/its-enterprise/sources_ruling",
+        ]):
+            self.assertEqual(
+                cli.parse_args().sources_root, "private/its-enterprise/sources_ruling"
+            )
 
 
 class FakeRulingDiffIO:
@@ -506,7 +526,7 @@ class GitHubActionIOTest(unittest.TestCase):
         io_impl = io.GitHubActionIO()
         self.assertEqual(
             io_impl.resolve_source_path("project", "biopython/Bio/Nexus/Nexus.py"),
-            "private/its-enterprise/sources_ruling/biopython/Bio/Nexus/Nexus.py",
+            "its/sources/biopython/Bio/Nexus/Nexus.py",
         )
 
     def test_resolve_source_path_for_project_rulings_falls_back_to_sources_internal(self) -> None:
@@ -575,6 +595,13 @@ class GitHubActionIOTest(unittest.TestCase):
                 io_impl = io.GitHubActionIO(sources_root=sources_ruling)
                 self.assertEqual(io_impl.resolve_source_path("project", "missing.py"), primary)
 
+    def test_resolve_source_path_uses_explicit_sources_root(self) -> None:
+        io_impl = io.GitHubActionIO(sources_root="private/its-enterprise/sources_ruling")
+        self.assertEqual(
+            io_impl.resolve_source_path("custom-project", "pkg/file.py"),
+            "private/its-enterprise/sources_ruling/custom-project/pkg/file.py",
+        )
+
     def test_resolve_source_path_uses_project_overrides(self) -> None:
         io_impl = io.GitHubActionIO()
         self.assertEqual(
@@ -586,7 +613,7 @@ class GitHubActionIOTest(unittest.TestCase):
         io_impl = io.GitHubActionIO()
         self.assertEqual(
             io_impl.resolve_source_path("custom-project", "/pkg/file.py"),
-            "private/its-enterprise/sources_ruling/custom-project/pkg/file.py",
+            "its/sources/custom-project/pkg/file.py",
         )
 
 

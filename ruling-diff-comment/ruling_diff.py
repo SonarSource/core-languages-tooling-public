@@ -32,7 +32,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--sources-root",
-        default="private/its-enterprise/sources_ruling",
+        default="its/sources",
         help="Path to sources directory"
     )
     args = parser.parse_args()
