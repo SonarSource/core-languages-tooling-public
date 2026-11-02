@@ -66,6 +66,11 @@ def validate_download(artifact_directory: Path, download_outcome: str) -> list[P
         raise RuntimeError("No artifacts were downloaded (directory does not exist)")
     if not any(artifact_directory.iterdir()):
         raise RuntimeError("Artifact directory is empty; no 'actual_*' artifacts found")
+    if (artifact_directory / "expected").is_dir():
+        raise RuntimeError(
+            "Artifacts use the obsolete 'expected/' wrapper; upload the generated "
+            "actual directory with the matching prepare-ruling-artifact version"
+        )
     result_files = find_result_files(artifact_directory)
     if not result_files:
         raise RuntimeError("Downloaded artifacts contain no regular SARIF result files")
