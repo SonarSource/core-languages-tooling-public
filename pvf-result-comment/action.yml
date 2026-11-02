@@ -43,25 +43,20 @@ runs:
     - name: Find projects failures
       id: find-failures
       shell: bash
-      env:
-        REPORTS_DIR: ${{ runner.temp }}/pvf-result-comment
       run: |
         set -euo pipefail
         projects=''
-        # Find the projects whose result is different than 0 (normal), 3 (runtime regression) or 4 (runtime improvement)
         # We only want to report on possible scanner errors in the pvf. Performance regressions are not accurate for issue validation.
         # analysis error codes: 1 (unexpected failure), 2 (bad invocation of python/jmh), 5 (scanner error)
         # acceptable: 0 (normal), 3 (runtime regression), 4 (runtime improvement)
         
-        if [ -d "$REPORTS_DIR" ]; then
-          projects="$(find "$REPORTS_DIR" -type f -name '*.json' -exec jq -r '
-            .metadata
-            | select((.result | tostring) as $result | ["0", "3", "4"] | index($result) | not)
-            | "- \(.name)"
-          ' {} + | LC_ALL=C sort -u)"
-        fi
+        projects="$(find "$RUNNER_TEMP/pvf-result-comment" -type f -name '*.json' -exec jq -r '
+          .metadata
+          | select((.result | tostring) as $result | ["0", "3", "4"] | index($result) | not)
+          | "- \(.name)"
+        ' {} + | LC_ALL=C sort -u)"
         
-        printf '%s\n' "$projects" > projects.txt
+        printf '%s\n' "$projects" > "$RUNNER_TEMP/projects.txt"
 
     - name: Post PVF result on PR
       if: ${{ !cancelled() }}
@@ -88,7 +83,7 @@ runs:
         if [ "$FAILED_PROJECTS_STEP_SUCCESS" = "false" ]; then
           body+=$'\n\n'"⚠️ **Project failures could not be retrieved**"
         else
-          failed_projects=$(cat projects.txt)
+          failed_projects=$(cat "$RUNNER_TEMP/projects.txt")
           if [ -n "$failed_projects" ]; then
             body+=$'\n\n'"Projects with unexpected PVF results:"$'\n'"$failed_projects"
           fi
