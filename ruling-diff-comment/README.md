@@ -107,6 +107,12 @@ private/its-enterprise/sources_ruling/{project}/
 
 Override with the `sources-root` input parameter for different analyzers.
 
+Snippets for both added and removed issues use source files from the current
+checkout, not from the base or head revision. Only the ruling report comparison
+is revision-based. Initialize the required source submodules in the calling
+workflow; the action does not fetch source content. Missing files produce a
+placeholder snippet.
+
 ### Source Component Keys
 
 `artifactLocation.uri` values emitted by LITS can include project/module
