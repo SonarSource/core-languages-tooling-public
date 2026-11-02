@@ -3,8 +3,33 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
-RulingJson = dict[str, list[int]]
-OptionalRulingJson = RulingJson | None
+
+@dataclass(frozen=True)
+class IssueLocation:
+    start_line: int = 0
+    # Zero represents an unspecified coordinate (SARIF coordinates start at 1).
+    start_column: int = 0
+    end_line: int = 0
+    end_column: int = 0
+    message: str = ""
+
+    def __post_init__(self) -> None:
+        for name in ("start_line", "start_column", "end_line", "end_column"):
+            if type(getattr(self, name)) is not int:
+                raise TypeError(f"{name} must be an integer")
+
+    def sort_key(self) -> tuple[int, int, int, int, str]:
+        return (
+            self.start_line,
+            self.start_column,
+            self.end_line,
+            self.end_column,
+            self.message,
+        )
+
+
+SarifReport = dict[str, list[IssueLocation]]
+OptionalSarifReport = SarifReport | None
 SourceLines = list[str]
 OptionalSourceLines = SourceLines | None
 SourceCache = dict[tuple[str, str], OptionalSourceLines]
@@ -14,7 +39,7 @@ class RulingDiffIO(Protocol):
     ruling_root: str | None
     sources_root: str
 
-    def load_json_at_ref(self, path: str, ref: str) -> OptionalRulingJson:
+    def load_sarif_at_ref(self, path: str, ref: str) -> OptionalSarifReport:
         ...
 
     def load_text_at_ref(self, path: str, ref: str) -> str | None:
@@ -54,14 +79,14 @@ PROJECT_SOURCE_OVERRIDES = {
 @dataclass(frozen=True)
 class IssueDiff:
     file_path: str
-    added_lines: list[int]
-    removed_lines: list[int]
+    added_locations: list[IssueLocation]
+    removed_locations: list[IssueLocation]
 
 
 @dataclass(frozen=True)
 class Snippet:
     file_path: str
-    line_number: int
+    location: IssueLocation
     change_kind: str
     body: str
 

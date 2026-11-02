@@ -5,10 +5,12 @@ import logging
 import subprocess
 from pathlib import Path
 
+from ruling_diff_core_lib.sarif import parse_sarif_report
 from ruling_diff_core_lib.models_and_constants import (
     COMMENT_MARKER,
     EXPECTED_RULING_ROOTS,
     PROJECT_SOURCE_OVERRIDES,
+    OptionalSarifReport,
 )
 
 RULING_SOURCES_SUBMODULE = "private/its-enterprise/sources_ruling"
@@ -31,8 +33,8 @@ class GitHubActionIO:
         self.ruling_root = ruling_root
         self.sources_root = sources_root
 
-    def load_json_at_ref(self, path: str, ref: str) -> dict[str, list[int]] | None:
-        return load_json_at_ref(path, ref)
+    def load_sarif_at_ref(self, path: str, ref: str) -> OptionalSarifReport:
+        return load_sarif_at_ref(path, ref)
 
     def load_text_at_ref(self, path: str, ref: str) -> str | None:
         return load_text_at_ref(path, ref, self.sources_root)
@@ -149,17 +151,15 @@ def get_changed_ruling_files(
     changed = [
         path
         for path in (line.strip() for line in output.splitlines())
-        if is_ruling_json(path, ruling_root)
+        if is_ruling_report(path, ruling_root)
     ]
     return sorted(set(changed))
 
 
-def is_ruling_json(path: str, ruling_root: str | None = None) -> bool:
+def is_ruling_report(path: str, ruling_root: str | None = None) -> bool:
     ruling_roots = (ruling_root,) if ruling_root is not None else EXPECTED_RULING_ROOTS
-    return (
-        bool(path)
-        and path.endswith(".json")
-        and any(path.startswith(f"{root}/") for root in ruling_roots)
+    return path.endswith(".sarif") and any(
+        path.startswith(f"{root}/") for root in ruling_roots
     )
 
 
@@ -170,7 +170,7 @@ def _is_missing_at_ref(stderr: str) -> bool:
     )
 
 
-def load_json_at_ref(path: str, ref: str) -> dict[str, list[int]] | None:
+def load_sarif_at_ref(path: str, ref: str) -> OptionalSarifReport:
     result = subprocess.run(
         ["git", "show", f"{ref}:{path}"], capture_output=True, text=True
     )
@@ -180,85 +180,7 @@ def load_json_at_ref(path: str, ref: str) -> dict[str, list[int]] | None:
         raise CommandError(
             f"Failed to read file at ref: git show {ref}:{path}\nstdout: {result.stdout}\nstderr: {result.stderr}"
         )
-    return parse_ruling_json(result.stdout, path, ref)
-
-
-def parse_ruling_json(content: str, path: str, ref: str) -> dict[str, list[int]]:
-    try:
-        data = json.loads(content)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"Malformed JSON in {path} at {ref}: {exc}") from exc
-    if not isinstance(data, dict):
-        raise ValueError(f"Ruling file {path} at {ref} must be a JSON object")
-    return normalize_ruling_json(data, path, ref)
-
-
-def normalize_ruling_json(data: dict, path: str, ref: str) -> dict[str, list[int]]:
-    # Check if this is .NET format with "Issues" array
-    if "Issues" in data and isinstance(data["Issues"], list):
-        return normalize_dotnet_ruling_json(data, path, ref)
-
-    # Otherwise, use the standard format (rule -> list of line numbers)
-    normalized: dict[str, list[int]] = {}
-    for key, value in data.items():
-        if not isinstance(key, str):
-            raise ValueError(f"Ruling file {path} at {ref} has non-string key")
-        if not isinstance(value, list) or not all(isinstance(v, int) for v in value):
-            raise ValueError(
-                f"Ruling file {path} at {ref} has non-integer line list for key {key}"
-            )
-        normalized[key] = value
-    return normalized
-
-
-def normalize_dotnet_ruling_json(data: dict, path: str, ref: str) -> dict[str, list[int]]:
-    """
-    Normalize .NET ruling format to standard format.
-
-    .NET format:
-    {
-      "Issues": [
-        {"Id": "S1135", "Location": {"StartLine": 270, ...}, ...},
-        {"Id": "S1135", "Location": {"StartLine": 54, ...}, ...}
-      ]
-    }
-
-    Standard format:
-    {
-      "S1135": [54, 270]
-    }
-    """
-    normalized: dict[str, list[int]] = {}
-    issues = data["Issues"]
-
-    for issue in issues:
-        if not isinstance(issue, dict):
-            raise ValueError(f"Ruling file {path} at {ref} has non-dict issue in Issues array")
-
-        rule_id = issue.get("Id")
-        if not isinstance(rule_id, str):
-            raise ValueError(f"Ruling file {path} at {ref} has issue without string Id field")
-
-        location = issue.get("Location")
-        if not isinstance(location, dict):
-            logging.warning("Ruling file %s at %s has issue without Location field; using line 0", path, ref)
-            start_line = 0
-            
-        else:
-            start_line = location.get("StartLine")
-            if not isinstance(start_line, int):
-                logging.warning("Ruling file %s at %s has issue with non-integer StartLine; using line 0", path, ref)
-                start_line = 0
-
-        if rule_id not in normalized:
-            normalized[rule_id] = []
-        normalized[rule_id].append(start_line)
-
-    # Sort line numbers for each rule for consistency
-    for rule_id in normalized:
-        normalized[rule_id].sort()
-
-    return normalized
+    return parse_sarif_report(result.stdout, path, ref)
 
 
 def load_text_at_ref(path: str, ref: str, sources_root: str = RULING_SOURCES_SUBMODULE) -> str | None:

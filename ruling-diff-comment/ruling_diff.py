@@ -58,10 +58,10 @@ def main() -> None:
         args.base_sha, args.head_sha, args.ruling_root
     )
     if not changed_files:
-        logging.info("No changed ruling json files found. Nothing to do.")
+        logging.info("No changed ruling report files found. Nothing to do.")
         return
 
-    logging.info("Found %d changed ruling json files", len(changed_files))
+    logging.info("Found %d changed ruling report files", len(changed_files))
     io = GitHubActionIO(args.ruling_root, args.sources_root)
     rule_diffs = build_rule_diffs(
         changed_files,

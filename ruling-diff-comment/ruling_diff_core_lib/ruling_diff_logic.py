@@ -1,16 +1,16 @@
 from __future__ import annotations
 
 import logging
-from collections import Counter
 from pathlib import PurePosixPath
 
 from ruling_diff_core_lib.models_and_constants import (
     EXPECTED_RULING_ROOTS,
     IssueDiff,
-    OptionalRulingJson,
+    IssueLocation,
+    OptionalSarifReport,
     RulingDiffIO,
     RuleDiff,
-    RulingJson,
+    SarifReport,
     SourceCache,
     Snippet,
 )
@@ -34,17 +34,17 @@ def parse_ruling_relative_path(relative_path: str) -> tuple[str, str]:
     parts = PurePosixPath(relative_path).parts
     if len(parts) != 2:
         raise ValueError(
-            f"Expected '<project>/<repo>-<rule>.json' path, got: {relative_path}"
+            f"Expected '<project>/<repo>-<rule>.sarif' path, got: {relative_path}"
         )
     return parts[0], parts[1]
 
 
 def parse_rule_filename(filename: str) -> tuple[str, str]:
-    if not filename.endswith(".json"):
-        raise ValueError(f"Expected json filename, got: {filename}")
-    basename = filename[:-5]
+    if not filename.endswith(".sarif"):
+        raise ValueError(f"Expected a .sarif report filename, got: {filename}")
+    basename = filename.removesuffix(".sarif")
     if "-" not in basename:
-        raise ValueError(f"Expected '<repo>-<ruleKey>.json', got: {filename}")
+        raise ValueError(f"Expected '<repo>-<ruleKey>.sarif', got: {filename}")
     repository, rule_key = basename.rsplit("-", 1)
     if not repository:
         raise ValueError(f"Missing repo in filename: {filename}")
@@ -55,7 +55,7 @@ def parse_rule_filename(filename: str) -> tuple[str, str]:
 
 def strip_project_key(key: str) -> str:
     """
-    Extract file path from ruling JSON key.
+    Extract a source path from a SARIF artifact URI containing a component key.
 
     Handles different formats:
     - Python: "airflow:airflow/cli/cli_parser.py" -> "airflow/cli/cli_parser.py"
@@ -84,8 +84,8 @@ def strip_project_key(key: str) -> str:
         return key
 
 
-def diff_ruling_jsons(
-    old: OptionalRulingJson, new: OptionalRulingJson
+def diff_sarif_reports(
+    old: OptionalSarifReport, new: OptionalSarifReport
 ) -> list[IssueDiff]:
     old_map = old or {}
     new_map = new or {}
@@ -100,26 +100,19 @@ def diff_ruling_jsons(
 
 
 def diff_single_file_key(
-    key: str, old_map: RulingJson, new_map: RulingJson
+    key: str, old_map: SarifReport, new_map: SarifReport
 ) -> IssueDiff | None:
-    old_counter = Counter(old_map.get(key, []))
-    new_counter = Counter(new_map.get(key, []))
-    added_lines: list[int] = expand_line_counter(new_counter - old_counter)
-    removed_lines: list[int] = expand_line_counter(old_counter - new_counter)
-    if not added_lines and not removed_lines:
+    old_locations = set(old_map.get(key, []))
+    new_locations = set(new_map.get(key, []))
+    added = sorted(new_locations - old_locations, key=IssueLocation.sort_key)
+    removed = sorted(old_locations - new_locations, key=IssueLocation.sort_key)
+    if not added and not removed:
         return None
     return IssueDiff(
         file_path=strip_project_key(key),
-        added_lines=added_lines,
-        removed_lines=removed_lines,
+        added_locations=added,
+        removed_locations=removed,
     )
-
-
-def expand_line_counter(counter: Counter[int]) -> list[int]:
-    line_numbers: list[int] = []
-    for line_number in sorted(counter):
-        line_numbers.extend([line_number] * counter[line_number])
-    return line_numbers
 
 
 def build_rule_diffs(
@@ -157,9 +150,9 @@ def build_rule_diff_for_file(
     except ValueError as exc:
         logging.warning("Skipping unrecognized ruling path %s: %s", path, exc)
         return None
-    old_json: OptionalRulingJson = io.load_json_at_ref(path, base_sha)
-    new_json: OptionalRulingJson = io.load_json_at_ref(path, head_sha)
-    file_diffs: list[IssueDiff] = diff_ruling_jsons(old_json, new_json)
+    old_report: OptionalSarifReport = io.load_sarif_at_ref(path, base_sha)
+    new_report: OptionalSarifReport = io.load_sarif_at_ref(path, head_sha)
+    file_diffs: list[IssueDiff] = diff_sarif_reports(old_report, new_report)
     if not file_diffs:
         return None
     snippets: list[Snippet] = build_snippets_for_rule(
@@ -176,6 +169,6 @@ def build_rule_diff_for_file(
         rule_key=rule_key,
         file_diffs=file_diffs,
         snippets=snippets,
-        is_new_file=old_json is None,
-        is_deleted_file=new_json is None,
+        is_new_file=old_report is None,
+        is_deleted_file=new_report is None,
     )

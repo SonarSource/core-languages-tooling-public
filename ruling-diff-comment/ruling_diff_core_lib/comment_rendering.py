@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from html import escape
 from pathlib import PurePosixPath
 
 from ruling_diff_core_lib.models_and_constants import (
@@ -27,9 +28,9 @@ def format_comment(
 
 
 def format_comment_header(rule_diffs: list[RuleDiff]) -> str:
-    added = sum(len(diff.added_lines) for rule in rule_diffs for diff in rule.file_diffs)
+    added = sum(len(diff.added_locations) for rule in rule_diffs for diff in rule.file_diffs)
     removed = sum(
-        len(diff.removed_lines) for rule in rule_diffs for diff in rule.file_diffs
+        len(diff.removed_locations) for rule in rule_diffs for diff in rule.file_diffs
     )
     return "\n".join(
         [
@@ -83,8 +84,8 @@ def format_rule_section(rule_diff: RuleDiff) -> str:
 
 
 def format_rule_summary(rule_diff: RuleDiff) -> str:
-    removed = sum(len(diff.removed_lines) for diff in rule_diff.file_diffs)
-    added = sum(len(diff.added_lines) for diff in rule_diff.file_diffs)
+    removed = sum(len(diff.removed_locations) for diff in rule_diff.file_diffs)
+    added = sum(len(diff.added_locations) for diff in rule_diff.file_diffs)
     summary_parts = [
         f"<b>{rule_diff.rule_key}</b> (<code>{rule_diff.repo}</code>) on <b>{rule_diff.project}</b>",
         f"{removed} issues removed, {added} issues added",
@@ -120,10 +121,23 @@ def _fence_language(file_path: str) -> str:
 
 def format_snippet_block(snippet: Snippet) -> str:
     lang = _fence_language(snippet.file_path)
-    return "\n".join([format_snippet_header(snippet), f"```{lang}", snippet.body, "```"])
+    lines = [format_snippet_header(snippet)]
+    if snippet.location.message:
+        lines.append(f"<pre>{escape(snippet.location.message)}</pre>")
+    return "\n".join([*lines, f"```{lang}", snippet.body, "```"])
 
 
 def format_snippet_header(snippet: Snippet) -> str:
+    region = snippet.location
+    for name in ("start_line", "start_column", "end_line", "end_column"):
+        if getattr(region, name) < 0:
+            raise ValueError(f"{name} must be non-negative for {snippet.file_path}")
     label = "Added" if snippet.change_kind == "added" else "Removed"
-    location = "file-level" if snippet.line_number == 0 else f"line {snippet.line_number}"
+    location = "file-level" if snippet.location.start_line == 0 else f"line {snippet.location.start_line}"
+    if region.start_column != 0:
+        location += f", column {region.start_column}"
+    if region.end_line not in (0, region.start_line):
+        location += f" to line {region.end_line}"
+    if region.end_column != 0:
+        location += f", end column {region.end_column}"
     return f"**{label}** `{snippet.file_path}` ({location})"
