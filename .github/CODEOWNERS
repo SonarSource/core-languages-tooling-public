@@ -1,1 +1,12 @@
 .github/CODEOWNERS @SonarSource/code-quality-core-languages-parsers-squad
+
+# Composite actions reused by other repositories, including the scripts they invoke
+/common-actions/ @SonarSource/code-quality-core-languages-parsers-squad
+/dotnet_pipeline/ @SonarSource/code-quality-core-languages-parsers-squad
+/prepare-pvf/ @SonarSource/code-quality-core-languages-parsers-squad
+/prepare-ruling-artifact/ @SonarSource/code-quality-core-languages-parsers-squad
+/pvf-comment/ @SonarSource/code-quality-core-languages-parsers-squad
+/pvf-result-comment/ @SonarSource/code-quality-core-languages-parsers-squad
+/pvf-trigger/ @SonarSource/code-quality-core-languages-parsers-squad
+/ruling-diff-comment/ @SonarSource/code-quality-core-languages-parsers-squad
+/ruling-update-and-notify/ @SonarSource/code-quality-core-languages-parsers-squad
