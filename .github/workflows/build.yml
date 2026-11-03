@@ -40,7 +40,7 @@ jobs:
       - name: Run ruling-update-and-notify unit tests
         run: |
           cd ruling-update-and-notify
-          python3 -m unittest discover -v -s . -p "test_ruling_update_scripts.py"
+          python3 -m unittest discover -v -s . -p "test_*.py"
 
       - name: Run prepare-ruling-artifact unit tests
         run: |
@@ -65,4 +65,3 @@ jobs:
           branch-patterns: ${{ format('{0},branch-*,dogfood-*', github.event.repository.default_branch) }}
           github-token: ${{ github.token }}
           branch: ${{ github.ref_name }}
-
