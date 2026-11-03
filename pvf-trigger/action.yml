@@ -44,6 +44,10 @@ inputs:
     description: 'Forwarded as the use-fast-run input of the host workflow (true/false). Empty omits it, so the host workflow default applies. The host workflow must declare the input.'
     required: false
     default: ''
+  required-permission:
+    description: 'Permission the commenter needs on this repository to dispatch: read, write or admin. A caller gate on author_association also lets read-only organization members through. Empty skips the check.'
+    required: false
+    default: ''
 
 runs:
   using: 'composite'
@@ -71,6 +75,8 @@ runs:
         TARGET_WORKFLOW: ${{ inputs.target-workflow }}
         BASELINE_VERSION: ${{ inputs.baseline-version }}
         USE_FAST_RUN: ${{ inputs.use-fast-run }}
+        REQUIRED_PERMISSION: ${{ inputs.required-permission }}
+        COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
       run: |
         set -euo pipefail
         fail() {
@@ -81,6 +87,26 @@ runs:
           exit 1
         }
         trap 'fail "unexpected error on line ${LINENO}"' ERR
+
+        if [ -n "$REQUIRED_PERMISSION" ]; then
+          rank() {
+            case "$1" in
+              admin) echo 3 ;;
+              write) echo 2 ;;
+              read) echo 1 ;;
+              *) echo 0 ;;
+            esac
+          }
+          [ "$(rank "$REQUIRED_PERMISSION")" -gt 0 ] \
+            || fail "required-permission must be read, write or admin, got ${REQUIRED_PERMISSION}"
+          # On an HTTP error gh prints the error body instead of the filtered value, so discard it.
+          if ! permission="$(gh api "repos/${GITHUB_REPOSITORY}/collaborators/${COMMENT_AUTHOR}/permission" --jq '.permission' 2>/dev/null)"; then
+            permission=none
+          fi
+          [ "$(rank "$permission")" -ge "$(rank "$REQUIRED_PERMISSION")" ] \
+            || fail "/pvf needs ${REQUIRED_PERMISSION} access to ${GITHUB_REPOSITORY}, ${COMMENT_AUTHOR} has ${permission} access"
+        fi
+
         pull="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")"
         head_ref="$(jq -r .head.ref <<<"$pull")"
         head_sha="$(jq -r .head.sha <<<"$pull")"

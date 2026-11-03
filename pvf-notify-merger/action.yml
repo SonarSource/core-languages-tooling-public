@@ -1,0 +1,69 @@
+name: 'PVF Notify Merger'
+description: 'When the PVF run of a push to the default branch found problems, comments on the PR merged by that push, mentions whoever merged it and links the compared commit range. Works same-repo or cross-repo (analyzer PR).'
+
+inputs:
+  merged-sha:
+    description: 'Commit of the push; the PR that merged it is the one commented on'
+    required: true
+  previous-sha:
+    description: 'Commit before the push. When the baseline was built from another commit, the comment says the comparison covers several merges.'
+    required: false
+    default: ''
+  baseline-version:
+    description: 'Plugin version used as the baseline'
+    required: true
+  baseline-sha:
+    description: 'Commit the baseline was built from (pvf-resolve-baseline baseline-sha). Empty omits the compared range.'
+    required: false
+    default: ''
+  candidate-version:
+    description: 'Plugin version that was validated'
+    required: true
+  regressed-projects:
+    description: 'Projects with a performance regression. Empty omits the line.'
+    required: false
+    default: ''
+  errored-projects:
+    description: 'Projects that failed to benchmark. Empty omits the line.'
+    required: false
+    default: ''
+  failed-jobs:
+    description: 'Jobs of the validation that failed. Empty omits the line.'
+    required: false
+    default: ''
+  dashboard-url:
+    description: 'Published dashboard URL (the validate job pages-url). Empty omits the link.'
+    required: false
+    default: ''
+  run-url:
+    description: 'URL to the workflow run logs. Defaults to this run.'
+    required: false
+    default: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+  repository:
+    description: 'owner/name of the repo of the merged PR. Defaults to the current repo (same-repo). Set to the analyzer repo for cross-repo dashboards.'
+    required: false
+    default: ${{ github.repository }}
+  token:
+    description: 'Token with pull-requests:write on `repository`. Defaults to github.token (same-repo only). For cross-repo, pass a token that can comment on the analyzer repo (e.g. from Vault).'
+    required: false
+    default: ${{ github.token }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Comment on the merged PR
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token || github.token }}
+        REPO: ${{ inputs.repository || github.repository }}
+        MERGED_SHA: ${{ inputs.merged-sha }}
+        PREVIOUS_SHA: ${{ inputs.previous-sha }}
+        BASELINE: ${{ inputs.baseline-version }}
+        BASELINE_SHA: ${{ inputs.baseline-sha }}
+        CANDIDATE: ${{ inputs.candidate-version }}
+        REGRESSED: ${{ inputs.regressed-projects }}
+        ERRORED: ${{ inputs.errored-projects }}
+        FAILED_JOBS: ${{ inputs.failed-jobs }}
+        DASHBOARD_URL: ${{ inputs.dashboard-url }}
+        RUN_URL: ${{ inputs.run-url }}
+      run: bash "${{ github.action_path }}/notify-merger.sh"

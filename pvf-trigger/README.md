@@ -13,7 +13,9 @@ it invokes the host workflow (`performance-validation.yml` by default) in the ta
 
 ## Feedback on the comment
 
-On a successful dispatch the triggering comment is reacted to with 👀.
+On a successful dispatch the triggering comment is reacted to with 👀. Otherwise the action replies on
+the PR with the reason, e.g. a missing `candidate-version` artifact or, with `required-permission`
+set, a commenter without enough access.
 
 ## Two modes
 
@@ -39,6 +41,7 @@ On a successful dispatch the triggering comment is reacted to with 👀.
 | `target-workflow` | Filename of the host workflow to dispatch in `target-repo`. Lets one host repo serve several analyzers via per-analyzer host workflows (e.g. `performance-validation-html.yml`). | No | `performance-validation.yml` |
 | `baseline-version` | Forwarded as `-f baseline-version=<value>`, e.g. `DEV`. Only passed when set, so the host workflow default applies otherwise; the host workflow must declare the input. | No | `''` |
 | `use-fast-run` | Forwarded as `-f use-fast-run=<value>` (`true`/`false`). Only passed when set; the host workflow must declare the input. | No | `''` |
+| `required-permission` | Permission the commenter needs on the caller repo to dispatch: `read`, `write` or `admin`. Checked through the GitHub API, as an `author_association` gate in the caller also lets read-only organization members through. Empty ⇒ no check. | No | `''` |
 
 On cross-repo dispatch the action additionally passes `-f analyzer-repo=<caller repo>` so the host
 can post the dashboard link back onto the analyzer PR.
