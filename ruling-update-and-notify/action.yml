@@ -1,91 +1,42 @@
 name: 'Ruling Update and Notify'
-description: 'Consumes ruling artifacts from test jobs, updates expectations, and notifies via PR comments'
+description: 'Commits ruling artifact updates directly to the triggering PR branch and posts a diff comment'
 author: 'SonarSource'
 
 inputs:
   ruling-failed:
     description: 'Whether the ruling test failed (true/false)'
     required: true
-  update-mode:
-    description: 'How to publish updates: pull-request (default) or commit directly to the triggering PR branch'
-    required: false
-    default: 'pull-request'
 
 outputs:
   has-differences:
-    description: 'Whether there are ruling differences (true/false)'
-    value: ${{ steps.check-diff.outputs.has-differences }}
-  fix-pr-url:
-    description: 'URL of the fix PR if created'
-    value: ${{ steps.create-fix-pr.outputs.fix-pr-url }}
+    description: 'Whether a ruling update was committed (true/false)'
+    value: ${{ steps.commit-ruling-update.outputs.update-sha != '' }}
   update-sha:
-    description: 'SHA of the ruling commit pushed directly to the PR branch, empty when none was pushed'
+    description: 'SHA of the ruling commit pushed to the PR branch, empty when none was pushed'
     value: ${{ steps.commit-ruling-update.outputs.update-sha }}
 
 runs:
   using: 'composite'
   steps:
-    - name: Install uv
-      if: inputs.ruling-failed == 'true'
-      uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-      with:
-        enable-cache: true
-
-    - name: Find ruling directory
-      id: ruling-paths
-      if: inputs.ruling-failed == 'true'
-      shell: bash
-      run: python3 "${{ github.action_path }}/find_ruling_directory.py"
-
-    - name: Setup environment variables
-      id: setup-env
+    - name: Validate inputs and PR context
       shell: bash
       env:
         RULING_FAILED: ${{ inputs.ruling-failed }}
-        UPDATE_MODE: ${{ inputs.update-mode }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
         PR_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
-        GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
-        GITHUB_HEAD_REF: ${{ github.head_ref }}
-        GITHUB_REF_NAME: ${{ github.ref_name }}
       run: |
         if [[ "$RULING_FAILED" != true && "$RULING_FAILED" != false ]]; then
           echo "::error::ruling-failed must be true or false"
           exit 1
         fi
-
-        if [[ "$UPDATE_MODE" != pull-request && "$UPDATE_MODE" != commit ]]; then
-          echo "::error::update-mode must be pull-request or commit"
+        if [[ -z "$PR_NUMBER" ]]; then
+          echo "::error::This action requires a pull request event"
           exit 1
         fi
-
-        if [ -n "$GITHUB_PR_NUMBER" ]; then
-          IS_PR=true
-          PR_NUMBER="$GITHUB_PR_NUMBER"
-        else
-          IS_PR=false
-          PR_NUMBER=""
-        fi
-
-        if [[ "$UPDATE_MODE" == commit ]]; then
-          if [[ "$IS_PR" != true ]]; then
-            echo "::error::update-mode=commit requires a pull request event"
-            exit 1
-          fi
-          if [[ "$PR_HEAD_REPOSITORY" != "$GITHUB_REPOSITORY" ]]; then
-            echo "::error::update-mode=commit only supports same-repository pull requests"
-            exit 1
-          fi
-        fi
-
-        TARGET_REF="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
-        if ! [[ "$TARGET_REF" =~ ^[a-zA-Z0-9][a-zA-Z0-9/_.-]*$ ]]; then
-          echo "::error::Invalid target ref: $TARGET_REF"
+        if [[ "$PR_HEAD_REPOSITORY" != "$GITHUB_REPOSITORY" ]]; then
+          echo "::error::This action only supports same-repository pull requests"
           exit 1
         fi
-
-        echo "is-pr=$IS_PR" >> "$GITHUB_OUTPUT"
-        echo "pr-number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
-        echo "target-ref=$TARGET_REF" >> "$GITHUB_OUTPUT"
 
     - name: Check for auto-update loop
       if: inputs.ruling-failed == 'true'
@@ -98,6 +49,18 @@ runs:
         else
           echo "skip-update=false" >> "$GITHUB_ENV"
         fi
+
+    - name: Install uv
+      if: inputs.ruling-failed == 'true' && env.skip-update == 'false'
+      uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      with:
+        enable-cache: true
+
+    - name: Find ruling directory
+      id: ruling-paths
+      if: inputs.ruling-failed == 'true' && env.skip-update == 'false'
+      shell: bash
+      run: python3 "${{ github.action_path }}/find_ruling_directory.py"
 
     - name: Download ruling artifacts
       id: download-artifacts
@@ -123,76 +86,24 @@ runs:
         DOWNLOAD_OUTCOME: ${{ steps.download-artifacts.outcome }}
       run: python3 "${{ github.action_path }}/sync_ruling_artifacts.py"
 
-    - name: Check for differences
-      id: check-diff
-      shell: bash
-      env:
-        RULING_ROOT: ${{ steps.ruling-paths.outputs.ruling-root }}
-        RULING_FAILED: ${{ inputs.ruling-failed }}
-      run: |
-        if [ "$RULING_FAILED" != true ]; then
-          echo "has-differences=false" >> "$GITHUB_OUTPUT"
-          exit 0
-        fi
-
-        # Check if there are uncommitted changes in the ruling directory
-        # produced by artifact sync.
-        if [ -n "$(git status --porcelain -- "$RULING_ROOT/")" ]; then
-          echo "has-differences=true" >> "$GITHUB_OUTPUT"
-        else
-          echo "has-differences=false" >> "$GITHUB_OUTPUT"
-        fi
-
     - name: Commit ruling update
       id: commit-ruling-update
-      if: |
-        inputs.update-mode == 'commit' &&
-        inputs.ruling-failed == 'true' &&
-        env.skip-update == 'false' &&
-        steps.check-diff.outputs.has-differences == 'true'
+      if: inputs.ruling-failed == 'true' && env.skip-update == 'false'
       shell: bash
       env:
-        TARGET_REF: ${{ steps.setup-env.outputs.target-ref }}
+        TARGET_REF: ${{ github.event.pull_request.head.ref }}
         PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         RULING_ROOT: ${{ steps.ruling-paths.outputs.ruling-root }}
       run: python3 "${{ github.action_path }}/commit_ruling_update.py"
 
-    - name: Create fix PR
-      id: create-fix-pr
-      if: |
-        inputs.update-mode == 'pull-request' &&
-        inputs.ruling-failed == 'true' &&
-        env.skip-update == 'false' &&
-        steps.check-diff.outputs.has-differences == 'true'
-      shell: bash
-      env:
-        GH_TOKEN: ${{ github.token }}
-        TARGET_REF: ${{ steps.setup-env.outputs.target-ref }}
-        PR_NUMBER: ${{ steps.setup-env.outputs.pr-number }}
-        RULING_ROOT: ${{ steps.ruling-paths.outputs.ruling-root }}
-      run: python3 "${{ github.action_path }}/create_fix_pr.py"
-
     - name: Post ruling diff comment
-      if: |
-        steps.setup-env.outputs.is-pr == 'true' &&
-        (steps.create-fix-pr.outputs.fix-pr-url != '' || steps.commit-ruling-update.outputs.update-sha != '')
+      if: steps.commit-ruling-update.outputs.update-sha != ''
       uses: SonarSource/core-languages-tooling-public/ruling-diff-comment@master
       with:
-        pr-number: ${{ steps.setup-env.outputs.pr-number }}
+        pr-number: ${{ github.event.pull_request.number }}
         repository: ${{ github.repository }}
-        base-sha: ${{ steps.commit-ruling-update.outputs.update-base-sha || steps.create-fix-pr.outputs.fix-base-sha }}
-        head-sha: ${{ steps.commit-ruling-update.outputs.update-sha || steps.create-fix-pr.outputs.fix-sha }}
+        base-sha: ${{ steps.commit-ruling-update.outputs.update-base-sha }}
+        head-sha: ${{ steps.commit-ruling-update.outputs.update-sha }}
         sources-root: ${{ steps.ruling-paths.outputs.sources-root }}
       env:
         GH_TOKEN: ${{ github.token }}
-
-    - name: Cleanup stale fix PR
-      if: |
-        inputs.update-mode == 'pull-request' &&
-        env.skip-update != 'true' &&
-        (inputs.ruling-failed != 'true' || steps.check-diff.outputs.has-differences != 'true')
-      shell: bash
-      env:
-        GH_TOKEN: ${{ github.token }}
-        TARGET_REF: ${{ steps.setup-env.outputs.target-ref }}
-      run: python3 "${{ github.action_path }}/cleanup_fix_pr.py"

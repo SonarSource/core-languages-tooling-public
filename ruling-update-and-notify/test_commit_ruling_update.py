@@ -10,7 +10,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import commit_ruling_update
-from create_fix_pr import GENERATED_MARKER
 
 
 class CommitRulingUpdateTests(unittest.TestCase):
@@ -89,9 +88,12 @@ class CommitRulingUpdateTests(unittest.TestCase):
         self.assertEqual(self.git("show", f"{update_sha}:{self.project}/report.json"), "new")
         self.assertEqual(self.git("show", f"{update_sha}:{self.project}/added.json"), "added")
         self.assertNotIn(str(self.project / "deleted.json"), self.git("ls-tree", "-r", "--name-only", update_sha))
-        self.assertIn(GENERATED_MARKER, self.git("show", "-s", "--format=%B", update_sha))
+        self.assertIn(commit_ruling_update.GENERATED_MARKER, self.git("show", "-s", "--format=%B", update_sha))
         self.assertEqual(self.git("show", "-s", "--format=%an", update_sha), "github-actions[bot]")
-        self.assertEqual(self.git("branch", "--list", "fix/*"), "")
+        self.assertEqual(
+            self.git("for-each-ref", "--format=%(refname)", "refs/heads", cwd=self.origin),
+            "refs/heads/feature",
+        )
         self.assertEqual(self.git("worktree", "list", "--porcelain").count("worktree "), 1)
         commands = [call.args for call in run.call_args_list]
         pushes = [command for command in commands if "push" in command]
@@ -184,46 +186,55 @@ class CommitRulingUpdateMainTests(unittest.TestCase):
                 self.assertIn("::error::", errors.getvalue())
 
 
-class UpdateModeValidationTests(unittest.TestCase):
-    def run_setup(self, **overrides: str) -> subprocess.CompletedProcess:
+class ActionValidationTests(unittest.TestCase):
+    def run_validation(self, **overrides: str) -> subprocess.CompletedProcess:
         action = Path(__file__).with_name("action.yml").read_text()
-        step = action.split("    - name: Setup environment variables\n", 1)[1].split("\n    - name:", 1)[0]
+        step = action.split("    - name: Validate inputs and PR context\n", 1)[1].split("\n    - name:", 1)[0]
         script = "\n".join(line[8:] for line in step.split("      run: |\n", 1)[1].splitlines())
-        with tempfile.TemporaryDirectory() as directory:
-            environment = {
-                **os.environ, "UPDATE_MODE": "pull-request", "RULING_FAILED": "true",
-                "GITHUB_PR_NUMBER": "123", "GITHUB_HEAD_REF": "feature", "GITHUB_REF_NAME": "123/merge",
-                "PR_HEAD_REPOSITORY": "owner/repo", "GITHUB_REPOSITORY": "owner/repo",
-                "GITHUB_OUTPUT": str(Path(directory) / "outputs"), **overrides,
-            }
-            return subprocess.run(
-                ("bash", "-e", "-c", script), env=environment, capture_output=True, text=True,
-            )
+        environment = {
+            **os.environ, "RULING_FAILED": "true", "PR_NUMBER": "123",
+            "PR_HEAD_REPOSITORY": "owner/repo", "GITHUB_REPOSITORY": "owner/repo", **overrides,
+        }
+        return subprocess.run(
+            ("bash", "-e", "-c", script), env=environment, capture_output=True, text=True,
+        )
 
-    def test_accepts_both_modes_for_same_repository_prs(self) -> None:
-        for mode in ("pull-request", "commit"):
-            with self.subTest(mode=mode):
-                result = self.run_setup(UPDATE_MODE=mode)
+    def test_accepts_same_repository_prs(self) -> None:
+        for failed in ("true", "false"):
+            with self.subTest(failed=failed):
+                result = self.run_validation(RULING_FAILED=failed)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_rejects_unknown_mode(self) -> None:
-        result = self.run_setup(UPDATE_MODE="typo")
+    def test_rejects_invalid_ruling_failed(self) -> None:
+        result = self.run_validation(RULING_FAILED="typo")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("update-mode must be pull-request or commit", result.stdout)
+        self.assertIn("ruling-failed must be true or false", result.stdout)
 
-    def test_commit_mode_rejects_forks(self) -> None:
-        result = self.run_setup(UPDATE_MODE="commit", PR_HEAD_REPOSITORY="contributor/fork")
+    def test_rejects_forks(self) -> None:
+        result = self.run_validation(PR_HEAD_REPOSITORY="contributor/fork")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("only supports same-repository pull requests", result.stdout)
 
-    def test_commit_mode_requires_a_pr(self) -> None:
-        result = self.run_setup(UPDATE_MODE="commit", GITHUB_PR_NUMBER="")
+    def test_requires_a_pr(self) -> None:
+        result = self.run_validation(PR_NUMBER="")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("requires a pull request event", result.stdout)
 
-    def test_default_mode_still_accepts_pushes(self) -> None:
-        result = self.run_setup(GITHUB_PR_NUMBER="", GITHUB_HEAD_REF="", GITHUB_REF_NAME="master")
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+class GitHelperTests(unittest.TestCase):
+    @patch.object(commit_ruling_update.subprocess, "run")
+    def test_output_does_not_capture_stderr(self, process) -> None:
+        process.return_value.stdout = "result\n"
+        self.assertEqual(commit_ruling_update.output("git", "rev-parse", "HEAD"), "result")
+        self.assertEqual(process.call_args.kwargs, {
+            "check": True, "stdout": subprocess.PIPE, "text": True,
+        })
+
+    @patch.object(commit_ruling_update.subprocess, "run")
+    def test_staged_change_check_rejects_git_errors(self, process) -> None:
+        process.return_value.returncode = 2
+        with self.assertRaisesRegex(RuntimeError, "Could not inspect staged ruling changes"):
+            commit_ruling_update.has_staged_changes(Path("checkout"))
 
 
 if __name__ == "__main__":

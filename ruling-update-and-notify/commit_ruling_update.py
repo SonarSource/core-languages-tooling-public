@@ -1,12 +1,56 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
-from create_fix_pr import GENERATED_MARKER, has_staged_changes, output, run, transfer_ruling_changes
+GENERATED_MARKER = "🤖 Generated with GitHub Actions"
+
+
+def run(*command: str) -> None:
+    subprocess.run(command, check=True)
+
+
+def output(*command: str) -> str:
+    result = subprocess.run(command, check=True, stdout=subprocess.PIPE, text=True)
+    return result.stdout.strip()
+
+
+def has_staged_changes(worktree: Path) -> bool:
+    result = subprocess.run(
+        ("git", "-C", str(worktree), "diff", "--staged", "--quiet"), check=False
+    )
+    if result.returncode not in (0, 1):
+        raise RuntimeError("Could not inspect staged ruling changes")
+    return result.returncode == 1
+
+
+def transfer_ruling_changes(ruling_root: str, worktree: Path) -> None:
+    patch = subprocess.run(
+        ("git", "diff", "--binary", "HEAD", "--", ruling_root),
+        stdout=subprocess.PIPE,
+        check=True,
+    ).stdout
+    if patch:
+        subprocess.run(
+            ("git", "-C", str(worktree), "apply", "--3way", "--index"),
+            input=patch,
+            check=True,
+        )
+
+    untracked = output(
+        "git", "ls-files", "--others", "--exclude-standard", "-z", "--", ruling_root
+    )
+    for relative_path in filter(None, untracked.split("\0")):
+        source = Path(relative_path)
+        destination = worktree / relative_path
+        if destination.exists() or destination.is_symlink():
+            raise RuntimeError(f"Ruling file already exists on target branch: {relative_path}")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination, follow_symlinks=False)
 
 
 def commit_ruling_update(target_ref: str, ruling_root: str, head_sha: str) -> tuple[str, str]:
