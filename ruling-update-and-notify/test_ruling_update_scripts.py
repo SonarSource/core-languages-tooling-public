@@ -81,6 +81,27 @@ class SyncArtifactsTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "Failed to download artifacts"):
                 sync_ruling_artifacts.sync_artifacts(root, root / "missing", "failure")
 
+    def test_merges_isolated_artifacts_in_lexical_order(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            artifacts = root / "artifacts"
+            destination = root / "ruling"
+            # Create Windows first: artifact creation order must not select the report.
+            windows = artifacts / "actual_windows" / "expected" / "project"
+            windows.mkdir(parents=True)
+            linux = artifacts / "actual_linux" / "expected" / "project"
+            linux.mkdir(parents=True)
+            (windows / "report.json").write_text("windows")
+            (linux / "report.json").write_text("linux")
+            (linux / "linux-only.json").write_text("linux-only")
+
+            sync_ruling_artifacts.sync_artifacts(destination, artifacts, "success")
+
+            expected = destination / "expected" / "project"
+            self.assertEqual((expected / "report.json").read_text(), "windows")
+            self.assertEqual((expected / "linux-only.json").read_text(), "linux-only")
+            self.assertFalse(artifacts.exists())
+
 
 class FixPullRequestTests(unittest.TestCase):
     @patch.object(create_fix_pr, "create_fix_pr", return_value=("https://example.test/1", "b" * 40, "a" * 40))

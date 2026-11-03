@@ -82,13 +82,11 @@ runs:
       with:
         pattern: actual_*
         path: ruling-artifacts-temp
-        # merge-multiple must be true: with download-artifact v8, when a single
-        # artifact matches the pattern, merge-multiple: false places the artifact
-        # contents directly in the path directory (not in a named subdirectory).
-        # This broke the sync step which expected actual_* subdirectories.
-        # Using merge-multiple: true gives consistent behavior regardless of
-        # the number of matching artifacts.
-        merge-multiple: true
+        # Keep every artifact in its own directory. Merging during extraction
+        # can concurrently write the same report from different platforms,
+        # resulting in corrupted files when their byte representations differ.
+        # The sync step handles isolated artifacts and the flat single-artifact layout.
+        merge-multiple: false
 
     - name: Sync ruling artifacts
       if: inputs.ruling-failed == 'true' && env.skip-update == 'false'
