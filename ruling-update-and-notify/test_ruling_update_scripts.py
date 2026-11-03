@@ -81,43 +81,6 @@ class SyncArtifactsTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "Failed to download artifacts"):
                 sync_ruling_artifacts.sync_artifacts(root, root / "missing", "failure")
 
-    def test_isolated_artifacts_use_lexical_order_for_duplicates(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            artifacts = root / "artifacts"
-            expected = root / "expected"
-            # Create Windows first to demonstrate that artifact creation order
-            # does not decide which overlapping report is selected.
-            windows = artifacts / "actual_windows" / "project"
-            windows.mkdir(parents=True)
-            linux = artifacts / "actual_linux" / "project"
-            linux.mkdir(parents=True)
-            linux_report = '{\n  "runs": ["linux"]\n}\n'
-            windows_report = '{\r\n  "runs": ["windows", "longer"]\r\n}\r\n'
-            (linux / "report.sarif").write_bytes(linux_report.encode())
-            (windows / "report.sarif").write_bytes(windows_report.encode())
-            (windows / "windows-only.sarif").write_bytes(b'{\r\n  "runs": []\r\n}\r\n')
-
-            expected.mkdir()
-            sync_ruling_artifacts.sync_artifacts(expected, artifacts, "success")
-
-            self.assertEqual((expected / "project/report.sarif").read_bytes(), linux_report.encode())
-            self.assertTrue((expected / "project/windows-only.sarif").exists())
-
-    def test_rejects_obsolete_expected_wrapper(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            artifacts = root / "artifacts"
-            wrapped = artifacts / "actual_windows" / "expected/project/report.sarif"
-            wrapped.parent.mkdir(parents=True)
-            wrapped.write_text("report")
-            expected = root / "expected"
-            expected.mkdir()
-
-            with self.assertRaisesRegex(RuntimeError, "actual_windows.*obsolete expected"):
-                sync_ruling_artifacts.sync_artifacts(expected, artifacts, "success")
-            self.assertFalse((expected / "project/report.sarif").exists())
-
 
 class FixPullRequestTests(unittest.TestCase):
     @patch.object(create_fix_pr, "create_fix_pr", return_value=("https://example.test/1", "b" * 40, "a" * 40))

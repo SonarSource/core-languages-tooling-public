@@ -24,7 +24,7 @@ runs:
       with:
         enable-cache: true
 
-    - name: Find expected ruling directory
+    - name: Find ruling directory
       id: ruling-paths
       if: inputs.ruling-failed == 'true'
       shell: bash
@@ -81,22 +81,18 @@ runs:
       uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
       with:
         pattern: actual_*
-        # Downloaded outside the checkout; only result files are copied into
-        # the selected expected directory by the next step.
-        path: ${{ runner.temp }}/ruling-artifacts
+        path: ruling-artifacts-temp
         # Keep every artifact in its own directory. Merging during extraction
         # can concurrently write the same report from different platforms,
         # resulting in corrupted files when their byte representations differ.
-        # sync_ruling_artifacts.py also supports download-artifact's flat
-        # single-artifact layout.
+        # The sync step handles isolated artifacts and the flat single-artifact layout.
         merge-multiple: false
 
     - name: Sync ruling artifacts
       if: inputs.ruling-failed == 'true' && env.skip-update == 'false'
       shell: bash
       env:
-        EXPECTED_ROOT: ${{ steps.ruling-paths.outputs.expected-root }}
-        ARTIFACT_DIRECTORY: ${{ runner.temp }}/ruling-artifacts
+        RULING_ROOT: ${{ steps.ruling-paths.outputs.ruling-root }}
         DOWNLOAD_OUTCOME: ${{ steps.download-artifacts.outcome }}
       run: python3 "${{ github.action_path }}/sync_ruling_artifacts.py"
 
@@ -104,7 +100,7 @@ runs:
       id: check-diff
       shell: bash
       env:
-        EXPECTED_ROOT: ${{ steps.ruling-paths.outputs.expected-root }}
+        RULING_ROOT: ${{ steps.ruling-paths.outputs.ruling-root }}
         RULING_FAILED: ${{ inputs.ruling-failed }}
       run: |
         if [ "$RULING_FAILED" != true ]; then
@@ -112,9 +108,9 @@ runs:
           exit 0
         fi
 
-        # Only the selected expected directory is considered: changes to
-        # other test resources never enter the fix PR.
-        if [ -n "$(git status --porcelain --untracked-files=all -- "$EXPECTED_ROOT/")" ]; then
+        # Check if there are uncommitted changes in the ruling directory
+        # produced by artifact sync.
+        if [ -n "$(git status --porcelain -- "$RULING_ROOT/")" ]; then
           echo "has-differences=true" >> "$GITHUB_OUTPUT"
         else
           echo "has-differences=false" >> "$GITHUB_OUTPUT"
@@ -131,7 +127,7 @@ runs:
         GH_TOKEN: ${{ github.token }}
         TARGET_REF: ${{ steps.setup-env.outputs.target-ref }}
         PR_NUMBER: ${{ steps.setup-env.outputs.pr-number }}
-        EXPECTED_ROOT: ${{ steps.ruling-paths.outputs.expected-root }}
+        RULING_ROOT: ${{ steps.ruling-paths.outputs.ruling-root }}
       run: python3 "${{ github.action_path }}/create_fix_pr.py"
 
     - name: Post ruling diff comment

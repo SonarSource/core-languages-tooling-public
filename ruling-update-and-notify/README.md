@@ -12,10 +12,6 @@ Automatically updates ruling expected results when tests fail and posts diff com
 
 ## Example Usage
 
-The test jobs run the ruling tests and upload generated results; the update
-job downloads them, updates the expectations, and creates the fix PR. Here two
-parallel jobs test disjoint sets of projects.
-
 ```yaml
 name: Build
 
@@ -26,18 +22,15 @@ on:
 
 jobs:
   ruling:
-    strategy:
-      fail-fast: false
-      matrix:
-        projects: [first-half, second-half]
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    outputs:
+      ruling-failed: ${{ steps.ruling.outcome == 'failure' }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          submodules: true
 
       - name: Set up JDK
         uses: actions/setup-java@v4
@@ -47,22 +40,17 @@ jobs:
 
       - name: Run ruling tests
         id: ruling
-        # Writes its/ruling/target/actual/<project>/<rule>.sarif
-        run: mvn verify -Pit-ruling -Dprojects=${{ matrix.projects }}
+        continue-on-error: true
+        run: |
+          mvn clean test -Pruling
 
       - name: Prepare ruling artifact
         if: ${{ always() && steps.ruling.outcome == 'failure' }}
-        # Uploads actual/<project>/<rule>.sarif as <project>/<rule>.sarif
         uses: SonarSource/core-languages-tooling-public/prepare-ruling-artifact@master
-        with:
-          artifact-name: actual_${{ matrix.projects }}
 
   ruling-update-notify:
     needs: ruling
-    if: ${{ !cancelled() }}
-    concurrency:
-      group: ruling-update-${{ github.repository }}-${{ github.ref }}
-      cancel-in-progress: false
+    if: ${{ always() && needs.ruling.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -71,58 +59,32 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          submodules: true
 
       - name: Update ruling and notify
-        # Copies <project>/<rule>.sarif to
-        # its/ruling/src/test/resources/expected/<project>/<rule>.sarif
         uses: SonarSource/core-languages-tooling-public/ruling-update-and-notify@master
         with:
-          ruling-failed: ${{ needs.ruling.result == 'failure' }}
+          ruling-failed: ${{ needs.ruling.outputs.ruling-failed }}
 ```
-
-Check out the test project sources (see [Inputs](#inputs) for their location,
-usually a submodule) in the update job so that the PR comment can include code
-snippets.
 
 ## Why Separate Jobs?
 
 Test jobs generate local `target/actual` or `build/actual` results and upload
-them as `actual_*` artifacts. A downstream job downloads those artifacts and
-copies the result files into the selected expected directory before creating
-a fix PR. This permits parallel ruling tests without giving test jobs
-permission to push branches or create PRs. When tests pass, the downstream job
-still runs to close an obsolete fix PR.
+them as `actual_*` artifacts. A downstream job downloads those artifacts into
+the expectation tree and creates a fix PR. This permits parallel ruling tests
+without giving test jobs permission to push branches or create PRs. When tests
+pass, the downstream job still runs to close an obsolete fix PR.
 
-## Artifact Format
-
-The current consumer processes **all** `actual_*` artifacts and creates **one**
-fix PR per target branch. It processes artifact names in lexical order; when
-two artifacts contain the same report path, the first one wins and later copies
-are skipped. This deterministic policy lets a platform-specific artifact name
-select the canonical source for overlapping projects. Producers should still
-prefer disjoint project paths.
+The current consumer merges **all** `actual_*` artifacts and creates **one**
+fix PR per target branch. Producers must write disjoint project paths, or one
+platform must be selected as the canonical source for overlapping projects.
 Per-project fix PRs would require scoped artifact selection, unique fix-branch
 names, and matching cleanup; the current actions do not provide that mode.
 
-An `actual_*` artifact contains the generated results relative to the actual
-directory, without any wrapper: `project/report.sarif`. Each such file replaces
-`<expected-root>/project/report.sarif`. Files are copied as is, without format
-conversion.
-
-The action downloads all `actual_*` artifacts separately outside the checkout.
-Expectations for projects absent from the artifacts are kept, so jobs that
-tested only part of the projects do not delete the others.
-
-The sync step fails, instead of reporting that expectations are up to date,
-when:
-
-- the download fails or no `actual_*` artifact exists;
-- the downloaded artifacts are empty or contain no regular SARIF file;
-
-Only regular `.sarif` files are copied: other files and symlinks in
-the artifacts are ignored, and the action refuses to write through a symlink in
-the expected directory.
+Artifacts prepared by `prepare-ruling-artifact` contain an `expected/` directory
+and are copied into the detected ruling resources directory. For compatibility
+with existing producers such as sonar-python-enterprise, artifacts without that
+wrapper are copied into its `expected/` directory instead. All artifacts in a
+run must use the same format.
 
 ## Inputs
 
@@ -130,17 +92,17 @@ the expected directory.
 |-------|-------------|----------|
 | `ruling-failed` | Whether the ruling test failed (`true` or `false`) | Yes |
 
-When ruling tests fail, the action selects exactly one expected directory and
-derives the sources directory from it:
+When ruling tests fail, the action checks for exactly one of
+the following layouts:
 
-| Layout | Expected directory | Sources for snippets |
-|--------|--------------------|----------------------|
-| Public | `its/ruling/src/test/resources/expected` | `its/sources` |
-| Private | `private/its/ruling/src/test/resources/expected` | `private/its/sources` |
-| Python enterprise | `private/its-enterprise/ruling/src/test/resources/expected` | `private/its-enterprise/sources_ruling` |
+| Expectations directory | Sources directory |
+|------------------------|-------------------|
+| `its/ruling/src/test/resources/expected` | `its/sources` |
+| `private/its/ruling/src/test/resources/expected` | `private/its/sources` |
+| `private/its-enterprise/ruling/src/test/resources/expected` | `private/its-enterprise/sources_ruling` |
 
-It reports the checked paths if none or several exist. Successful tests need no
-ruling directory. Paths cannot be configured: callers should remove former
+It reports an error if none or multiple expectation directories exist. Successful tests need no ruling
+directory. PR context comes from the event; callers should remove former
 `pr-number`, `sources-root`, and `ruling-root` inputs.
 
 PR details come from the GitHub event. On a push, the action can create or
@@ -157,7 +119,7 @@ clean up a fix PR, but it does not post a comment on an original PR.
 
 1. **When ruling tests pass**: Closes an open stale fix PR, if any
 2. **When ruling tests fail with differences**:
-   - Downloads `actual_*` artifacts and copies their result files into the selected expected directory
+   - Downloads `actual_*` artifacts and copies them into the detected ruling directory
    - Creates or updates a fix PR with the updated results
    - Posts a detailed diff comment to the original PR
    - Adds a comment linking to the fix PR
@@ -168,7 +130,7 @@ clean up a fix PR, but it does not post a comment on an original PR.
 
 - `gh` CLI must be available (usually pre-installed on GitHub runners)
 - Python 3 must be available on the runner
-- The caller must check out the repository and upload `actual_*` artifacts when ruling tests fail; `prepare-ruling-artifact` uploads the standard ruling layout
+- The caller must check out the repository and upload `actual_*` artifacts when ruling tests fail; `prepare-ruling-artifact` packages the standard ruling layout
 - The job must have `contents: write` and `pull-requests: write` permissions
 - `uv` is installed by this action when ruling fails
 
@@ -176,16 +138,15 @@ clean up a fix PR, but it does not post a comment on an original PR.
 
 1. Detects if ruling test failed by checking the `ruling-failed` input
 2. Checks last commit to prevent infinite auto-update loops
-3. If ruling failed, downloads artifacts and copies their result files into the selected expected directory
-4. Detects differences only in the selected expected directory
-5. If there are differences and ruling failed:
-   - Creates a clean temporary worktree from the target branch and applies and stages only changes in the expected directory
+3. If ruling failed, downloads artifacts and copies them into the detected ruling directory
+4. If there are differences and ruling failed:
+   - Creates a clean temporary worktree from the target branch and applies only ruling changes
    - Commits the changes with a bot signature and pushes the fix branch
    - Leaves the caller's checkout and unrelated changes untouched
    - Creates or updates a fix PR
    - Posts a comment on the original PR linking to the fix PR
-   - Uses the `ruling-diff-comment` action to compare the fix commit with its actual base, reading snippets from the matching sources directory
-6. If no differences or ruling passed:
+   - Uses the `ruling-diff-comment` action to compare the fix commit with its actual base
+5. If no differences or ruling passed:
    - Closes any stale fix PRs that may exist
 
 Directory detection, artifact copying, fix-PR creation, and stale-PR cleanup
