@@ -50,8 +50,17 @@ fi
 # most 300 files, so a longer list may be incomplete and is never skipped.
 if [[ -n "$SKIP_PATHS" ]] && [[ "$has_previous" = true ]]; then
   if files="$(api "repos/${GITHUB_REPOSITORY}/compare/${PREVIOUS_SHA}...${CURRENT_SHA}" --jq '.files[].filename')"; then
-    if [[ -n "$files" ]] && [[ "$(wc -l <<<"$files")" -lt 300 ]] && ! grep -qvE "$SKIP_PATHS" <<<"$files"; then
-      skip skip-paths "Every file changed by the push matches skip-paths"
+    if [[ -n "$files" ]] && [[ "$(wc -l <<<"$files")" -lt 300 ]]; then
+      # grep exits with 1 when every file matches, and with 2 on an invalid regex, which must not
+      # silently skip every push.
+      rc=0
+      grep -qvE "$SKIP_PATHS" <<<"$files" || rc=$?
+      if [[ "$rc" -eq 1 ]]; then
+        skip skip-paths "Every file changed by the push matches skip-paths"
+      elif [[ "$rc" -gt 1 ]]; then
+        echo "::error::skip-paths is not a valid extended regex: ${SKIP_PATHS}"
+        exit 1
+      fi
     fi
   else
     echo "::warning::Could not list the files changed by the push, so skip-paths is ignored."

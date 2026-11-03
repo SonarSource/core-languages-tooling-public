@@ -29,6 +29,7 @@ on a regression, an error or a failed validation.
 | `failed-jobs` | Jobs of the validation that failed. Empty omits the line. | No | `''` |
 | `dashboard-url` | Published dashboard URL (the validate job `pages-url`). Empty omits the link. | No | `''` |
 | `run-url` | URL to the workflow run logs | No | this run |
+| `branch` | Branch the push went to, named in the comment | No | default branch |
 | `repository` | `owner/name` of the merged PR's repo. Set to the analyzer repo for cross-repo. | No | current repo |
 | `token` | Token with `pull-requests:write` on `repository` | No | `github.token` |
 
@@ -38,7 +39,7 @@ When no merged PR is found for `merged-sha` (e.g. a direct push), the action war
 
 ```yaml
 notify_merger:
-  needs: [resolve_baseline, validate]
+  needs: [build, resolve_baseline, validate]
   if: >-
     ${{ !cancelled() && github.event_name == 'push' &&
         (needs.validate.result == 'failure' ||

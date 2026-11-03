@@ -99,10 +99,20 @@ runs:
           }
           [ "$(rank "$REQUIRED_PERMISSION")" -gt 0 ] \
             || fail "required-permission must be read, write or admin, got ${REQUIRED_PERMISSION}"
-          # On an HTTP error gh prints the error body instead of the filtered value, so discard it.
-          if ! permission="$(gh api "repos/${GITHUB_REPOSITORY}/collaborators/${COMMENT_AUTHOR}/permission" --jq '.permission' 2>/dev/null)"; then
-            permission=none
-          fi
+          # On an HTTP error gh prints the error body instead of the filtered value, so discard it. A
+          # lookup that keeps failing (5xx, rate limit) is reported as such, not as missing access.
+          permission=""
+          for attempt in 1 2 3; do
+            if permission="$(gh api "repos/${GITHUB_REPOSITORY}/collaborators/${COMMENT_AUTHOR}/permission" --jq '.permission' 2>/dev/null)"; then
+              break
+            fi
+            permission=""
+            if [ "$attempt" -lt 3 ]; then
+              sleep 5
+            fi
+          done
+          [ -n "$permission" ] \
+            || fail "Could not look up the permission of ${COMMENT_AUTHOR} on ${GITHUB_REPOSITORY}"
           [ "$(rank "$permission")" -ge "$(rank "$REQUIRED_PERMISSION")" ] \
             || fail "/pvf needs ${REQUIRED_PERMISSION} access to ${GITHUB_REPOSITORY}, ${COMMENT_AUTHOR} has ${permission} access"
         fi
