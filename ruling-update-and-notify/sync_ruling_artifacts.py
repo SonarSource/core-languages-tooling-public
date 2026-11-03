@@ -31,54 +31,62 @@ def print_diagnostics() -> None:
     print("  3. Insufficient permissions to access artifacts")
 
 
-def sync_artifacts(ruling_root: Path, artifact_directory: Path, download_outcome: str) -> None:
+def downloaded_artifacts(artifact_directory: Path, download_outcome: str) -> list[Path]:
     if download_outcome != "success":
         print_diagnostics()
         raise RuntimeError(f"Failed to download artifacts (outcome: {download_outcome})")
     if not artifact_directory.is_dir():
         print_diagnostics()
         raise RuntimeError("No artifacts were downloaded (directory does not exist)")
-
     artifacts = list(artifact_directory.iterdir())
     if not artifacts:
         raise RuntimeError("Artifact directory is empty; no 'actual_*' artifacts found")
+    return artifacts
 
-    isolated_artifacts = sorted(
+
+def isolated_artifacts(artifacts: list[Path]) -> list[Path]:
+    return sorted(
         (artifact for artifact in artifacts if artifact.is_dir() and artifact.name.startswith("actual_")),
         key=lambda artifact: artifact.name,
     )
-    if isolated_artifacts:
-        ruling_root = ruling_root / "expected"
-        ruling_root.mkdir(parents=True, exist_ok=True)
-        print(f"Copying {len(isolated_artifacts)} isolated artifacts into {ruling_root}")
-        try:
-            for artifact in isolated_artifacts:
-                source_root = artifact / "expected" if (artifact / "expected").is_dir() else artifact
-                for source in source_root.iterdir():
-                    destination = ruling_root / source.name
-                    if source.is_dir():
-                        shutil.copytree(source, destination, dirs_exist_ok=True, symlinks=True)
-                    else:
-                        shutil.copy2(source, destination, follow_symlinks=False)
-        finally:
-            shutil.rmtree(artifact_directory)
-        print("Artifact sync complete")
-        return
 
+
+def copy_entries(source_root: Path, ruling_root: Path) -> None:
+    for source in source_root.iterdir():
+        destination = ruling_root / source.name
+        if source.is_dir():
+            shutil.copytree(source, destination, dirs_exist_ok=True, symlinks=True)
+        else:
+            shutil.copy2(source, destination, follow_symlinks=False)
+
+
+def sync_isolated_artifacts(ruling_root: Path, artifacts: list[Path]) -> None:
+    destination_root = ruling_root / "expected"
+    destination_root.mkdir(parents=True, exist_ok=True)
+    print(f"Copying {len(artifacts)} isolated artifacts into {destination_root}")
+    for artifact in artifacts:
+        source_root = artifact / "expected" if (artifact / "expected").is_dir() else artifact
+        copy_entries(source_root, destination_root)
+
+
+def sync_downloaded_artifact(ruling_root: Path, artifacts: list[Path], artifact_directory: Path) -> None:
     # prepare-ruling-artifact wraps results in expected/. Older producers upload
     # target/actual contents directly, so those need the expected/ destination.
     if not (artifact_directory / "expected").is_dir():
         ruling_root = ruling_root / "expected"
     ruling_root.mkdir(parents=True, exist_ok=True)
-
     print(f"Copying {len(artifacts)} artifact entries into {ruling_root}")
+    copy_entries(artifact_directory, ruling_root)
+
+
+def sync_artifacts(ruling_root: Path, artifact_directory: Path, download_outcome: str) -> None:
+    artifacts = downloaded_artifacts(artifact_directory, download_outcome)
+    isolated = isolated_artifacts(artifacts)
     try:
-        for artifact in artifacts:
-            destination = ruling_root / artifact.name
-            if artifact.is_dir():
-                shutil.copytree(artifact, destination, dirs_exist_ok=True, symlinks=True)
-            else:
-                shutil.copy2(artifact, destination, follow_symlinks=False)
+        if isolated:
+            sync_isolated_artifacts(ruling_root, isolated)
+        else:
+            sync_downloaded_artifact(ruling_root, artifacts, artifact_directory)
     finally:
         shutil.rmtree(artifact_directory)
     print("Artifact sync complete")
