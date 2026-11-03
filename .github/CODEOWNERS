@@ -1,1 +1,2 @@
-.github/CODEOWNERS @SonarSource/code-quality-core-languages-parsers-squad
+# Reusable GHA must be under CODEOWNER review
+* @SonarSource/code-quality-core-languages-parsers-squad
