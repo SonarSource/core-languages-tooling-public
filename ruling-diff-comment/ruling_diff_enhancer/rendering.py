@@ -128,7 +128,15 @@ def format_reviewed_comment(
     intro = header + table_header + "\n".join(rows) + overview_tail + advisory
     sections: list[str] = []
     for key in keys:
-        section = format_rule_group(grouped[key], reviews.get(key), anchors[key])
+        report = reviews.get(key)
+        section = format_rule_group(grouped[key], report, anchors[key])
+        if report and len(intro + "\n\n".join(sections + [section]) + omission_notice) > soft_limit:
+            compact_report = {
+                **report,
+                "summary": "Automated review omitted because it exceeds the comment size limit.",
+                "selected_examples": [],
+            }
+            section = format_rule_group(grouped[key], compact_report, anchors[key])
         if len(intro + "\n\n".join(sections + [section]) + omission_notice) > soft_limit:
             break
         sections.append(section)

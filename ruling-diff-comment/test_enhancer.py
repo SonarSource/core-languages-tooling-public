@@ -17,6 +17,7 @@ from dspy.utils import DummyLM
 import ruling_diff as cli
 import ruling_diff_core as core
 from ruling_diff_enhancer import enhance
+from ruling_diff_enhancer.rendering import format_reviewed_comment
 from ruling_diff_enhancer.ruling_diff_inputs import find_configurations, parse_comment, prepare_inputs
 from ruling_diff_enhancer.ruling_diff_predictor import Review, ReviewRulingChange, review_changes, validate_review
 
@@ -277,8 +278,8 @@ class PredictorTests(unittest.TestCase):
         self.assertEqual(report["selected_examples"][0]["snippet"], self.examples[0]["snippet"])
         rendered = enhance.render_markdown([report])
         self.assertIn("java:S9191", rendered)
-        self.assertIn("**Opinion:** negative | **Confidence:** low", rendered)
-        self.assertIn("added false positive", rendered)
+        self.assertIn("<b>Opinion:</b> 🔴 negative | <b>Confidence:</b> low", rendered)
+        self.assertIn("Added false positive", rendered)
 
     def test_typed_dspy_predictor_with_dummy_language_model(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -347,10 +348,13 @@ class CommentIntegrationTests(unittest.TestCase):
                     cli.main()
                 comment = output.getvalue() if dry_run else post.call_args.args[2]
                 self.assertTrue(comment.startswith("<!-- ruling-diff-comment -->"))
-                self.assertIn("## AI Ruling Diff Review", comment)
+                self.assertIn("## Rule overview", comment)
+                self.assertIn("[java:S9191](#ruling-rule-1)", comment)
                 self.assertIn(review_data()["summary"], comment)
-                self.assertIn("<summary><b>S9191</b>", comment)
-                self.assertLess(comment.index("## AI Ruling Diff Review"), comment.index("<details>"))
+                self.assertEqual(comment.count("### java:S9191"), 1)
+                self.assertEqual(comment.count(self.rule_diffs[0].snippets[0].body), 1)
+                self.assertIn("**Confidence:** low", comment)
+                self.assertLess(comment.index("## Rule overview"), comment.index("### java:S9191"))
                 self.assertLess(len(comment), core.COMMENT_SOFT_LIMIT)
                 predictor.assert_called_once()
                 example, = predictor.call_args.kwargs["examples"]
@@ -381,6 +385,113 @@ class CommentIntegrationTests(unittest.TestCase):
         self.assertIn("AI review omitted", comment)
         self.assertIn("<summary><b>S9191</b>", comment)
         self.assertLess(len(comment), core.COMMENT_SOFT_LIMIT)
+
+
+class ReviewedCommentRenderingTests(unittest.TestCase):
+    def rule(self, rule_key: str = "S9191", project: str = "sample") -> core.RuleDiff:
+        location = core.IssueLocation(12, 3, 13, 8, "Avoid <unsafe> calls.")
+        return core.RuleDiff(
+            project=project, repo="java", rule_key=rule_key,
+            file_diffs=[core.IssueDiff("src/Example.java", [location], [])],
+            snippets=[core.Snippet("src/Example.java", location, "added", ">>>     12 | call();")],
+            is_new_file=False, is_deleted_file=False,
+        )
+
+    def report(self, rules: list[core.RuleDiff], opinion: str = "negative", confidence: str = "low") -> dict:
+        change, = parse_comment(core.format_comment(rules))
+        return {
+            "repository": change.repository, "rule_key": change.rule_key,
+            "opinion": opinion, "confidence": confidence, "summary": "Inspect the changed finding.",
+            "available_examples": len(change.examples),
+            "selected_examples": [{
+                **change.examples[0], "classification": "added_false_positive",
+                "rationale": "This call may be compliant.",
+            }],
+        }
+
+    def test_groups_projects_under_one_rule_and_does_not_duplicate_selected_code(self) -> None:
+        rules = [self.rule(project="first"), self.rule(project="second")]
+        report = self.report(rules)
+
+        comment = format_reviewed_comment(rules, [report])
+
+        self.assertEqual(comment.count("### java:S9191"), 1)
+        self.assertIn("| [java:S9191](#ruling-rule-1) | first, second | 0 / 2 | 🔴 negative | low |", comment)
+        self.assertIn('<a name="ruling-rule-1"></a>', comment)
+        self.assertIn("#### first", comment)
+        self.assertIn("#### second", comment)
+        self.assertIn("2 of 2 changed findings shown", comment)
+        self.assertEqual(comment.count(report["summary"]), 1)
+        self.assertEqual(comment.count(report["selected_examples"][0]["rationale"]), 1)
+        self.assertEqual(comment.count("```java"), 2)
+        self.assertEqual(comment.count(rules[0].snippets[0].body), 2)
+        self.assertIn("line 12, column 3 to line 13, end column 8", comment)
+        self.assertIn("Avoid &lt;unsafe&gt; calls.", comment)
+
+    def test_sorts_by_assessment_with_stable_rule_order_and_neutral_confidence(self) -> None:
+        rules = [self.rule("S200"), self.rule("S100"), self.rule("S300")]
+        reports = [
+            self.report([rules[0]], "positive", "high"),
+            self.report([rules[1]], "negative", "low"),
+            self.report([rules[2]], "negative", "high"),
+        ]
+
+        comment = format_reviewed_comment(rules, reports)
+
+        self.assertLess(comment.index("### java:S100"), comment.index("### java:S300"))
+        self.assertLess(comment.index("### java:S300"), comment.index("### java:S200"))
+        self.assertIn("**Automated assessment:** 🔴 negative | **Confidence:** low", comment)
+        self.assertIn("**Automated assessment:** 🟢 positive | **Confidence:** high", comment)
+        for icon in ("🔴", "🟠", "🟡", "🟢"):
+            self.assertNotIn(f"**Confidence:** {icon}", comment)
+
+    def test_keeps_unreviewed_rules_and_escapes_project_names_in_the_table(self) -> None:
+        rules = [self.rule(), self.rule("S100", "other|<project>")]
+
+        comment = format_reviewed_comment(rules, [self.report([rules[0]])])
+
+        self.assertIn("other&#124;&lt;project&gt; | 0 / 1 | Not reviewed | —", comment)
+        self.assertIn("### java:S100", comment)
+        self.assertIn("No automated review available for this rule.", comment)
+        self.assertEqual(comment.count("```java"), 2)
+
+    def test_large_assessment_preserves_source_examples_within_the_comment_limit(self) -> None:
+        rule = self.rule()
+        report = self.report([rule])
+        report["summary"] = "x" * core.COMMENT_SOFT_LIMIT
+
+        comment = format_reviewed_comment([rule], [report], soft_limit=1500)
+
+        self.assertLessEqual(len(comment), 1500)
+        self.assertIn("Automated review omitted", comment)
+        self.assertIn(rule.snippets[0].body, comment)
+        self.assertEqual(comment.count("<details>"), comment.count("</details>"))
+
+    def test_truncation_keeps_complete_sections_and_only_links_to_present_anchors(self) -> None:
+        rules = [self.rule(f"S{number}") for number in range(100, 120)]
+        reports = [self.report([rule]) for rule in rules]
+
+        comment = format_reviewed_comment(rules, reports, soft_limit=4000)
+
+        self.assertLessEqual(len(comment), 4000)
+        self.assertIn("rule sections omitted", comment)
+        self.assertIn("### java:S100", comment)
+        self.assertEqual(comment.count("<details>"), comment.count("</details>"))
+        for index in range(1, len(rules) + 1):
+            if f"](#ruling-rule-{index})" in comment:
+                self.assertIn(f'<a name="ruling-rule-{index}"></a>', comment)
+
+    def test_large_overview_is_truncated_without_exceeding_the_budget(self) -> None:
+        rules = [self.rule(f"S{number}") for number in range(100, 150)]
+
+        comment = format_reviewed_comment(rules, [], soft_limit=1500)
+
+        self.assertLessEqual(len(comment), 1500)
+        self.assertIn("Some rules are omitted from the overview", comment)
+        self.assertIn("rule sections omitted", comment)
+
+    def test_no_changes_retains_the_ordinary_empty_comment(self) -> None:
+        self.assertEqual(format_reviewed_comment([], []), core.format_comment([]))
 
 
 class CLITests(unittest.TestCase):
