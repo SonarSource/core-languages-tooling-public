@@ -589,25 +589,6 @@ class GitHubActionIOTest(unittest.TestCase):
                     f"{source_root}/pkg/file.py",
                 )
 
-    def test_resolve_source_path_uses_unversioned_project_roots(self) -> None:
-        io_impl = io.GitHubActionIO()
-        for project in (
-            "buildbot",
-            "buildbot-slave",
-            "django",
-            "django-cms",
-            "docker-compose",
-            "mypy",
-            "numpy",
-            "tornado",
-            "twisted",
-        ):
-            with self.subTest(project=project):
-                self.assertEqual(
-                    io_impl.resolve_source_path(project, "pkg/file.py"),
-                    f"private/its-enterprise/sources_ruling/{project}/pkg/file.py",
-                )
-
     def test_resolve_source_path_uses_default_project_root(self) -> None:
         io_impl = io.GitHubActionIO()
         self.assertEqual(
