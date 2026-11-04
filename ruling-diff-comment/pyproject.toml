@@ -7,7 +7,7 @@ dependencies = []
 
 [project.optional-dependencies]
 enhancer = [
-    "dspy>=3.2.1,<4",
+    "litellm>=1.108,<2",
     "pydantic>=2,<3",
 ]
 

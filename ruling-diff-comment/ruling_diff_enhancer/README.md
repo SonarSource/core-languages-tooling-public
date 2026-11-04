@@ -31,7 +31,7 @@ The initial implementation supports the `S<digits>.html` / `S<digits>.json`
 filename convention used by the Java checkout. Missing, invalid, or ambiguous
 metadata is an error, not a reason to guess a specification.
 
-## Review With DSPy
+## Review With LiteLLM
 
 The diff-comment creation script can also invoke this enhancer automatically
 and include its review in the final comment. See the parent README's
@@ -39,7 +39,7 @@ and include its review in the final comment. See the parent README's
 credential configuration and a one-command local preview.
 
 Requires Python 3.10+, `uv`, and an explicitly selected model accessible through
-DSPy/LiteLLM. Set the selected provider's usual credential environment variables;
+LiteLLM. Set the selected provider's usual credential environment variables;
 do not put tokens in arguments, source files, or comments. Use a model/provider
 approved for the source code being reviewed. The HTML, JSON, and visible code
 snippets are sent to that provider; this may incur charges.
@@ -53,11 +53,10 @@ uv run --frozen --extra enhancer python -m ruling_diff_enhancer \
 ```
 
 Alternatively pass `--model provider/model`. `--provider direct` forces the
-existing direct DSPy/LiteLLM connection even if Portkey keys are present.
+existing direct LiteLLM connection even if Portkey keys are present.
 `--api-base` (or `DSPY_API_BASE`) supports custom endpoints, including local
-models. DSPy caching is disabled to avoid persisting source snippets in its
-local cache. Provider-side logging and retention remain subject to that
-provider's policy. `--format json` produces a machine-readable report instead
+models. The enhancer does not cache source snippets locally. Provider-side
+logging and retention remain subject to that provider's policy. `--format json` produces a machine-readable report instead
 of Markdown.
 
 ### Portkey for Local Testing
@@ -103,7 +102,7 @@ apply.
 
 ## Review Results
 
-One typed `dspy.Predict` call is made per rule/repository, merging examples from
+One structured LiteLLM call is made per rule/repository, merging examples from
 multiple projects of the same rule. It prioritizes:
 
 - Added issues that look like **false positives**.
@@ -143,6 +142,6 @@ instructions embedded in rule descriptions or snippets.
 uv run --frozen --extra enhancer python -m unittest -v test_enhancer test_models
 ```
 
-Tests use temporary metadata repositories, mocked predictions, a DSPy dummy
-language model, and mocked HTTP requests for the actual Portkey transports.
+Tests use temporary metadata repositories, mocked predictions, and mocked HTTP
+requests for the actual Portkey transports.
 They require neither credentials nor paid/external model calls.

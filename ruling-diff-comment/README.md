@@ -190,7 +190,7 @@ Without `--dry-run`, the existing posting behavior is unchanged and
 ### AI-Assisted Diff Review
 
 The optional [`ruling_diff_enhancer`](ruling_diff_enhancer) submodule reviews
-the generated Markdown against local rule metadata using DSPy. The diff-comment
+the generated Markdown against local rule metadata using LiteLLM. The diff-comment
 script automatically includes an automated review when `DSPY_MODEL` and an API
 key for its selected connection are set. A linked **Rule overview** table shows
 each rule's projects, removed/added counts, assessment, and plain-text confidence.
@@ -210,7 +210,7 @@ Portkey accepts `PORTKEY_API_KEY` or the matching family-specific variable
 (`PORTKEY_API_KEY_OPENAI`, `PORTKEY_API_KEY_CLAUDE`, `PORTKEY_API_KEY_GOOGLE`).
 `DSPY_PROVIDER` (`auto`, `direct`, or `portkey`) and `DSPY_API_BASE` configure
 the connection as described in the [enhancer documentation](ruling_diff_enhancer).
-Without a model or matching key, the ordinary comment is unchanged and DSPy is
+Without a model or matching key, the ordinary comment is unchanged and LiteLLM is
 not imported. Enhancer errors (including missing dependencies or metadata) emit
 a warning to stderr and preserve the original comment rather than blocking it.
 

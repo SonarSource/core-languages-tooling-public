@@ -11,15 +11,12 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-import dspy
-from dspy.utils import DummyLM
-
 import ruling_diff as cli
 import ruling_diff_core as core
 from ruling_diff_enhancer import enhance
 from ruling_diff_enhancer.rendering import format_reviewed_comment
 from ruling_diff_enhancer.ruling_diff_inputs import find_configurations, parse_comment, prepare_inputs
-from ruling_diff_enhancer.ruling_diff_predictor import Review, ReviewRulingChange, review_changes, validate_review
+from ruling_diff_enhancer.ruling_diff_predictor import Review, review_changes, validate_review
 
 
 def comment_section(
@@ -364,14 +361,13 @@ class PredictorTests(unittest.TestCase):
         self.assertEqual(reports[1]["rule_key"], "S100")
         self.assertEqual(reports[1]["selected_examples"][0]["id"], "E1")
 
-    def test_typed_dspy_predictor_with_dummy_language_model(self) -> None:
+    def test_structured_predictor_response_is_validated(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             write_metadata(root)
             inputs = prepare_inputs(comment_section(), root)
-        lm = DummyLM([{"review": json.dumps(review_data("representative"))}])
-        with dspy.context(lm=lm):
-            report, = review_changes(inputs, dspy.Predict(ReviewRulingChange))
+        predictor = Mock(return_value=review_data("representative"))
+        report, = review_changes(inputs, predictor)
         self.assertEqual(report["selected_examples"][0]["classification"], "representative")
 
 
@@ -422,10 +418,7 @@ class CommentIntegrationTests(unittest.TestCase):
                     patch.object(cli, "build_rule_diffs", return_value=self.rule_diffs),
                     patch.object(cli.Path, "cwd", return_value=root),
                     patch.object(cli, "post_or_update_comment") as post,
-                    patch.object(dspy, "configure_cache"),
-                    patch.object(dspy, "LM") as language_model,
-                    patch.object(dspy, "context"),
-                    patch.object(dspy, "Predict", return_value=predictor),
+                    patch.object(enhance, "create_predictor", return_value=predictor),
                     redirect_stdout(output),
                 ):
                     cli.main()
@@ -443,9 +436,6 @@ class CommentIntegrationTests(unittest.TestCase):
                 example, = predictor.call_args.kwargs["examples"]
                 self.assertEqual(example["snippet"], self.rule_diffs[0].snippets[0].body)
                 self.assertEqual(example["message"], self.rule_diffs[0].snippets[0].location.message)
-                language_model.assert_called_once_with(
-                    "openai/gpt-4.1", cache=False, api_base="http://localhost:8000/v1",
-                )
                 if dry_run:
                     post.assert_not_called()
                 else:
@@ -658,16 +648,9 @@ class CLITests(unittest.TestCase):
             predictor = Mock(return_value=SimpleNamespace(review=review_data()))
             with (
                 patch.object(sys, "argv", arguments),
-                patch.object(dspy, "configure_cache") as configure_cache,
-                patch.object(dspy, "LM") as language_model,
-                patch.object(dspy, "context"),
-                patch.object(dspy, "Predict", return_value=predictor),
+                patch.object(enhance, "create_predictor", return_value=predictor),
             ):
                 self.assertEqual(enhance.main(), 0)
-            language_model.assert_called_once_with(
-                "provider/model", cache=False, api_base="http://localhost:8000/v1"
-            )
-            configure_cache.assert_called_once_with(enable_disk_cache=False, enable_memory_cache=False)
             report, = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(report["opinion"], "negative")
             self.assertEqual(report["selected_examples"][0]["example_id"], "E1")
@@ -679,11 +662,11 @@ class CLITests(unittest.TestCase):
             comment.write_text("No rule sections", encoding="utf-8")
             with (
                 patch.object(sys, "argv", ["enhance.py", str(comment), "--repo", str(root), "--model", "provider/model"]),
-                patch.object(dspy, "LM") as language_model,
+                patch.object(enhance, "create_predictor") as create_predictor,
                 patch("sys.stderr"),
             ):
                 self.assertEqual(enhance.main(), 1)
-            language_model.assert_not_called()
+            create_predictor.assert_not_called()
 
 
 if __name__ == "__main__":

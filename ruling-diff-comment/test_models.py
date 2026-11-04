@@ -119,7 +119,7 @@ class ModelConnectionTests(unittest.TestCase):
         self.assertEqual(options["api_base"], "https://gateway.example/v1")
         self.assertEqual(options["extra_headers"], {"x-portkey-provider": "openai"})
 
-    def test_reasoning_models_use_required_dspy_defaults(self) -> None:
+    def test_reasoning_models_use_required_model_defaults(self) -> None:
         for provider in ("direct", "portkey"):
             for model in ("gpt-5.4", "o3"):
                 with self.subTest(provider=provider, model=model):
@@ -140,8 +140,7 @@ class ModelConnectionTests(unittest.TestCase):
         with patch("sys.argv", ["enhance.py", "comment.md", "--prepare-only", "--provider", "direct"]):
             self.assertEqual(enhance.parse_args().provider, "direct")
 
-    def test_cli_passes_portkey_connection_to_dspy(self) -> None:
-        import dspy
+    def test_cli_passes_portkey_connection_to_predictor(self) -> None:
         from test_enhancer import comment_section, review_data, write_metadata
 
         os.environ["PORTKEY_API_KEY"] = "test-key"
@@ -154,19 +153,16 @@ class ModelConnectionTests(unittest.TestCase):
             predictor = Mock(return_value=SimpleNamespace(review=review_data()))
             with (
                 patch("sys.argv", ["enhance.py", str(comment), "--repo", str(root), "--model", "claude-test", "--format", "json", "--output", str(output)]),
-                patch.object(dspy, "configure_cache"),
-                patch.object(dspy, "LM") as language_model,
-                patch.object(dspy, "context"),
-                patch.object(dspy, "Predict", return_value=predictor),
+                patch.object(enhance, "create_predictor", return_value=predictor) as create_predictor,
             ):
                 self.assertEqual(enhance.main(), 0)
             model, options = model_connection("claude-test")
-            language_model.assert_called_once_with(model, cache=False, **options)
+            create_predictor.assert_called_once_with(model, options)
             self.assertEqual(json.loads(output.read_text(encoding="utf-8"))[0]["opinion"], "negative")
 
     def test_real_litellm_transports_send_expected_portkey_requests(self) -> None:
-        import dspy
         import httpx
+        import litellm
 
         os.environ["PORTKEY_API_KEY"] = "test-key"
         for model, route in (("gpt-4.1", "/v1/chat/completions"), ("claude-sonnet-4-5-20250929", "/v1/messages")):
@@ -191,13 +187,14 @@ class ModelConnectionTests(unittest.TestCase):
                     return httpx.Response(200, request=request, json=response)
 
                 resolved, options = model_connection(model, "portkey")
-                lm = dspy.LM(resolved, cache=False, **options)
                 with (
                     patch.object(httpx.Client, "send", side_effect=respond),
                     patch.object(httpx.AsyncClient, "send", side_effect=AssertionError("Unexpected async request")),
                     patch("litellm.utils._client_async_logging_helper", new_callable=AsyncMock),
                 ):
-                    result = lm.forward(messages=[{"role": "user", "content": "Review this change."}])
+                    result = litellm.completion(
+                        model=resolved, messages=[{"role": "user", "content": "Review this change."}], **options,
+                    )
                 self.assertEqual(result.choices[0].message.content, "review")
                 self.assertEqual(len(requests), 1)
                 request = requests[0]
