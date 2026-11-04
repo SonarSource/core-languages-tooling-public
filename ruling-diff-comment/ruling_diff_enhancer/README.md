@@ -108,8 +108,13 @@ multiple projects of the same rule. It prioritizes:
 - Removed issues that look like **lost true positives**.
 - Otherwise, **one representative example**, not a fabricated regression.
 
-`--max-examples` limits bad-case selections per rule (default: 3). Each selection
-includes its original snippet, location, classification, and a short rationale.
+`--max-examples` limits bad-case selections per rule (1–3, default upper bound: 3).
+The predictor is instructed to prefer one strongest example and select more only
+for materially different failure modes or rule exceptions, not merely different
+files, projects, or names. Additional rationales must explain the distinct case.
+Each selection includes its original snippet, location, classification, and a
+short rationale. The integrated comment displays all selected examples before
+unselected source examples, including when they come from different projects.
 Unknown/duplicate IDs, impossible change-kind classifications, and mixed
 representative/bad-case selections are rejected.
 

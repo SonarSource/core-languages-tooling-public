@@ -31,7 +31,7 @@ def parse_args() -> argparse.Namespace:
         help="Connection mode (or DSPY_PROVIDER); auto prefers a matching Portkey key",
     )
     parser.add_argument("--api-base", default=os.environ.get("DSPY_API_BASE"), help="Optional model endpoint")
-    parser.add_argument("--max-examples", type=positive_integer, default=3)
+    parser.add_argument("--max-examples", type=positive_integer, choices=range(1, 4), default=3)
     parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
     parser.add_argument("--output", type=Path, help="Write to a file instead of stdout")
     parser.add_argument("--prepare-only", action="store_true", help="Print gathered inputs as JSON without importing DSPy or calling a model")

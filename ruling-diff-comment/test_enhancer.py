@@ -251,6 +251,27 @@ class PredictorTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Representative fallback"):
             validate_review(Review.model_validate(data), examples, 3)
 
+    def test_more_than_three_selections_are_rejected(self) -> None:
+        data = review_data()
+        data["selected_examples"] = [
+            review_data(example_id=f"E{index}")["selected_examples"][0]
+            for index in range(1, 5)
+        ]
+
+        with self.assertRaises(ValueError):
+            Review.model_validate(data)
+
+    def test_predictor_selection_budget_never_exceeds_three(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_metadata(root)
+            inputs = prepare_inputs(comment_section(), root)
+        predictor = Mock(return_value=SimpleNamespace(review=review_data()))
+
+        review_changes(inputs, predictor, max_examples=10)
+
+        self.assertEqual(predictor.call_args.kwargs["max_examples"], 3)
+
     def test_no_examples_requires_low_confidence_and_empty_selection(self) -> None:
         data = review_data()
         data["selected_examples"] = []
@@ -416,11 +437,17 @@ class ReviewedCommentRenderingTests(unittest.TestCase):
         comment = format_reviewed_comment(rules, [report])
 
         self.assertEqual(comment.count("### java:S9191"), 1)
+        self.assertIn(
+            "### java:S9191 · **Projects:** first, second · **Removed:** 0 · **Added:** 2"
+            " · **Automated assessment:** 🔴 negative | **Confidence:** low\n",
+            comment,
+        )
         self.assertIn("| [java:S9191](#ruling-rule-1) | first, second | 0 / 2 | 🔴 negative | low |", comment)
         self.assertIn('<a name="ruling-rule-1"></a>', comment)
         self.assertIn("#### first", comment)
         self.assertIn("#### second", comment)
         self.assertIn("2 of 2 changed findings shown", comment)
+        self.assertNotIn("Automated review received", comment)
         self.assertEqual(comment.count(report["summary"]), 1)
         self.assertEqual(comment.count(report["selected_examples"][0]["rationale"]), 1)
         self.assertEqual(comment.count("```java"), 2)
@@ -444,6 +471,34 @@ class ReviewedCommentRenderingTests(unittest.TestCase):
         self.assertIn("**Automated assessment:** 🟢 positive | **Confidence:** high", comment)
         for icon in ("🔴", "🟠", "🟡", "🟢"):
             self.assertNotIn(f"**Confidence:** {icon}", comment)
+
+    def test_all_selected_examples_precede_unselected_examples_across_projects(self) -> None:
+        rules = [self.rule(project=project) for project in ("first", "second")]
+        for index, rule in enumerate(rules):
+            original = rule.snippets[0]
+            rule.snippets[:] = [
+                core.Snippet(original.file_path, original.location, "added", f"unselected_{index}();"),
+                core.Snippet(original.file_path, original.location, "added", f"selected_{index}();"),
+            ]
+        report = self.report(rules)
+        change, = parse_comment(core.format_comment(rules))
+        report["selected_examples"] = [
+            {**example, "classification": "added_false_positive", "rationale": "A distinct case."}
+            for example in change.examples
+            if example["snippet"].startswith("selected_")
+        ]
+
+        comment = format_reviewed_comment(rules, [report])
+
+        for selected_index in range(2):
+            for unselected_index in range(2):
+                self.assertLess(
+                    comment.index(f"selected_{selected_index}();"),
+                    comment.index(f"unselected_{unselected_index}();"),
+                )
+        for rule in rules:
+            for snippet in rule.snippets:
+                self.assertEqual(comment.count("\n" + snippet.body + "\n"), 1)
 
     def test_keeps_unreviewed_rules_and_escapes_project_names_in_the_table(self) -> None:
         rules = [self.rule(), self.rule("S100", "other|<project>")]
@@ -503,6 +558,11 @@ class CLITests(unittest.TestCase):
 
     def test_max_examples_must_be_positive(self) -> None:
         with patch.object(sys, "argv", ["enhance.py", "comment.md", "--prepare-only", "--max-examples", "0"]):
+            with patch("sys.stderr"), self.assertRaises(SystemExit):
+                enhance.parse_args()
+
+    def test_max_examples_cannot_exceed_three(self) -> None:
+        with patch.object(sys, "argv", ["enhance.py", "comment.md", "--prepare-only", "--max-examples", "4"]):
             with patch("sys.stderr"), self.assertRaises(SystemExit):
                 enhance.parse_args()
 

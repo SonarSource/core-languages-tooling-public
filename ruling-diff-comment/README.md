@@ -196,7 +196,10 @@ key for its selected connection are set. A linked **Rule overview** table shows
 each rule's projects, removed/added counts, assessment, and plain-text confidence.
 Rules are ordered by assessment, with negative assessments first. Each rule has
 one section combining its summary and collapsible source examples across projects;
-selected rationales appear beside their original snippets, without duplicating code.
+Selected examples appear first across all projects, with rationales beside their
+original snippets and no duplicated code. The review prefers one selected example
+per rule; at most three are allowed, and additional selections must demonstrate
+materially different cases.
 This applies both to `--dry-run` previews and posted PR comments. The existing
 per-file and per-rule snippet limits still apply, and the review shares the
 comment size budget with the rule details.

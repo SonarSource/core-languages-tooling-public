@@ -20,7 +20,7 @@ class Review(BaseModel):
     opinion: Literal["very_negative", "negative", "neutral", "positive"]
     confidence: Literal["low", "medium", "high"]
     summary: str = Field(min_length=1)
-    selected_examples: list[SelectedExample]
+    selected_examples: list[SelectedExample] = Field(max_length=3)
 
 
 class ReviewRulingChange(dspy.Signature):
@@ -31,8 +31,13 @@ class ReviewRulingChange(dspy.Signature):
     An added issue is a possible false positive when the shown code should NOT
     violate the rule. A removed issue is a possible lost true positive when the
     shown code SHOULD still violate the rule. Prioritize these regressions and
-    select at most max_examples, using only the supplied example IDs. Select
-    only bad cases if any are supported; otherwise select exactly one most
+    select at most max_examples (never more than three), using only the supplied
+    example IDs. Prefer exactly one strongest example. Add a second or third
+    only when it demonstrates a materially different failure mode or rule
+    exception that the first example does not cover. Different files, projects,
+    locations, or names alone do not justify additional selections. Explain
+    the distinct case in each additional example's rationale. Select only bad
+    cases if any are supported; otherwise select exactly one most
     representative example with classification representative. Do not invent
     code, missing type information, inheritance relationships or context.
     If no examples are supplied, select none and use low confidence.
@@ -56,7 +61,7 @@ class ReviewRulingChange(dspy.Signature):
     rule_metadata: dict = dspy.InputField(desc="Local rule metadata JSON")
     change_counts: dict[str, int] = dspy.InputField(desc="Total added/removed issues, not just shown examples")
     examples: list[dict] = dspy.InputField(desc="Only the examples visible in the supplied diff comment")
-    max_examples: int = dspy.InputField()
+    max_examples: int = dspy.InputField(desc="Upper bound, at most three; prefer one unless cases materially differ")
     review: Review = dspy.OutputField()
 
 
@@ -85,6 +90,7 @@ def validate_review(review: Review, examples: list[dict], max_examples: int) -> 
 
 
 def review_changes(inputs: list[dict], predictor, max_examples: int = 3) -> list[dict]:
+    max_examples = min(max_examples, 3)
     reports = []
     for change in inputs:
         prediction = predictor(

@@ -61,17 +61,22 @@ def format_rule_group(rule_diffs: list[RuleDiff], report: dict | None, anchor: s
     removed, added = change_counts(rule_diffs)
     projects = ", ".join(escape(diff.project) for diff in rule_diffs)
     shown = sum(len(diff.snippets) for diff in rule_diffs)
+    heading = (
+        f"### {escape(rule.repo)}:{rule.rule_key} · **Projects:** {projects}"
+        f" · **Removed:** {removed} · **Added:** {added}"
+    )
+    if report:
+        heading += (
+            f" · **Automated assessment:** {format_opinion(report['opinion'])} | "
+            f"**Confidence:** {report['confidence']}"
+        )
     lines = [
         f'<a name="{anchor}"></a>',
-        f"### {escape(rule.repo)}:{rule.rule_key}", "",
-        f"**Projects:** {projects} · **Removed:** {removed} · **Added:** {added}", "",
+        heading, "",
     ]
     if report:
         lines.extend([
-            f"**Automated assessment:** {format_opinion(report['opinion'])} | "
-            f"**Confidence:** {report['confidence']}", "",
             report["summary"], "",
-            f"Automated review received {report['available_examples']} visible examples.", "",
         ])
     else:
         lines.extend(["No automated review available for this rule.", ""])
@@ -80,16 +85,26 @@ def format_rule_group(rule_diffs: list[RuleDiff], report: dict | None, anchor: s
         f"<summary>Source examples — {shown} of {removed + added} changed findings shown</summary>", "",
     ])
     selections = list(report["selected_examples"]) if report else []
+    examples = [
+        (diff.project, snippet, take_selection(diff.project, snippet, selections))
+        for diff in rule_diffs
+        for snippet in diff.snippets
+    ]
+    current_project = None
+    for project, snippet, selection in sorted(examples, key=lambda example: example[2] is None):
+        if project != current_project:
+            lines.extend([f"#### {escape(project)}", ""])
+            current_project = project
+        if selection:
+            label = selection["classification"].replace("_", " ").capitalize()
+            lines.extend([f"**Automated selection: {label}**", "", selection["rationale"], ""])
+        lines.extend([format_snippet_block(snippet), ""])
     for diff in rule_diffs:
-        lines.extend([f"#### {escape(diff.project)}", ""])
         if not diff.snippets:
-            lines.extend(["No source snippets available for this project.", ""])
-        for snippet in diff.snippets:
-            selection = take_selection(diff.project, snippet, selections)
-            if selection:
-                label = selection["classification"].replace("_", " ").capitalize()
-                lines.extend([f"**Automated selection: {label}**", "", selection["rationale"], ""])
-            lines.extend([format_snippet_block(snippet), ""])
+            lines.extend([
+                f"#### {escape(diff.project)}", "",
+                "No source snippets available for this project.", "",
+            ])
     lines.append("</details>")
     return "\n".join(lines)
 
