@@ -577,10 +577,17 @@ class GitHubActionIOTest(unittest.TestCase):
 
     def test_resolve_source_path_uses_project_overrides(self) -> None:
         io_impl = io.GitHubActionIO()
-        self.assertEqual(
-            io_impl.resolve_source_path("mypy", "pkg/file.py"),
-            "private/its-enterprise/sources_ruling/mypy-0.782/pkg/file.py",
-        )
+        overrides = {
+            "sources_internal_ruling": "private/its-enterprise/sources_internal_ruling",
+            "namespace_basic": "private/its-enterprise/sources_internal_namespace_ruling/basic_namespace",
+            "namespace_mixed": "private/its-enterprise/sources_internal_namespace_ruling/mixed_namespace",
+        }
+        for project, source_root in overrides.items():
+            with self.subTest(project=project):
+                self.assertEqual(
+                    io_impl.resolve_source_path(project, "pkg/file.py"),
+                    f"{source_root}/pkg/file.py",
+                )
 
     def test_resolve_source_path_uses_default_project_root(self) -> None:
         io_impl = io.GitHubActionIO()
