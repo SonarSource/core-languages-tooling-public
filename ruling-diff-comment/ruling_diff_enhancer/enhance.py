@@ -41,25 +41,39 @@ def parse_args() -> argparse.Namespace:
 
 
 def render_markdown(reports: list[dict]) -> str:
-    sections = ["## AI Ruling Diff Review", "", "AI-assisted triage, not a correctness verdict. Confidence is not calibrated."]
+    sections = ["## Automated Ruling Diff Review", ""]
     for report in reports:
+        opinion = report['opinion'].replace('_', ' ')
+        if "negative" in opinion:
+            opinion = f"🔴 {opinion}"
+        elif "positive" in opinion:
+            opinion = f"🟢 {opinion}"
+        else:
+            opinion = f"🟡 {opinion}"
+
+        confidence = report['confidence']
+        if "high" in confidence:
+            confidence = f"🟢 {confidence}"
+        elif "medium" in confidence:
+            confidence = f"🟠 {confidence}"
+        elif "low" in confidence:
+            confidence = f"🔴 {confidence}"
+
         sections.extend([
-            "", f"### {report['repository']}:{report['rule_key']}", "",
-            f"**Opinion:** {report['opinion'].replace('_', ' ')} | **Confidence:** {report['confidence']}",
-            "", report["summary"], "",
-            f"Evidence: {report['available_examples']} visible examples; "
-            f"{report['added_count']} total added, {report['removed_count']} total removed issues.",
-            f"Metadata: `{report['metadata_paths']['json_path']}` and `{report['metadata_paths']['html_path']}`.",
+            "", "<details>", 
+            f"<summary><b>Rule:</b> {report['repository']}:{report['rule_key']} | <b>Opinion:</b> {opinion} | <b>Confidence:</b> {confidence} </summary>",
+            "", report["summary"]
         ])
         for example in report["selected_examples"]:
             location = f"line {example['line_number']}" if example["line_number"] else "file-level"
             longest_fence = max((len(match) for match in re.findall(r"`+", example["snippet"])), default=0)
             fence = "`" * max(3, longest_fence + 1)
+            file_location =  f"`{example['project']}/{example['file_path']}` ({location})"
             sections.extend([
-                "", f"#### {example['classification'].replace('_', ' ')} — {example['example_id']}", "",
-                f"**{example['change_kind'].title()}** `{example['project']}/{example['file_path']}` ({location})",
+                "", f"**{example['classification'].replace('_', ' ').capitalize()}** {file_location}",
                 "", example["rationale"], "", f"{fence}{example['language']}", example["snippet"], fence,
             ])
+        sections.append("</details>")
     return "\n".join(sections)
 
 
