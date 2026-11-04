@@ -167,7 +167,7 @@ python3 /path/to/core-languages-tooling-public/ruling-diff-comment/ \
 
 Open `/tmp/ruling-comment.md` in a Markdown previewer to inspect the result.
 Markdown goes to stdout; diagnostic logging goes to stderr. If there are no
-changed ruling JSON or SARIF files or no issue deltas, stdout is empty.
+changed ruling SARIF files or no issue deltas, stdout is empty.
 
 Run from the analyzer repository root. Both revisions must exist locally, and
 the comparison uses Git's three-dot diff (`base...head`), just like the action.
@@ -179,10 +179,10 @@ Set `--sources-root` to the analyzer's source location (for example,
 `its/sources` or `private/its/sources`). Sources and any required submodule
 commits should be available locally for snippets; missing submodule content can
 trigger a Git fetch. Optional `--ruling-root` overrides the standard expected
-directories. Both JSON and SARIF per-rule files are supported, including added
-and deleted files. SARIF results are compared by primary source file and start
-line, preserving duplicate issues; message, column, and secondary-location-only
-changes do not produce issue deltas.
+directories. SARIF per-rule files are supported, including added and deleted
+files; legacy JSON reports are ignored. SARIF results are compared by primary
+source file, range coordinates, and issue message. Duplicate findings are
+ignored; secondary locations do not participate in comparison.
 
 Without `--dry-run`, the existing posting behavior is unchanged and
 `--pr-number` and `--repository` are required.

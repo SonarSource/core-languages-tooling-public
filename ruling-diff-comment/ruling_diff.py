@@ -116,9 +116,14 @@ def main() -> None:
         post_or_update_comment(args.pr_number, args.repository, comment)
 
 
-if __name__ == "__main__":
+def entrypoint() -> int:
     try:
         main()
     except Exception:
         logging.exception("Failed to generate ruling diff comment")
-        sys.exit(1)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(entrypoint())

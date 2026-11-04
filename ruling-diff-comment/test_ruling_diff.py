@@ -58,7 +58,7 @@ class LocalCLITests(unittest.TestCase):
             data = {"sample:file.py": lines}
         path.write_text(json.dumps(data), encoding="utf-8")
 
-    def test_directory_cli_compares_committed_json_and_sarif(self) -> None:
+    def test_directory_cli_compares_sarif_and_ignores_legacy_json(self) -> None:
         for root in (
             "its/ruling/src/test/resources/expected",
             "private/its/ruling/src/test/resources/expected",
@@ -93,7 +93,7 @@ class LocalCLITests(unittest.TestCase):
                             self.assertEqual(result.returncode, 0, result.stderr)
                             self.assertEqual(self.git(repository, "status", "--porcelain"), "")
                             self.assertEqual(self.git(repository, "rev-parse", "HEAD"), original_head)
-                            if change == "unchanged":
+                            if extension == "json" or change == "unchanged":
                                 self.assertEqual(result.stdout, "")
                                 continue
                             self.assertTrue(result.stdout.startswith("<!-- ruling-diff-comment -->"))
@@ -116,7 +116,7 @@ class LocalCLITests(unittest.TestCase):
         self.assertEqual(result.stdout, "")
         self.assertIn("Failed to generate ruling diff comment", result.stderr)
 
-    def test_malformed_ruling_exits_nonzero_without_comment(self) -> None:
+    def test_malformed_sarif_fails_and_legacy_json_is_ignored(self) -> None:
         for extension in ("json", "sarif"):
             with self.subTest(extension=extension), tempfile.TemporaryDirectory() as directory:
                 repository = Path(directory)
@@ -131,6 +131,11 @@ class LocalCLITests(unittest.TestCase):
 
                 result = self.run_cli(repository)
 
+                if extension == "json":
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(result.stdout, "")
+                    self.assertIn("No changed ruling report files", result.stderr)
+                    continue
                 self.assertNotEqual(result.returncode, 0)
                 self.assertEqual(result.stdout, "")
                 self.assertIn(f"python-S100.{extension} at HEAD", result.stderr)

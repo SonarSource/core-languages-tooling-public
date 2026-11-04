@@ -1,5 +1,5 @@
-from ruling_diff import main
+from ruling_diff import entrypoint
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(entrypoint())
