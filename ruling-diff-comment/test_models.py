@@ -105,6 +105,20 @@ class ModelConnectionTests(unittest.TestCase):
         self.assertEqual(options["api_base"], "https://gateway.example")
         self.assertEqual(options["extra_headers"]["x-portkey-api-key"], "test-key")
 
+    def test_auto_custom_endpoint_does_not_send_portkey_credentials(self) -> None:
+        os.environ["PORTKEY_API_KEY"] = "portkey-key"
+        self.assertEqual(
+            model_connection("gpt-4.1", api_base="https://model.example/v1"),
+            ("openai/gpt-4.1", {"api_base": "https://model.example/v1"}),
+        )
+
+    def test_explicit_portkey_custom_endpoint_remains_an_opt_in(self) -> None:
+        os.environ["PORTKEY_API_KEY"] = "portkey-key"
+        _, options = model_connection("gpt-4.1", "portkey", "https://gateway.example/v1")
+        self.assertEqual(options["api_key"], "portkey-key")
+        self.assertEqual(options["api_base"], "https://gateway.example/v1")
+        self.assertEqual(options["extra_headers"], {"x-portkey-provider": "openai"})
+
     def test_reasoning_models_use_required_dspy_defaults(self) -> None:
         for provider in ("direct", "portkey"):
             for model in ("gpt-5.4", "o3"):

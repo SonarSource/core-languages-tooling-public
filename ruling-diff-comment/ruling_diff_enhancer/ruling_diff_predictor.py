@@ -93,7 +93,15 @@ def review_changes(inputs: list[dict], predictor, max_examples: int = 3) -> list
     max_examples = min(max_examples, 3)
     reports = []
     for change in inputs:
-        prediction = predictor(
+        try:
+            reports.append(_review_change(change, predictor, max_examples))
+        except Exception as error:
+            reports.append(_failed_review(change, error))
+    return reports
+
+
+def _review_change(change: dict, predictor, max_examples: int) -> dict:
+    prediction = predictor(
             rule_key=change["rule_key"],
             repository=change["repository"],
             rule_html=change["metadata"]["html"],
@@ -101,11 +109,11 @@ def review_changes(inputs: list[dict], predictor, max_examples: int = 3) -> list
             change_counts={"added": change["added_count"], "removed": change["removed_count"]},
             examples=change["examples"],
             max_examples=max_examples,
-        )
-        review = Review.model_validate(prediction.review)
-        validate_review(review, change["examples"], max_examples)
-        by_id = {example["id"]: example for example in change["examples"]}
-        reports.append({
+    )
+    review = Review.model_validate(prediction.review)
+    validate_review(review, change["examples"], max_examples)
+    by_id = {example["id"]: example for example in change["examples"]}
+    return {
             "rule_key": change["rule_key"],
             "repository": change["repository"],
             "metadata_paths": {
@@ -120,5 +128,16 @@ def review_changes(inputs: list[dict], predictor, max_examples: int = 3) -> list
                 {**by_id[selection.example_id], **selection.model_dump()}
                 for selection in review.selected_examples
             ],
-        })
-    return reports
+    }
+
+
+def _failed_review(change: dict, error: Exception) -> dict:
+    error_type = type(error).__name__
+    return {
+        "rule_key": change["rule_key"], "repository": change["repository"],
+        "metadata_paths": {key: change["metadata"][key] for key in ("sonarpedia_path", "html_path", "json_path")},
+        "added_count": change["added_count"], "removed_count": change["removed_count"],
+        "available_examples": len(change["examples"]), "opinion": "neutral", "confidence": "low",
+        "summary": f"Automated review unavailable for this rule ({error_type}).",
+        "selected_examples": [], "error": {"type": error_type, "message": str(error)},
+    }

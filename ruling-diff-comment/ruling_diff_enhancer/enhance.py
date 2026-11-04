@@ -28,7 +28,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--provider", choices=("auto", "direct", "portkey"),
         default=os.environ.get("DSPY_PROVIDER", "auto"),
-        help="Connection mode (or DSPY_PROVIDER); auto prefers a matching Portkey key",
+        help="Connection mode (or DSPY_PROVIDER); auto uses Portkey only without a custom API base",
     )
     parser.add_argument("--api-base", default=os.environ.get("DSPY_API_BASE"), help="Optional model endpoint")
     parser.add_argument("--max-examples", type=positive_integer, choices=range(1, 4), default=3)
@@ -81,10 +81,18 @@ def review_comment(
         return review_changes(inputs, dspy.Predict(ReviewRulingChange), max_examples)
 
 
+def read_comment(path: Path, repository: Path) -> str:
+    resolved_repository = repository.resolve()
+    resolved_path = path.resolve()
+    if not resolved_path.is_relative_to(resolved_repository) or not resolved_path.is_file():
+        raise ValueError(f"Comment path must be a file inside {resolved_repository}: {path}")
+    return resolved_path.read_text(encoding="utf-8")
+
+
 def main() -> int:
     args = parse_args()
     try:
-        comment = args.comment.read_text(encoding="utf-8")
+        comment = read_comment(args.comment, args.repo)
         if args.prepare_only:
             inputs = prepare_inputs(comment, args.repo, args.sonarpedia)
             output = json.dumps(inputs, indent=2, ensure_ascii=False)

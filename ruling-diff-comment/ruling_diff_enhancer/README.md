@@ -63,8 +63,9 @@ of Markdown.
 ### Portkey for Local Testing
 
 Following `rule-identification`, the default `--provider auto` selects Portkey
-for a supported model family when a matching Portkey key is available,
-otherwise it uses the direct provider. No underlying provider API key is
+for a supported model family only when a matching Portkey key is available and
+no `--api-base`/`DSPY_API_BASE` custom endpoint was supplied; otherwise it uses
+the direct provider. No underlying provider API key is
 required in Portkey mode. Export your key as `PORTKEY_API_KEY` using your
 usual secret-management mechanism, then run:
 
@@ -93,9 +94,10 @@ Family-specific keys take precedence over the generic `PORTKEY_API_KEY`:
 `portkey`). Explicit `--provider portkey` fails early if the selected model has
 no matching key; it does not silently fall back to a direct provider.
 Unknown/custom model families retain direct `provider/model` routing in auto
-mode. `--api-base` overrides the endpoint for the selected mode; use
-`--provider direct` for unrelated custom/local endpoints when Portkey keys are
-present. Portkey mode sends the same review evidence through Portkey to the
+mode. `--api-base` uses the direct provider in auto mode, so custom/local
+endpoints retain their own credentials even when Portkey keys are present. Use
+explicit `--provider portkey --api-base ...` to opt in to a custom Portkey
+gateway. Portkey mode sends the same review evidence through Portkey to the
 selected provider, so its logging, access controls, and retention policies also
 apply.
 

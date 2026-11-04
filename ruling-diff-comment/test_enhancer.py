@@ -24,12 +24,12 @@ from ruling_diff_enhancer.ruling_diff_predictor import Review, ReviewRulingChang
 
 def comment_section(
     rule_key: str = "S9191", project: str = "sample", kind: str = "Added",
-    location: str = "line 12", snippet: str = ">>>     12 | call();",
+    location: str = "line 12", snippet: str = ">>>     12 | call();", file_path: str = "src/Example.java",
 ) -> str:
     return (
         f"<details>\n<summary><b>{rule_key}</b> (<code>java</code>) on <b>{project}</b>"
         " - 1 issues removed, 1 issues added</summary>\n\n"
-        f"**{kind}** `src/Example.java` ({location})\n```java\n{snippet}\n```\n\n</details>"
+        f"**{kind}** `{file_path}` ({location})\n```java\n{snippet}\n```\n\n</details>"
     )
 
 
@@ -84,6 +84,10 @@ class ParseCommentTests(unittest.TestCase):
         change, = parse_comment(comment_section(project="a&amp;b", location="file-level"))
         self.assertEqual(change.examples[0]["line_number"], 0)
         self.assertEqual(change.examples[0]["project"], "a&b")
+
+    def test_preserves_non_s_rule_keys(self) -> None:
+        change, = parse_comment(comment_section(rule_key="python-ParsingError"))
+        self.assertEqual(change.rule_key, "python-ParsingError")
 
     def test_rule_headers_inside_code_are_not_parsed(self) -> None:
         injected = '<summary><b>S100</b> (<code>java</code>) on <b>other</b> - 0 issues removed, 1 issues added</summary>'
@@ -155,14 +159,16 @@ class MetadataTests(unittest.TestCase):
     def test_ambiguous_metadata_requires_explicit_selection(self) -> None:
         write_metadata(self.root)
         write_metadata(self.root, "private/sonarpedia.json")
+        comment = comment_section()
         with self.assertRaisesRegex(ValueError, "Ambiguous metadata"):
-            prepare_inputs(comment_section(), self.root)
+            prepare_inputs(comment, self.root)
         selected = prepare_inputs(comment_section(), self.root, Path("private/sonarpedia.json"))
         self.assertEqual(selected[0]["metadata"]["sonarpedia_path"], "private/sonarpedia.json")
 
     def test_missing_config_is_actionable(self) -> None:
+        comment = comment_section()
         with self.assertRaisesRegex(ValueError, "No sonarpedia.json"):
-            prepare_inputs(comment_section(), self.root)
+            prepare_inputs(comment, self.root)
 
     def test_missing_pair_or_unknown_rule_fails(self) -> None:
         write_metadata(self.root)
@@ -170,28 +176,52 @@ class MetadataTests(unittest.TestCase):
             with self.subTest(rule_key=rule_key):
                 if rule_key == "S9191":
                     (self.root / "rules/S9191.html").unlink()
+                comment = comment_section(rule_key=rule_key)
                 with self.assertRaisesRegex(ValueError, "No HTML/JSON metadata pair"):
-                    prepare_inputs(comment_section(rule_key=rule_key), self.root)
+                    prepare_inputs(comment, self.root)
+
+    def test_non_s_rule_key_loads_metadata_or_fails_loudly(self) -> None:
+        write_metadata(self.root, rule_key="python-PrintStatementUsage")
+        inputs = prepare_inputs(comment_section(rule_key="python-PrintStatementUsage"), self.root)
+        self.assertEqual(inputs[0]["examples"][0]["id"], "E1")
+        comment = comment_section(rule_key="python-ParsingError")
+        with self.assertRaisesRegex(ValueError, "No HTML/JSON metadata pair"):
+            prepare_inputs(comment, self.root)
+
+    def test_untrusted_example_paths_cannot_escape_repository(self) -> None:
+        write_metadata(self.root)
+        for path in ("/etc/passwd", "../outside.py"):
+            comment = comment_section(file_path=path)
+            with self.subTest(path=path), self.assertRaisesRegex(ValueError, "Unsafe example path"):
+                prepare_inputs(comment, self.root)
+        with tempfile.TemporaryDirectory() as outside:
+            (self.root / "linked").symlink_to(outside, target_is_directory=True)
+            comment = comment_section(file_path="linked/outside.py")
+            with self.assertRaisesRegex(ValueError, "Unsafe example path"):
+                prepare_inputs(comment, self.root)
 
     def test_malformed_config_and_metadata_fail(self) -> None:
         config = write_metadata(self.root)
         for contents in ("{", "[]", "{}", '{"rules-metadata-path": 1}'):
             with self.subTest(contents=contents):
                 config.write_text(contents, encoding="utf-8")
+                comment = comment_section()
                 with self.assertRaises(ValueError):
-                    prepare_inputs(comment_section(), self.root)
+                    prepare_inputs(comment, self.root)
         write_metadata(self.root)
         for contents in ("{", "[]", '{"sqKey": "S100"}'):
             with self.subTest(contents=contents):
                 (self.root / "rules/S9191.json").write_text(contents, encoding="utf-8")
+                comment = comment_section()
                 with self.assertRaises(ValueError):
-                    prepare_inputs(comment_section(), self.root)
+                    prepare_inputs(comment, self.root)
 
     def test_metadata_path_cannot_escape_repository(self) -> None:
         config = write_metadata(self.root)
         config.write_text('{"rules-metadata-path": "../outside"}', encoding="utf-8")
+        comment = comment_section()
         with self.assertRaisesRegex(ValueError, "escapes repository"):
-            prepare_inputs(comment_section(), self.root)
+            prepare_inputs(comment, self.root)
 
     def test_explicit_configuration_must_be_inside_repository(self) -> None:
         with self.assertRaisesRegex(ValueError, "inside"):
@@ -201,8 +231,9 @@ class MetadataTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as outside:
             target = write_metadata(Path(outside))
             (self.root / "sonarpedia.json").symlink_to(target)
+            comment = comment_section()
             with self.assertRaisesRegex(ValueError, "configuration escapes repository"):
-                prepare_inputs(comment_section(), self.root)
+                prepare_inputs(comment, self.root)
 
     def test_metadata_file_cannot_symlink_outside_repository(self) -> None:
         write_metadata(self.root)
@@ -212,8 +243,9 @@ class MetadataTests(unittest.TestCase):
             html_path = self.root / "rules/S9191.html"
             html_path.unlink()
             html_path.symlink_to(target)
+            comment = comment_section()
             with self.assertRaisesRegex(ValueError, "Rule metadata escapes repository"):
-                prepare_inputs(comment_section(), self.root)
+                prepare_inputs(comment, self.root)
 
 
 class PredictorTests(unittest.TestCase):
@@ -239,17 +271,20 @@ class PredictorTests(unittest.TestCase):
         empty["selected_examples"] = []
         invalid_reviews.append(empty)
         for data in invalid_reviews:
+            review = Review.model_validate(data)
             with self.subTest(data=data), self.assertRaises(ValueError):
-                validate_review(Review.model_validate(data), self.examples, 3)
+                validate_review(review, self.examples, 3)
+        review = Review.model_validate(review_data())
         with self.assertRaisesRegex(ValueError, "max_examples"):
-            validate_review(Review.model_validate(review_data()), self.examples, 0)
+            validate_review(review, self.examples, 0)
 
     def test_representative_cannot_be_mixed_with_bad_cases(self) -> None:
         data = review_data("representative")
         data["selected_examples"].extend(review_data(example_id="E2")["selected_examples"])
         examples = self.examples + [{**self.examples[0], "id": "E2"}]
+        review = Review.model_validate(data)
         with self.assertRaisesRegex(ValueError, "Representative fallback"):
-            validate_review(Review.model_validate(data), examples, 3)
+            validate_review(review, examples, 3)
 
     def test_more_than_three_selections_are_rejected(self) -> None:
         data = review_data()
@@ -277,13 +312,15 @@ class PredictorTests(unittest.TestCase):
         data["selected_examples"] = []
         validate_review(Review.model_validate(data), [], 3)
         data["confidence"] = "high"
+        review = Review.model_validate(data)
         with self.assertRaisesRegex(ValueError, "confidence must be low"):
-            validate_review(Review.model_validate(data), [], 3)
+            validate_review(review, [], 3)
 
     def test_invalid_opinion_confidence_or_empty_explanation_is_rejected(self) -> None:
         for field, value in (("opinion", "great"), ("confidence", 0.8), ("summary", "  ")):
+            data = {**review_data(), field: value}
             with self.subTest(field=field), self.assertRaises(ValueError):
-                Review.model_validate({**review_data(), field: value})
+                Review.model_validate(data)
 
     def test_predictor_receives_metadata_counts_and_original_examples(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -301,6 +338,31 @@ class PredictorTests(unittest.TestCase):
         self.assertIn("java:S9191", rendered)
         self.assertIn("<b>Opinion:</b> 🔴 negative | <b>Confidence:</b> low", rendered)
         self.assertIn("Added false positive", rendered)
+
+    def test_one_invalid_prediction_does_not_discard_other_reviews(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_metadata(root, rule_key="S9191")
+            write_metadata(root, "second/sonarpedia.json", rule_key="S100")
+            inputs = prepare_inputs("\n".join([comment_section(), comment_section(rule_key="S100")]), root)
+        predictor = Mock(side_effect=[SimpleNamespace(review=review_data()), SimpleNamespace(review={})])
+        reports = review_changes(inputs, predictor)
+        self.assertEqual(reports[0]["rule_key"], "S9191")
+        self.assertEqual(reports[0]["selected_examples"][0]["id"], "E1")
+        self.assertEqual(reports[1]["error"]["type"], "ValidationError")
+        self.assertIn("unavailable", reports[1]["summary"])
+
+    def test_a_failed_prediction_before_a_valid_one_keeps_the_valid_review(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_metadata(root, rule_key="S9191")
+            write_metadata(root, "second/sonarpedia.json", rule_key="S100")
+            inputs = prepare_inputs("\n".join([comment_section(), comment_section(rule_key="S100")]), root)
+        predictor = Mock(side_effect=[RuntimeError("transport unavailable"), SimpleNamespace(review=review_data())])
+        reports = review_changes(inputs, predictor)
+        self.assertEqual(reports[0]["error"]["type"], "RuntimeError")
+        self.assertEqual(reports[1]["rule_key"], "S100")
+        self.assertEqual(reports[1]["selected_examples"][0]["id"], "E1")
 
     def test_typed_dspy_predictor_with_dummy_language_model(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
