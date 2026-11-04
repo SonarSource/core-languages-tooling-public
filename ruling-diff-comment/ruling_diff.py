@@ -7,7 +7,8 @@ import sys
 from pathlib import Path
 
 from ruling_diff_core import RuleDiff, build_rule_diffs, format_comment
-from ruling_diff_enhancer.enhance import render_markdown, review_comment
+from ruling_diff_enhancer.enhance import review_comment
+from ruling_diff_enhancer.rendering import format_reviewed_comment
 from ruling_diff_enhancer.ruling_diff_models import has_api_key
 from ruling_diff_io import (
     GitHubActionIO,
@@ -73,7 +74,7 @@ def add_enhancer_review(comment: str, rule_diffs: list[RuleDiff]) -> str:
         reports = review_comment(
             comment, Path.cwd(), model=model, provider=provider, api_base=api_base,
         )
-        return format_comment(rule_diffs, review=render_markdown(reports))
+        return format_reviewed_comment(rule_diffs, reports)
     except Exception as error:
         logging.warning(
             "AI ruling diff review unavailable (%s); keeping the original diff comment.",

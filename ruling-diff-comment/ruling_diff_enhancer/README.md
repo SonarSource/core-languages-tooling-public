@@ -119,6 +119,11 @@ or `high`. These are subjective triage judgments, not calibrated probabilities
 or proof of correctness. A change with no visible snippets must use low
 confidence and selects no examples.
 
+In combined diff comments, a linked overview table leads to one section per
+rule/repository, grouping projects and their source examples. Selected rationales
+appear with the original snippets rather than repeating them in a separate review.
+Color indicates the opinion only; confidence is displayed as neutral text.
+
 Only examples already present in the comment can be selected. The producer caps
 snippets and can truncate whole rule sections. Missing context, source files,
 unseen examples, and line moves limit what can be inferred; human review is still

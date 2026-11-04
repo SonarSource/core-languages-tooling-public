@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .ruling_diff_inputs import prepare_inputs
 from .ruling_diff_models import model_connection
+from .rendering import format_opinion
 
 
 def positive_integer(value: str) -> int:
@@ -43,24 +44,11 @@ def parse_args() -> argparse.Namespace:
 def render_markdown(reports: list[dict]) -> str:
     sections = ["## Automated Ruling Diff Review", ""]
     for report in reports:
-        opinion = report['opinion'].replace('_', ' ')
-        if "negative" in opinion:
-            opinion = f"🔴 {opinion}"
-        elif "positive" in opinion:
-            opinion = f"🟢 {opinion}"
-        else:
-            opinion = f"🟡 {opinion}"
-
+        opinion = format_opinion(report['opinion'])
         confidence = report['confidence']
-        if "high" in confidence:
-            confidence = f"🟢 {confidence}"
-        elif "medium" in confidence:
-            confidence = f"🟠 {confidence}"
-        elif "low" in confidence:
-            confidence = f"🔴 {confidence}"
 
         sections.extend([
-            "", "<details>", 
+            "", "<details>",
             f"<summary><b>Rule:</b> {report['repository']}:{report['rule_key']} | <b>Opinion:</b> {opinion} | <b>Confidence:</b> {confidence} </summary>",
             "", report["summary"]
         ])
