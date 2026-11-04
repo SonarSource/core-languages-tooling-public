@@ -13,7 +13,8 @@ RULE_HEADER = re.compile(
     r" - (\d+) issues removed, (\d+) issues added"
 )
 EXAMPLE_HEADER = re.compile(
-    r"^\*\*(Added|Removed)\*\* `([^`]+)` \((?:line (\d+)|(file-level))\)$"
+    r"^\*\*(Added|Removed)\*\* `([^`]+)` \((?:line (\d+)|(file-level))"
+    r"(?:, column \d+)?(?: to line \d+)?(?:, end column \d+)?\)$"
 )
 IGNORED_DIRECTORIES = {".git", ".venv", "venv", "node_modules", "target", "build"}
 
@@ -49,6 +50,16 @@ def parse_comment(comment: str) -> list[RuleChange]:
         if example and current is not None:
             change_kind, path, line_number, _ = example.groups()
             opening_fence = next(lines, "")
+            message = None
+            if opening_fence.startswith("<pre>"):
+                message_lines = [opening_fence]
+                while not message_lines[-1].endswith("</pre>"):
+                    message_line = next(lines, None)
+                    if message_line is None:
+                        raise ValueError(f"Unclosed issue message for example: {path}")
+                    message_lines.append(message_line)
+                message = unescape("\n".join(message_lines)[5:-6])
+                opening_fence = next(lines, "")
             fence = re.fullmatch(r"(`{3,})([^`]*)", opening_fence)
             if fence is None:
                 raise ValueError(f"Missing code fence after example header: {line}")
@@ -59,7 +70,7 @@ def parse_comment(comment: str) -> list[RuleChange]:
                 body.append(snippet_line)
             else:
                 raise ValueError(f"Unclosed code fence for example: {path}")
-            current.examples.append({
+            example_data = {
                 "id": f"E{len(current.examples) + 1}",
                 "project": project,
                 "change_kind": change_kind.lower(),
@@ -67,7 +78,10 @@ def parse_comment(comment: str) -> list[RuleChange]:
                 "line_number": int(line_number) if line_number is not None else 0,
                 "language": fence.group(2).strip(),
                 "snippet": "\n".join(body),
-            })
+            }
+            if message is not None:
+                example_data["message"] = message
+            current.examples.append(example_data)
         elif line.startswith("```"):
             fence = re.match(r"`{3,}", line).group()
             for snippet_line in lines:

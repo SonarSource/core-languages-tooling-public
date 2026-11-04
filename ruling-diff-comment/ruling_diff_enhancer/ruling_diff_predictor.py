@@ -46,6 +46,8 @@ class ReviewRulingChange(dspy.Signature):
     evidence assessment, not a calibrated probability. Provide a concise
     summary of the overall opinion and a brief evidence-based rationale for
     each selection, not a step-by-step chain of thought.
+    If the shown location doesn't seem relevant for the issue,
+    give a negative opinion and mention it in your review.
     """
 
     rule_key: str = dspy.InputField()

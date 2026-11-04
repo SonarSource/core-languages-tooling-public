@@ -95,6 +95,33 @@ class ParseCommentTests(unittest.TestCase):
         change, = parse_comment(comment)
         self.assertEqual(change.examples, [])
 
+    def test_parses_renderer_coordinates_and_issue_messages(self) -> None:
+        for location in (
+            core.IssueLocation(0, message="File-level issue"),
+            core.IssueLocation(12, message="Line-only issue"),
+            core.IssueLocation(12, 3, 12, 8),
+            core.IssueLocation(12, 0, 13, 8),
+            core.IssueLocation(12, 3, 13, 8, "Avoid <unsafe> calls.\n```java\nUse a safe alternative."),
+        ):
+            with self.subTest(location=location):
+                snippet = core.Snippet("src/Example.java", location, "removed", ">>>     12 | call();")
+                comment = core.format_comment([core.RuleDiff(
+                    project="sample", repo="java", rule_key="S9191",
+                    file_diffs=[core.IssueDiff(snippet.file_path, [], [location])],
+                    snippets=[snippet], is_new_file=False, is_deleted_file=False,
+                )])
+                change, = parse_comment(comment)
+                example, = change.examples
+                self.assertEqual(example["change_kind"], "removed")
+                self.assertEqual(example["line_number"], location.start_line)
+                self.assertEqual(example["snippet"], snippet.body)
+                self.assertEqual(example.get("message", ""), location.message)
+
+    def test_rejects_unclosed_issue_message(self) -> None:
+        comment = comment_section().replace("```java", "<pre>Unclosed message\n```java")
+        with self.assertRaisesRegex(ValueError, "Unclosed issue message"):
+            parse_comment(comment)
+
     def test_rejects_missing_rule_or_broken_fences(self) -> None:
         comments = (
             "No changes.", comment_section().replace("```java", "java"),
@@ -269,10 +296,11 @@ class CommentIntegrationTests(unittest.TestCase):
         environment = patch.dict(cli.os.environ, {}, clear=True)
         environment.start()
         self.addCleanup(environment.stop)
+        location = core.IssueLocation(12, 3, 13, 8, "Avoid <unsafe> calls.\nUse a safe alternative.")
         self.rule_diffs = [core.RuleDiff(
             project="sample", repo="java", rule_key="S9191",
-            file_diffs=[core.IssueDiff("src/Example.java", [core.IssueLocation(12)], [])],
-            snippets=[core.Snippet("src/Example.java", core.IssueLocation(12), "added", ">>>     12 | call();")],
+            file_diffs=[core.IssueDiff("src/Example.java", [location], [])],
+            snippets=[core.Snippet("src/Example.java", location, "added", ">>>     12 | call();")],
             is_new_file=False, is_deleted_file=False,
         )]
         self.comment = core.format_comment(self.rule_diffs)
@@ -325,6 +353,9 @@ class CommentIntegrationTests(unittest.TestCase):
                 self.assertLess(comment.index("## AI Ruling Diff Review"), comment.index("<details>"))
                 self.assertLess(len(comment), core.COMMENT_SOFT_LIMIT)
                 predictor.assert_called_once()
+                example, = predictor.call_args.kwargs["examples"]
+                self.assertEqual(example["snippet"], self.rule_diffs[0].snippets[0].body)
+                self.assertEqual(example["message"], self.rule_diffs[0].snippets[0].location.message)
                 language_model.assert_called_once_with(
                     "openai/gpt-4.1", cache=False, api_base="http://localhost:8000/v1",
                 )
