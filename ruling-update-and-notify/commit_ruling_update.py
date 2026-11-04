@@ -83,7 +83,11 @@ def commit_ruling_update(target_ref: str, ruling_root: str, head_sha: str) -> tu
                 "commit", "-m", f"Update ruling results\n\n{GENERATED_MARKER}",
             )
             update_sha = output("git", "-C", str(worktree), "rev-parse", "HEAD")
-            run("git", "-C", str(worktree), "push", "origin", f"HEAD:refs/heads/{target_ref}")
+            run(
+                "git", "-C", str(worktree), "push",
+                f"--force-with-lease=refs/heads/{target_ref}:{base_sha}",
+                "origin", f"HEAD:refs/heads/{target_ref}",
+            )
         finally:
             run("git", "worktree", "remove", "--force", str(worktree))
     return base_sha, update_sha

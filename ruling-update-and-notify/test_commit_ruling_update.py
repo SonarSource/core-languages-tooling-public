@@ -98,7 +98,10 @@ class CommitRulingUpdateTests(unittest.TestCase):
         commands = [call.args for call in run.call_args_list]
         pushes = [command for command in commands if "push" in command]
         self.assertEqual(len(pushes), 1)
-        self.assertEqual(pushes[0][-3:], ("push", "origin", "HEAD:refs/heads/feature"))
+        self.assertEqual(pushes[0][-4:], (
+            "push", f"--force-with-lease=refs/heads/feature:{self.head_sha}",
+            "origin", "HEAD:refs/heads/feature",
+        ))
         self.assertFalse(any(command[0] == "gh" for command in commands))
 
     def test_no_changes_does_not_commit_or_push(self) -> None:
@@ -150,6 +153,44 @@ class CommitRulingUpdateTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "conflict"):
                 self.update()
         self.assertEqual(self.remote_head(), self.head_sha)
+        self.assertEqual(self.git("worktree", "list", "--porcelain").count("worktree "), 1)
+
+    def test_rejects_a_concurrent_rewind_without_restoring_removed_commits(self) -> None:
+        previous_head = self.head_sha
+        self.git("commit", "--allow-empty", "-m", "Commit later removed")
+        self.head_sha = self.git("rev-parse", "HEAD")
+        self.git("push", "origin", "feature")
+        (self.source / self.project / "report.json").write_text("new")
+        original_run = commit_ruling_update.run
+
+        def run_with_racing_rewind(*command: str) -> None:
+            if "push" in command:
+                self.git("push", "--force", "origin", f"{previous_head}:refs/heads/feature", cwd=self.peer)
+            original_run(*command)
+
+        with patch.object(commit_ruling_update, "run", side_effect=run_with_racing_rewind):
+            with self.assertRaises(subprocess.CalledProcessError):
+                self.update()
+        self.assertEqual(self.remote_head(), previous_head)
+        self.assertEqual(self.git("rev-parse", "HEAD"), self.head_sha)
+        self.assertEqual((self.source / self.project / "report.json").read_text(), "new")
+        self.assertEqual(self.git("worktree", "list", "--porcelain").count("worktree "), 1)
+
+    def test_rejects_a_concurrent_deletion_without_recreating_the_branch(self) -> None:
+        (self.source / self.project / "report.json").write_text("new")
+        original_run = commit_ruling_update.run
+
+        def run_with_racing_deletion(*command: str) -> None:
+            if "push" in command:
+                self.git("push", "origin", ":refs/heads/feature", cwd=self.peer)
+            original_run(*command)
+
+        with patch.object(commit_ruling_update, "run", side_effect=run_with_racing_deletion):
+            with self.assertRaises(subprocess.CalledProcessError):
+                self.update()
+        self.assertEqual(self.git("for-each-ref", "refs/heads/feature", cwd=self.origin), "")
+        self.assertEqual(self.git("rev-parse", "HEAD"), self.head_sha)
+        self.assertEqual((self.source / self.project / "report.json").read_text(), "new")
         self.assertEqual(self.git("worktree", "list", "--porcelain").count("worktree "), 1)
 
 

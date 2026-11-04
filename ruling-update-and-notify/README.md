@@ -109,9 +109,10 @@ instead. All artifacts in a run must use the same format.
    PR head SHA. Stale runs fail instead of applying old results to newer code.
 6. Uses a temporary worktree to commit only ruling changes with the bot
    identity. The caller's checkout and unrelated changes remain untouched.
-7. Pushes the commit directly to the PR branch using a normal, non-force
-   push. Concurrent branch updates cause the push to fail rather than being
-   overwritten. No differences means no commit or push.
+7. Pushes the commit directly to the PR branch with an explicit expected-SHA
+   lease. The new commit extends the verified PR head; the push fails if the
+   remote tip no longer matches, including after an advance, rewind, or branch
+   deletion. No differences means no commit or push.
 8. Posts or updates the ruling diff comment on the original PR, comparing
    the previous head with the newly pushed ruling commit.
 
