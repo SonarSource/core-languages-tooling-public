@@ -11,6 +11,22 @@ PORTKEY_KEY_VARIABLES = {
 }
 
 
+def has_api_key(model: str, provider: str = "auto", api_base: str | None = None) -> bool:
+    resolved_model, options = model_connection(model, provider, api_base)
+    if options.get("api_key"):
+        return True
+    key_variables = {
+        "openai": ("OPENAI_API_KEY",),
+        "anthropic": ("ANTHROPIC_API_KEY",),
+        "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+        "azure": ("AZURE_API_KEY", "AZURE_OPENAI_API_KEY"),
+    }
+    return any(
+        os.environ.get(variable, "").strip()
+        for variable in key_variables.get(resolved_model.partition("/")[0], ())
+    )
+
+
 def model_family(model: str) -> str | None:
     normalized = model.lower()
     if normalized.startswith("gpt-") or re.match(r"^o\d", normalized):

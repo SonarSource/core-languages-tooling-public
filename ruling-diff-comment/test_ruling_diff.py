@@ -138,6 +138,11 @@ class LocalCLITests(unittest.TestCase):
 
 
 class RulingDiffCLITest(unittest.TestCase):
+    def setUp(self) -> None:
+        environment = patch.dict(cli.os.environ, {"DSPY_MODEL": ""})
+        environment.start()
+        self.addCleanup(environment.stop)
+
     def parse_args(self, *arguments: str):
         with patch.object(sys, "argv", ["ruling_diff.py", *arguments]):
             return cli.parse_args()
@@ -180,6 +185,7 @@ class RulingDiffCLITest(unittest.TestCase):
                     patch.object(cli, "GitHubActionIO") as io_factory,
                     patch.object(cli, "build_rule_diffs", return_value=["diff"]) as build,
                     patch.object(cli, "format_comment", return_value="markdown") as render,
+                    patch.object(cli, "add_enhancer_review", return_value="enhanced markdown") as enhance,
                     patch.object(cli, "post_or_update_comment") as post,
                     redirect_stdout(output),
                 ):
@@ -187,12 +193,13 @@ class RulingDiffCLITest(unittest.TestCase):
 
                 build.assert_called_once_with(["ruling.json"], "base", "head", io_factory.return_value)
                 render.assert_called_once_with(["diff"])
+                enhance.assert_called_once_with("markdown", ["diff"])
                 if dry_run:
-                    self.assertEqual(output.getvalue(), "markdown\n")
+                    self.assertEqual(output.getvalue(), "enhanced markdown\n")
                     post.assert_not_called()
                 else:
                     self.assertEqual(output.getvalue(), "")
-                    post.assert_called_once_with("123", "org/repo", "markdown")
+                    post.assert_called_once_with("123", "org/repo", "enhanced markdown")
 
     def test_dry_run_without_deltas_prints_nothing(self) -> None:
         args = self.parse_args("--dry-run", "--base-sha", "base", "--head-sha", "head")

@@ -33,6 +33,11 @@ metadata is an error, not a reason to guess a specification.
 
 ## Review With DSPy
 
+The diff-comment creation script can also invoke this enhancer automatically
+and include its review in the final comment. See the parent README's
+[AI-assisted diff review](../README.md#ai-assisted-diff-review) section for
+credential configuration and a one-command local preview.
+
 Requires Python 3.10+, `uv`, and an explicitly selected model accessible through
 DSPy/LiteLLM. Set the selected provider's usual credential environment variables;
 do not put tokens in arguments, source files, or comments. Use a model/provider

@@ -5,6 +5,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -12,6 +14,8 @@ from unittest.mock import Mock, patch
 import dspy
 from dspy.utils import DummyLM
 
+import ruling_diff as cli
+import ruling_diff_core as core
 from ruling_diff_enhancer import enhance
 from ruling_diff_enhancer.ruling_diff_inputs import find_configurations, parse_comment, prepare_inputs
 from ruling_diff_enhancer.ruling_diff_predictor import Review, ReviewRulingChange, review_changes, validate_review
@@ -258,6 +262,94 @@ class PredictorTests(unittest.TestCase):
         with dspy.context(lm=lm):
             report, = review_changes(inputs, dspy.Predict(ReviewRulingChange))
         self.assertEqual(report["selected_examples"][0]["classification"], "representative")
+
+
+class CommentIntegrationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        environment = patch.dict(cli.os.environ, {}, clear=True)
+        environment.start()
+        self.addCleanup(environment.stop)
+        self.rule_diffs = [core.RuleDiff(
+            project="sample", repo="java", rule_key="S9191",
+            file_diffs=[core.IssueDiff("src/Example.java", [core.IssueLocation(12)], [])],
+            snippets=[core.Snippet("src/Example.java", core.IssueLocation(12), "added", ">>>     12 | call();")],
+            is_new_file=False, is_deleted_file=False,
+        )]
+        self.comment = core.format_comment(self.rule_diffs)
+
+    def test_no_matching_key_or_model_keeps_comment_without_calling_enhancer(self) -> None:
+        for environment in (
+            {}, {"OPENAI_API_KEY": "test-key"}, {"DSPY_MODEL": "gpt-4.1"},
+            {"DSPY_MODEL": "gpt-4.1", "ANTHROPIC_API_KEY": "unrelated-key"},
+        ):
+            with self.subTest(environment=environment), patch.dict(cli.os.environ, environment):
+                with patch.object(cli, "review_comment") as review:
+                    self.assertEqual(cli.add_enhancer_review(self.comment, self.rule_diffs), self.comment)
+                review.assert_not_called()
+
+    def test_review_is_included_in_preview_and_posted_comment(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_metadata(root)
+            for dry_run in (True, False):
+                output = StringIO()
+                args = SimpleNamespace(
+                    dry_run=dry_run, base_sha="base", head_sha="head",
+                    pr_number="123", repository="org/repo", ruling_root=None,
+                    sources_root="its/sources",
+                )
+                predictor = Mock(return_value=SimpleNamespace(review=review_data()))
+                with (
+                    self.subTest(dry_run=dry_run),
+                    patch.dict(cli.os.environ, {
+                        "DSPY_MODEL": "gpt-4.1", "OPENAI_API_KEY": "test-key",
+                        "DSPY_PROVIDER": "direct", "DSPY_API_BASE": "http://localhost:8000/v1",
+                    }),
+                    patch.object(cli, "parse_args", return_value=args),
+                    patch.object(cli, "get_changed_ruling_files", return_value=["ruling.sarif"]),
+                    patch.object(cli, "build_rule_diffs", return_value=self.rule_diffs),
+                    patch.object(cli.Path, "cwd", return_value=root),
+                    patch.object(cli, "post_or_update_comment") as post,
+                    patch.object(dspy, "configure_cache"),
+                    patch.object(dspy, "LM") as language_model,
+                    patch.object(dspy, "context"),
+                    patch.object(dspy, "Predict", return_value=predictor),
+                    redirect_stdout(output),
+                ):
+                    cli.main()
+                comment = output.getvalue() if dry_run else post.call_args.args[2]
+                self.assertTrue(comment.startswith("<!-- ruling-diff-comment -->"))
+                self.assertIn("## AI Ruling Diff Review", comment)
+                self.assertIn(review_data()["summary"], comment)
+                self.assertIn("<summary><b>S9191</b>", comment)
+                self.assertLess(comment.index("## AI Ruling Diff Review"), comment.index("<details>"))
+                self.assertLess(len(comment), core.COMMENT_SOFT_LIMIT)
+                predictor.assert_called_once()
+                language_model.assert_called_once_with(
+                    "openai/gpt-4.1", cache=False, api_base="http://localhost:8000/v1",
+                )
+                if dry_run:
+                    post.assert_not_called()
+                else:
+                    self.assertEqual(output.getvalue(), "")
+                    self.assertEqual(post.call_args.args[:2], ("123", "org/repo"))
+
+    def test_enhancer_failures_preserve_comment_and_do_not_log_secrets(self) -> None:
+        for error in (ImportError("secret-key"), ValueError("secret-key"), RuntimeError("secret-key")):
+            with (
+                self.subTest(error=type(error).__name__),
+                patch.dict(cli.os.environ, {"DSPY_MODEL": "gpt-4.1", "OPENAI_API_KEY": "secret-key"}),
+                patch.object(cli, "review_comment", side_effect=error),
+                self.assertLogs(level="WARNING") as logs,
+            ):
+                self.assertEqual(cli.add_enhancer_review(self.comment, self.rule_diffs), self.comment)
+            self.assertNotIn("secret-key", "\n".join(logs.output))
+
+    def test_oversized_review_is_omitted_without_losing_rule_details(self) -> None:
+        comment = core.format_comment(self.rule_diffs, review="x" * core.COMMENT_SOFT_LIMIT)
+        self.assertIn("AI review omitted", comment)
+        self.assertIn("<summary><b>S9191</b>", comment)
+        self.assertLess(len(comment), core.COMMENT_SOFT_LIMIT)
 
 
 class CLITests(unittest.TestCase):

@@ -190,11 +190,48 @@ Without `--dry-run`, the existing posting behavior is unchanged and
 ### AI-Assisted Diff Review
 
 The optional [`ruling_diff_enhancer`](ruling_diff_enhancer) submodule reviews
-the generated Markdown against local rule metadata using DSPy. Install its
-dependencies with `uv sync --extra enhancer --frozen`, then run
-`uv run --extra enhancer python -m ruling_diff_enhancer --help` from this directory.
-Input preparation with `--prepare-only` uses only the standard library.
-Normal diff generation and the GitHub Action do not require AI dependencies.
+the generated Markdown against local rule metadata using DSPy. The diff-comment
+script automatically includes an **AI Ruling Diff Review** above the original
+rule details when `DSPY_MODEL` and an API key for its selected connection are set.
+This applies both to `--dry-run` previews and posted PR comments. The existing
+per-file and per-rule snippet limits still apply, and the review shares the
+comment size budget with the rule details.
+
+Set `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` / `GOOGLE_API_KEY`,
+or `AZURE_API_KEY` / `AZURE_OPENAI_API_KEY` for the corresponding direct provider.
+Portkey accepts `PORTKEY_API_KEY` or the matching family-specific variable
+(`PORTKEY_API_KEY_OPENAI`, `PORTKEY_API_KEY_CLAUDE`, `PORTKEY_API_KEY_GOOGLE`).
+`DSPY_PROVIDER` (`auto`, `direct`, or `portkey`) and `DSPY_API_BASE` configure
+the connection as described in the [enhancer documentation](ruling_diff_enhancer).
+Without a model or matching key, the ordinary comment is unchanged and DSPy is
+not imported. Enhancer errors (including missing dependencies or metadata) emit
+a warning to stderr and preserve the original comment rather than blocking it.
+
+To test locally, export your key using your normal secret-management mechanism,
+then run from an analyzer checkout with committed SARIF expectation changes:
+
+```bash
+tooling=/path/to/core-languages-tooling-public/ruling-diff-comment
+export DSPY_MODEL=claude-sonnet-4-5-20250929
+export DSPY_PROVIDER=portkey
+uv run --project "$tooling" --frozen --extra enhancer python "$tooling/" \
+  --dry-run --base-sha origin/master --head-sha HEAD \
+  --sources-root its/sources > /tmp/ruling-comment.md
+```
+
+Adjust the revisions and sources root for the analyzer. The checkout needs
+`sonarpedia.json` and the referenced `<rule>.html` / `<rule>.json` metadata pairs.
+Open `/tmp/ruling-comment.md` to see the combined review and original snippets.
+This preview does not post to GitHub, but **does call the configured model**:
+rule metadata and visible source snippets leave your machine and charges may
+apply. Use an approved provider/model for the code being reviewed. Unset
+`DSPY_MODEL` to preview the ordinary comment without making model calls.
+
+The GitHub Action installs enhancer dependencies when `DSPY_MODEL` is set;
+provide it and the API key through the calling workflow's environment. Ordinary
+diff generation does not require AI dependencies. The standalone enhancer CLI
+is still available via `uv run --extra enhancer python -m ruling_diff_enhancer --help`;
+its `--prepare-only` mode uses only the standard library and makes no model calls.
 
 ### Running Tests
 

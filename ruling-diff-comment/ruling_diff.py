@@ -4,8 +4,11 @@ import argparse
 import logging
 import os
 import sys
+from pathlib import Path
 
-from ruling_diff_core import build_rule_diffs, format_comment
+from ruling_diff_core import RuleDiff, build_rule_diffs, format_comment
+from ruling_diff_enhancer.enhance import render_markdown, review_comment
+from ruling_diff_enhancer.ruling_diff_models import has_api_key
 from ruling_diff_io import (
     GitHubActionIO,
     get_changed_ruling_files,
@@ -58,6 +61,27 @@ def has_required_context(args: argparse.Namespace) -> bool:
     )
 
 
+def add_enhancer_review(comment: str, rule_diffs: list[RuleDiff]) -> str:
+    model = os.environ.get("DSPY_MODEL", "").strip()
+    if not model:
+        return comment
+    provider = os.environ.get("DSPY_PROVIDER", "auto")
+    api_base = os.environ.get("DSPY_API_BASE")
+    try:
+        if not has_api_key(model, provider, api_base):
+            return comment
+        reports = review_comment(
+            comment, Path.cwd(), model=model, provider=provider, api_base=api_base,
+        )
+        return format_comment(rule_diffs, review=render_markdown(reports))
+    except Exception as error:
+        logging.warning(
+            "AI ruling diff review unavailable (%s); keeping the original diff comment.",
+            type(error).__name__,
+        )
+        return comment
+
+
 def main() -> None:
     configure_logging()
     args = parse_args()
@@ -85,6 +109,7 @@ def main() -> None:
         return
 
     comment = format_comment(rule_diffs)
+    comment = add_enhancer_review(comment, rule_diffs)
     if args.dry_run:
         print(comment)
     else:

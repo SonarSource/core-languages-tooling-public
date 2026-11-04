@@ -63,21 +63,35 @@ def render_markdown(reports: list[dict]) -> str:
     return "\n".join(sections)
 
 
+def review_comment(
+    comment: str, repository: Path, *, model: str, provider: str = "auto",
+    api_base: str | None = None, sonarpedia: Path | None = None,
+    max_examples: int = 3,
+) -> list[dict]:
+    inputs = prepare_inputs(comment, repository, sonarpedia)
+    resolved_model, options = model_connection(model, provider, api_base)
+    import dspy
+    from .ruling_diff_predictor import ReviewRulingChange, review_changes
+
+    dspy.configure_cache(enable_disk_cache=False, enable_memory_cache=False)
+    lm = dspy.LM(resolved_model, cache=False, **options)
+    with dspy.context(lm=lm):
+        return review_changes(inputs, dspy.Predict(ReviewRulingChange), max_examples)
+
+
 def main() -> int:
     args = parse_args()
     try:
-        inputs = prepare_inputs(args.comment.read_text(encoding="utf-8"), args.repo, args.sonarpedia)
+        comment = args.comment.read_text(encoding="utf-8")
         if args.prepare_only:
+            inputs = prepare_inputs(comment, args.repo, args.sonarpedia)
             output = json.dumps(inputs, indent=2, ensure_ascii=False)
         else:
-            model, options = model_connection(args.model, args.provider, args.api_base)
-            import dspy
-            from .ruling_diff_predictor import ReviewRulingChange, review_changes
-
-            dspy.configure_cache(enable_disk_cache=False, enable_memory_cache=False)
-            lm = dspy.LM(model, cache=False, **options)
-            with dspy.context(lm=lm):
-                reports = review_changes(inputs, dspy.Predict(ReviewRulingChange), args.max_examples)
+            reports = review_comment(
+                comment, args.repo, model=args.model, provider=args.provider,
+                api_base=args.api_base, sonarpedia=args.sonarpedia,
+                max_examples=args.max_examples,
+            )
             output = json.dumps(reports, indent=2, ensure_ascii=False) if args.format == "json" else render_markdown(reports)
         if args.output:
             args.output.write_text(output + "\n", encoding="utf-8")

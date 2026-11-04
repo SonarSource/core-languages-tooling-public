@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 from ruling_diff_enhancer import enhance
-from ruling_diff_enhancer.ruling_diff_models import model_connection
+from ruling_diff_enhancer.ruling_diff_models import has_api_key, model_connection
 
 
 class ModelConnectionTests(unittest.TestCase):
@@ -17,6 +17,26 @@ class ModelConnectionTests(unittest.TestCase):
         environment = patch.dict(os.environ, {"LITELLM_LOCAL_MODEL_COST_MAP": "True"}, clear=True)
         environment.start()
         self.addCleanup(environment.stop)
+
+    def test_api_key_detection_matches_selected_connection(self) -> None:
+        for model, variable, provider in (
+            ("gpt-4.1", "OPENAI_API_KEY", "direct"),
+            ("claude-test", "ANTHROPIC_API_KEY", "direct"),
+            ("gemini-test", "GEMINI_API_KEY", "direct"),
+            ("gemini-test", "GOOGLE_API_KEY", "direct"),
+            ("azure/deployment", "AZURE_API_KEY", "direct"),
+            ("gpt-4.1", "PORTKEY_API_KEY", "auto"),
+            ("claude-test", "PORTKEY_API_KEY_CLAUDE", "auto"),
+            ("gemini-test", "PORTKEY_API_KEY_GOOGLE", "portkey"),
+        ):
+            with self.subTest(model=model, variable=variable):
+                with patch.dict(os.environ, {variable: "test-key"}):
+                    self.assertTrue(has_api_key(model, provider))
+        self.assertFalse(has_api_key("gpt-4.1"))
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "unrelated", "OPENAI_API_KEY": " "}):
+            self.assertFalse(has_api_key("gpt-4.1"))
+        with patch.dict(os.environ, {"PORTKEY_API_KEY": "portkey-key"}):
+            self.assertFalse(has_api_key("gpt-4.1", "direct"))
 
     def test_direct_prefixed_model_and_endpoint_are_unchanged(self) -> None:
         self.assertEqual(

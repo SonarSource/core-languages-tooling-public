@@ -12,7 +12,8 @@ from ruling_diff_core_lib.models_and_constants import (
 
 
 def format_comment(
-    rule_diffs: list[RuleDiff], soft_limit: int = COMMENT_SOFT_LIMIT
+    rule_diffs: list[RuleDiff], soft_limit: int = COMMENT_SOFT_LIMIT,
+    *, review: str | None = None,
 ) -> str:
     if not rule_diffs:
         return "\n".join(
@@ -24,6 +25,10 @@ def format_comment(
             ]
         )
     comment = format_comment_header(rule_diffs)
+    if review:
+        if len(comment) + len(review) + 2 > soft_limit:
+            review = "AI review omitted because it exceeds the comment size limit."
+        comment += review + "\n\n"
     return append_rule_sections_with_soft_limit(comment, rule_diffs, soft_limit)
 
 
