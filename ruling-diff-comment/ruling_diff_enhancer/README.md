@@ -104,6 +104,7 @@ instructions embedded in rule descriptions or snippets.
 ## Tests
 
 ```bash
+cd ruling-diff-comment
 uv run --frozen --extra enhancer python -m unittest -v test_enhancer test_models
 ```
 

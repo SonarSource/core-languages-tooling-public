@@ -146,7 +146,7 @@ def _failed_review(change: dict, error: Exception) -> dict:
     summary = f"Automated review unavailable for this rule ({error_type})."
     if isinstance(error, ValidationError):
         details = error.errors(include_input=False)
-        fields = [".".join(str(part) for part in detail["loc"]) for detail in details]
+        fields = [".".join(str(part) for part in detail["loc"]) or "<root>" for detail in details]
         if fields:
             summary += f" Invalid response fields: {', '.join(fields)}."
     return {
