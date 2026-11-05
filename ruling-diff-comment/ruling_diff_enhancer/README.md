@@ -45,7 +45,7 @@ approved for the source code being reviewed. The HTML, JSON, and visible code
 snippets are sent to that provider; this may incur charges.
 
 Keep model and Hugging Face cache directories writable only by the current user.
-LiteLLM 1.108.0 requires `filelock<4`, and the locked `filelock` 3.32.7 has
+LiteLLM 1.106.6 (locked) requires `filelock<4`, and the locked `filelock` 3.32.7 has
 advisories involving lock paths that another local user can manipulate. The
 enhancer does not access those lock paths itself. Revisit this constraint when
 LiteLLM permits the fixed `filelock` 4.2.1 or later.
