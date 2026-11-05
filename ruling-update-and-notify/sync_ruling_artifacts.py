@@ -3,7 +3,7 @@
 The action merges ``actual_*`` artifacts into ``ruling-artifacts-temp``. This
 script checks the download, copies its contents into the detected ruling
 resources directory, and removes the temporary directory. A later step handles
-committing the updated expectations and creating a fix PR.
+committing the updated expectations directly to the PR branch.
 """
 
 from __future__ import annotations

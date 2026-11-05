@@ -1,24 +1,20 @@
 # Ruling Update and Notify Action
 
-Automatically updates ruling expected results when tests fail and posts diff comments to pull requests.
-
-## Features
-
-- **Automatic Ruling Sync**: Copies downloaded ruling artifacts when ruling tests fail
-- **PR Comments**: Posts detailed ruling diff comments using the `ruling-diff-comment` action
-- **Fix PR Creation**: Automatically creates a fix PR with updated ruling results
-- **Loop Prevention**: Detects and prevents infinite auto-update loops
-- **Smart Cleanup**: Closes stale fix PRs when no longer needed
+Consumes ruling artifacts after test failures, commits the updated expectations
+directly to the triggering PR branch, and posts a ruling diff comment. This
+action only supports same-repository PR events.
 
 ## Example Usage
+
+Keep test jobs read-only and publish their ruling artifacts from a separate
+job with write permissions. Both jobs must check out the triggering PR's head
+SHA, not GitHub's synthetic PR merge commit.
 
 ```yaml
 name: Build
 
 on:
   pull_request:
-  push:
-    branches: [master]
 
 jobs:
   ruling:
@@ -30,6 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
       - name: Set up JDK
@@ -41,8 +38,7 @@ jobs:
       - name: Run ruling tests
         id: ruling
         continue-on-error: true
-        run: |
-          mvn clean test -Pruling
+        run: mvn clean test -Pruling
 
       - name: Prepare ruling artifact
         if: ${{ always() && steps.ruling.outcome == 'failure' }}
@@ -50,7 +46,9 @@ jobs:
 
   ruling-update-notify:
     needs: ruling
-    if: ${{ always() && needs.ruling.result == 'success' }}
+    if: >-
+      always() && needs.ruling.result == 'success' &&
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -58,6 +56,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
       - name: Update ruling and notify
@@ -66,34 +65,17 @@ jobs:
           ruling-failed: ${{ needs.ruling.outputs.ruling-failed }}
 ```
 
-## Why Separate Jobs?
-
-Test jobs generate local `target/actual` or `build/actual` results and upload
-them as `actual_*` artifacts. A downstream job downloads those artifacts into
-the expectation tree and creates a fix PR. This permits parallel ruling tests
-without giving test jobs permission to push branches or create PRs. When tests
-pass, the downstream job still runs to close an obsolete fix PR.
-
-The current consumer merges **all** `actual_*` artifacts and creates **one**
-fix PR per target branch. Producers must write disjoint project paths, or one
-platform must be selected as the canonical source for overlapping projects.
-Per-project fix PRs would require scoped artifact selection, unique fix-branch
-names, and matching cleanup; the current actions do not provide that mode.
-
-Artifacts prepared by `prepare-ruling-artifact` contain an `expected/` directory
-and are copied into the detected ruling resources directory. For compatibility
-with existing producers such as sonar-python-enterprise, artifacts without that
-wrapper are copied into its `expected/` directory instead. All artifacts in a
-run must use the same format.
-
 ## Inputs
 
 | Input | Description | Required |
 |-------|-------------|----------|
 | `ruling-failed` | Whether the ruling test failed (`true` or `false`) | Yes |
 
-When ruling tests fail, the action checks for exactly one of
-the following layouts:
+The PR number, head branch, and tested head SHA come from the event. Fork PRs,
+push events, and other events without PR context are rejected. Only invoke this
+action for same-repository PRs, as in the example above.
+
+When ruling tests fail, the action detects exactly one of these layouts:
 
 | Expectations directory | Sources directory |
 |------------------------|-------------------|
@@ -101,79 +83,71 @@ the following layouts:
 | `private/its/ruling/src/test/resources/expected` | `private/its/sources` |
 | `private/its-enterprise/ruling/src/test/resources/expected` | `private/its-enterprise/sources_ruling` |
 
-It reports an error if none or multiple expectation directories exist. Successful tests need no ruling
-directory. PR context comes from the event; callers should remove former
-`pr-number`, `sources-root`, and `ruling-root` inputs.
+Missing or ambiguous expectation directories are errors. Passing tests do not
+require a ruling directory or artifacts.
 
-PR details come from the GitHub event. On a push, the action can create or
-clean up a fix PR, but it does not post a comment on an original PR.
+## Artifacts
+
+Test jobs upload `actual_*` artifacts using `prepare-ruling-artifact`. The
+update job merges all of them into one ruling update. Producers must write
+disjoint project paths, or choose one platform as the source for overlapping
+projects.
+
+Artifacts prepared by `prepare-ruling-artifact` contain an `expected/`
+directory and are copied into the detected ruling resources directory. Legacy
+artifacts without that wrapper are copied into its `expected/` directory
+instead. All artifacts in a run must use the same format.
+
+## Behavior
+
+1. Validates the failure flag and same-repository PR context.
+2. If tests passed, does nothing further.
+3. If the last commit carries the auto-update marker, skips the update to
+   prevent loops.
+4. Downloads ruling artifacts and syncs them into the detected expectations.
+5. Verifies that the checkout and remote branch still match the triggering
+   PR head SHA. Stale runs fail instead of applying old results to newer code.
+6. Uses a temporary worktree to commit only ruling changes with the bot
+   identity. The caller's checkout and unrelated changes remain untouched.
+7. Pushes the commit directly to the PR branch with an explicit expected-SHA
+   lease. The new commit extends the verified PR head; the push fails if the
+   remote tip no longer matches, including after an advance, rewind, or branch
+   deletion. No differences means no commit or push.
+8. Posts or updates the ruling diff comment on the original PR, comparing
+   the previous head with the newly pushed ruling commit.
+
+The action never creates update branches or additional PRs, and does not
+manage or close existing PRs.
 
 ## Outputs
 
 | Output | Description |
 |--------|-------------|
-| `has-differences` | Whether there are ruling differences (true/false) |
-| `fix-pr-url` | URL of the fix PR if created |
-
-## Behavior
-
-1. **When ruling tests pass**: Closes an open stale fix PR, if any
-2. **When ruling tests fail with differences**:
-   - Downloads `actual_*` artifacts and copies them into the detected ruling directory
-   - Creates or updates a fix PR with the updated results
-   - Posts a detailed diff comment to the original PR
-   - Adds a comment linking to the fix PR
-3. **When ruling tests fail but auto-update already happened**: Skips to prevent loops
-4. **When ruling becomes up-to-date**: Closes any open fix PRs
+| `has-differences` | `true` when a ruling update was committed and pushed; otherwise `false` |
+| `update-sha` | SHA pushed to the PR branch, or empty when no commit was pushed |
 
 ## Requirements
 
-- `gh` CLI must be available (usually pre-installed on GitHub runners)
-- Python 3 must be available on the runner
-- The caller must check out the repository and upload `actual_*` artifacts when ruling tests fail; `prepare-ruling-artifact` packages the standard ruling layout
-- The job must have `contents: write` and `pull-requests: write` permissions
-- `uv` is installed by this action when ruling fails
+- Python 3 and the `gh` CLI must be available on the runner.
+- The caller must check out `github.event.pull_request.head.sha` in both
+  the test and update jobs and upload `actual_*` artifacts on ruling failures.
+- The update job needs `contents: write` and `pull-requests: write`
+  permissions, with authenticated Git push access supplied by checkout.
+- `uv` is installed by the action when a ruling update is needed.
 
-## How It Works
+GitHub's built-in `GITHUB_TOKEN` does not trigger push workflows, and PR
+synchronization workflows caused by it can require manual approval. If the
+ruling commit must trigger unattended CI, configure checkout with an
+appropriately scoped GitHub App token or PAT instead. See GitHub's
+[workflow triggering documentation](https://docs.github.com/en/actions/how-tos/writing-workflows/choosing-when-your-workflow-runs/triggering-a-workflow).
+This action does not dispatch or rerun workflows itself.
 
-1. Detects if ruling test failed by checking the `ruling-failed` input
-2. Checks last commit to prevent infinite auto-update loops
-3. If ruling failed, downloads artifacts and copies them into the detected ruling directory
-4. If there are differences and ruling failed:
-   - Creates a clean temporary worktree from the target branch and applies only ruling changes
-   - Commits the changes with a bot signature and pushes the fix branch
-   - Leaves the caller's checkout and unrelated changes untouched
-   - Creates or updates a fix PR
-   - Posts a comment on the original PR linking to the fix PR
-   - Uses the `ruling-diff-comment` action to compare the fix commit with its actual base
-5. If no differences or ruling passed:
-   - Closes any stale fix PRs that may exist
+## Implementation
 
-Directory detection, artifact copying, fix-PR creation, and stale-PR cleanup
-are implemented in `find_ruling_directory.py`, `sync_ruling_artifacts.py`,
-`create_fix_pr.py`, and `cleanup_fix_pr.py`. The composite action passes them
-the GitHub context and publishes their outputs.
-
-## Example PR Comment
-
-When ruling differences are detected, the action posts a comment like:
-
-```
-## Ruling Changes
-
-### python:S1234
-
-**Added Issues (2)**
-- `project/file.py:42` - New issue detected
-- `project/other.py:15` - New issue detected
-
-**Removed Issues (1)**
-- `project/old.py:10` - Issue no longer detected
-
-[View code snippet for project/file.py:42]
----
-⚖️ Ruling update ready for review: https://github.com/org/repo/pull/123
-```
+- `find_ruling_directory.py` detects the expectation and source paths.
+- `sync_ruling_artifacts.py` copies downloaded artifacts.
+- `commit_ruling_update.py` handles the Git operations and publishes the
+  before/after commit SHAs used by the ruling diff comment.
 
 ## License
 
