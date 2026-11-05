@@ -370,6 +370,19 @@ class PredictorTests(unittest.TestCase):
         report, = review_changes(inputs, predictor)
         self.assertEqual(report["selected_examples"][0]["classification"], "representative")
 
+    def test_litellm_predictor_requests_json_and_parses_the_response(self) -> None:
+        response = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps(review_data())))])
+        with patch("litellm.completion", return_value=response) as completion:
+            predictor = enhance.create_predictor("openai/gpt-4.1", {"api_base": "http://localhost:8000/v1"})
+            review = predictor(rule_key="S9191", repository="java", examples=[], max_examples=3)
+
+        self.assertEqual(review, review_data())
+        self.assertEqual(completion.call_args.kwargs["model"], "openai/gpt-4.1")
+        self.assertEqual(completion.call_args.kwargs["api_base"], "http://localhost:8000/v1")
+        self.assertEqual(completion.call_args.kwargs["response_format"], {"type": "json_object"})
+        self.assertEqual(completion.call_args.kwargs["num_retries"], 3)
+        self.assertIn("change_counts", completion.call_args.kwargs["messages"][0]["content"])
+
 
 class CommentIntegrationTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -418,7 +431,7 @@ class CommentIntegrationTests(unittest.TestCase):
                     patch.object(cli, "build_rule_diffs", return_value=self.rule_diffs),
                     patch.object(cli.Path, "cwd", return_value=root),
                     patch.object(cli, "post_or_update_comment") as post,
-                    patch.object(enhance, "create_predictor", return_value=predictor),
+                    patch.object(enhance, "create_predictor", return_value=predictor) as create_predictor,
                     redirect_stdout(output),
                 ):
                     cli.main()
@@ -433,6 +446,9 @@ class CommentIntegrationTests(unittest.TestCase):
                 self.assertLess(comment.index("## Rule overview"), comment.index("### java:S9191"))
                 self.assertLess(len(comment), core.COMMENT_SOFT_LIMIT)
                 predictor.assert_called_once()
+                create_predictor.assert_called_once_with(
+                    "openai/gpt-4.1", {"api_base": "http://localhost:8000/v1"},
+                )
                 example, = predictor.call_args.kwargs["examples"]
                 self.assertEqual(example["snippet"], self.rule_diffs[0].snippets[0].body)
                 self.assertEqual(example["message"], self.rule_diffs[0].snippets[0].location.message)
