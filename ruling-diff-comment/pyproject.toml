@@ -7,12 +7,20 @@ dependencies = []
 
 [project.optional-dependencies]
 enhancer = [
-    "litellm>=1.108,<2",
+    "litellm>=1.106.6,<2",
     "pydantic>=2,<3",
 ]
 
 [tool.uv]
 package = false
+
+[tool.uv.exclude-newer-package]
+anyio = "2026-10-31T00:00:00Z"
+boto3 = "2026-10-31T00:00:00Z"
+botocore = "2026-10-31T00:00:00Z"
+litellm = "2026-10-31T00:00:00Z"
+openai = "2026-10-31T00:00:00Z"
+typing-inspection = "2026-10-31T00:00:00Z"
 
 [[tool.uv.index]]
 name = "pypi"
