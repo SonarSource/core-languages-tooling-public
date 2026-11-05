@@ -417,7 +417,7 @@ class CommentIntegrationTests(unittest.TestCase):
                 args = SimpleNamespace(
                     dry_run=dry_run, base_sha="base", head_sha="head",
                     pr_number="123", repository="org/repo", ruling_root=None,
-                    sources_root="its/sources",
+                    sources_root="its/sources", output_file=None,
                 )
                 predictor = Mock(return_value=SimpleNamespace(review=review_data()))
                 with (

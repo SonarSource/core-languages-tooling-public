@@ -169,6 +169,11 @@ Open `/tmp/ruling-comment.md` in a Markdown previewer to inspect the result.
 Markdown goes to stdout; diagnostic logging goes to stderr. If there are no
 changed ruling SARIF files or no issue deltas, stdout is empty.
 
+Use `--output-file /tmp/ruling-comment.md` instead of `--dry-run` to write the
+comment directly to a file. This also needs no PR context and writes an empty
+file when there are no issue deltas. The file must be inside the current checkout
+or the system temporary directory. The two preview options cannot be combined.
+
 Run from the analyzer repository root. Both revisions must exist locally, and
 the comparison uses Git's three-dot diff (`base...head`), just like the action.
 Uncommitted expectations and generated `target/actual` or `build/actual` files
@@ -184,7 +189,7 @@ files; legacy JSON reports are ignored. SARIF results are compared by primary
 source file, range coordinates, and issue message. Duplicate findings are
 ignored; secondary locations do not participate in comparison.
 
-Without `--dry-run`, the existing posting behavior is unchanged and
+Without a preview option, the existing posting behavior is unchanged and
 `--pr-number` and `--repository` are required.
 
 ### AI-Assisted Diff Review

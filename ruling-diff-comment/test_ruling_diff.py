@@ -160,6 +160,29 @@ class RulingDiffCLITest(unittest.TestCase):
         self.assertIsNone(args.pr_number)
         self.assertIsNone(args.repository)
 
+    def test_output_file_does_not_require_github_context(self) -> None:
+        args = cli.parse_args([
+            "--output-file", "comment.md", "--base-sha", "base", "--head-sha", "head",
+        ])
+        self.assertTrue(cli.has_required_context(args))
+        self.assertIsNone(args.repository)
+
+    def test_empty_repository_is_valid_in_preview_modes(self) -> None:
+        for preview in (["--dry-run"], ["--output-file", "comment.md"]):
+            with self.subTest(preview=preview):
+                args = cli.parse_args([
+                    *preview, "--base-sha", "base", "--head-sha", "head",
+                    "--repository", "",
+                ])
+                self.assertTrue(cli.has_required_context(args))
+
+    def test_preview_modes_are_exclusive(self) -> None:
+        with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
+            cli.parse_args([
+                "--dry-run", "--output-file", "comment.md",
+                "--base-sha", "base", "--head-sha", "head",
+            ])
+
     def test_posting_requires_github_context(self) -> None:
         for context in ([], ["--pr-number", "123"], ["--repository", "org/repo"]):
             with self.subTest(context=context), redirect_stderr(StringIO()):
@@ -205,6 +228,48 @@ class RulingDiffCLITest(unittest.TestCase):
                 else:
                     self.assertEqual(output.getvalue(), "")
                     post.assert_called_once_with("123", "org/repo", "enhanced markdown")
+
+    def test_output_file_writes_generated_comment(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output_file = pathlib.Path(directory) / "comment.md"
+            with (
+                patch.object(cli, "generate_comment", return_value="enhanced markdown") as generate,
+                patch.object(cli, "post_or_update_comment") as post,
+            ):
+                cli.main([
+                    "--output-file", str(output_file), "--base-sha", "base",
+                    "--head-sha", "head",
+                ])
+            self.assertEqual(output_file.read_text(encoding="utf-8"), "enhanced markdown")
+            generate.assert_called_once_with("base", "head", None, io.RULING_SOURCES_SUBMODULE)
+            post.assert_not_called()
+
+    def test_output_file_is_empty_without_issue_deltas(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output_file = pathlib.Path(directory) / "comment.md"
+            output_file.write_text("stale comment", encoding="utf-8")
+            with patch.object(cli, "generate_comment", return_value=None):
+                cli.main([
+                    "--output-file", str(output_file), "--base-sha", "base",
+                    "--head-sha", "head",
+                ])
+            self.assertEqual(output_file.read_text(encoding="utf-8"), "")
+
+    def test_generate_comment_uses_supplied_paths(self) -> None:
+        with (
+            patch.object(cli, "get_changed_ruling_files", return_value=["ruling.sarif"]) as changed,
+            patch.object(cli, "GitHubActionIO") as io_factory,
+            patch.object(cli, "build_rule_diffs", return_value=["diff"]) as build,
+            patch.object(cli, "format_comment", return_value="markdown") as render,
+            patch.object(cli, "add_enhancer_review", return_value="enhanced markdown") as enhance,
+        ):
+            comment = cli.generate_comment("base", "head", "custom/expected", "its/sources")
+        self.assertEqual(comment, "enhanced markdown")
+        changed.assert_called_once_with("base", "head", "custom/expected")
+        io_factory.assert_called_once_with("custom/expected", "its/sources")
+        build.assert_called_once_with(["ruling.sarif"], "base", "head", io_factory.return_value)
+        render.assert_called_once_with(["diff"])
+        enhance.assert_called_once_with("markdown", ["diff"])
 
     def test_dry_run_without_deltas_prints_nothing(self) -> None:
         args = self.parse_args("--dry-run", "--base-sha", "base", "--head-sha", "head")
