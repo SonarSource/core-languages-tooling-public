@@ -241,9 +241,7 @@ apply. Use an approved provider/model for the code being reviewed. Unset
 
 The GitHub Action installs enhancer dependencies when `DSPY_MODEL` is set;
 provide it and the API key through the calling workflow's environment. Ordinary
-diff generation does not require AI dependencies. The standalone enhancer CLI
-is still available via `uv run --extra enhancer python -m ruling_diff_enhancer --help`;
-its `--prepare-only` mode uses only the standard library and makes no model calls.
+diff generation does not require AI dependencies.
 
 ### Running Tests
 
@@ -269,7 +267,7 @@ GitHub interactions are tested with mocks rather than creating real PRs.
   - `sarif.py` - SARIF report parsing
   - `snippet_generation.py` - Code snippet rendering
   - `comment_rendering.py` - Markdown comment formatting
-- `ruling_diff_enhancer/` - Optional AI-assisted diff review and input preparation
+- `ruling_diff_enhancer/` - Optional AI-assisted diff review
 - `test_enhancer.py` and `test_models.py` - Enhancer input, model, and transport tests
 - `test_ruling_diff.py` - Discovery, comparison, snippets, and GitHub interaction tests
 - `test_sarif_diff.py` - SARIF parsing, range comparison, and Git integration tests

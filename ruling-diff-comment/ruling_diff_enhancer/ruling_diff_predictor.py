@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 
 class SelectedExample(BaseModel):
@@ -58,6 +58,20 @@ REVIEW_INSTRUCTIONS = """Review a static-analysis rule change against its specif
     each selection, not a step-by-step chain of thought.
     If the shown location doesn't seem relevant for the issue,
     give a negative opinion and mention it in your review.
+
+    Return exactly one JSON object with these fields and no others:
+    {"opinion": "neutral", "confidence": "low", "summary": "Concise assessment",
+     "selected_examples": [{"example_id": "E1", "classification": "representative",
+                            "rationale": "Why this example was selected"}]}
+    Replace the sample values with your assessment. selected_examples is an
+    empty array only when no examples are supplied. Each example_id must match
+    an ID in the supplied examples. classification must be exactly one of
+    "added_false_positive", "removed_true_positive", or "representative".
+    Use "added_false_positive" only for an added finding that should not be
+    reported. Use "removed_true_positive" only for a removed finding that
+    should still be reported. Use "representative" only when neither kind of
+    regression is supported by the visible evidence. Do not use synonyms or
+    other labels. Do not wrap the object in a review field.
 """
 
 
@@ -129,11 +143,17 @@ def _review_change(change: dict, predictor, max_examples: int) -> dict:
 
 def _failed_review(change: dict, error: Exception) -> dict:
     error_type = type(error).__name__
+    summary = f"Automated review unavailable for this rule ({error_type})."
+    if isinstance(error, ValidationError):
+        details = error.errors(include_input=False)
+        fields = [".".join(str(part) for part in detail["loc"]) for detail in details]
+        if fields:
+            summary += f" Invalid response fields: {', '.join(fields)}."
     return {
         "rule_key": change["rule_key"], "repository": change["repository"],
         "metadata_paths": {key: change["metadata"][key] for key in ("sonarpedia_path", "html_path", "json_path")},
         "added_count": change["added_count"], "removed_count": change["removed_count"],
         "available_examples": len(change["examples"]), "opinion": "neutral", "confidence": "low",
-        "summary": f"Automated review unavailable for this rule ({error_type}).",
+        "summary": summary,
         "selected_examples": [], "error": {"type": error_type, "message": str(error)},
     }

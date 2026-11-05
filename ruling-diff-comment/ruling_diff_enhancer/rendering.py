@@ -61,15 +61,15 @@ def format_rule_group(rule_diffs: list[RuleDiff], report: dict | None, anchor: s
     removed, added = change_counts(rule_diffs)
     projects = ", ".join(escape(diff.project) for diff in rule_diffs)
     shown = sum(len(diff.snippets) for diff in rule_diffs)
-    heading = (
-        f"### {escape(rule.repo)}:{rule.rule_key} · **Projects:** {projects}"
-        f" · **Removed:** {removed} · **Added:** {added}"
+    assessment = (
+        f"{format_opinion(report['opinion'])} | **Confidence:** {report['confidence']}"
+        if report else "⚠️ Not automatically assessed"
     )
-    if report:
-        heading += (
-            f" · **Automated assessment:** {format_opinion(report['opinion'])} | "
-            f"**Confidence:** {report['confidence']}"
-        )
+    heading = (
+        f"### {escape(rule.repo)}:{rule.rule_key}\n"
+        f"**Projects:** {projects} · **Removed:** {removed} · **Added:** {added}"
+        f" · **Automated assessment:** {assessment}"
+    )
     lines = [
         f'<a name="{anchor}"></a>',
         heading, "",

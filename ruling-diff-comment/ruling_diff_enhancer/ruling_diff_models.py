@@ -82,7 +82,7 @@ def _uses_portkey(provider: str, family: str | None, key: str, api_base: str | N
 
 def _portkey_connection(bare_model: str, family: str | None, key: str, api_base: str | None) -> tuple[str, dict]:
     if family is None:
-        raise ValueError("Portkey requires a GPT/o-series, Claude, or Gemini model name; use --provider direct for other endpoints")
+        raise ValueError("Portkey requires a GPT/o-series, Claude, or Gemini model name; set DSPY_PROVIDER=direct for other endpoints")
     if not key:
         raise ValueError(f"Set {PORTKEY_KEY_VARIABLES[family]} or PORTKEY_API_KEY to use Portkey")
     native_claude = family == "anthropic"

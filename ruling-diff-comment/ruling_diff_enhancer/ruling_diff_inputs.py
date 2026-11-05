@@ -129,12 +129,7 @@ def _add_rule_header(
     return current, project
 
 
-def find_configurations(repository: Path, explicit: Path | None = None) -> list[Path]:
-    if explicit is not None:
-        config = (repository / explicit).resolve()
-        if not config.is_relative_to(repository) or not config.is_file():
-            raise ValueError(f"Sonarpedia configuration must be a file inside {repository}: {config}")
-        return [config]
+def find_configurations(repository: Path) -> list[Path]:
     configurations = []
     for directory, children, files in os.walk(repository, followlinks=False):
         children[:] = sorted(child for child in children if child not in IGNORED_DIRECTORIES)
@@ -161,7 +156,7 @@ def load_rule_metadata(repository: Path, configurations: list[Path], rule_key: s
         raise ValueError(f"No HTML/JSON metadata pair for {rule_key}. Searched: {', '.join(searched)}")
     if len(matches) > 1:
         paths = ", ".join(match["sonarpedia_path"] for match in matches)
-        raise ValueError(f"Ambiguous metadata for {rule_key}: {paths}. Select one with --sonarpedia")
+        raise ValueError(f"Ambiguous metadata for {rule_key}: {paths}")
     return matches[0]
 
 
@@ -196,12 +191,12 @@ def _metadata_match(repository: Path, config_path: Path, metadata_root: Path, ru
     }
 
 
-def prepare_inputs(comment: str, repository: Path, explicit: Path | None = None) -> list[dict]:
+def prepare_inputs(comment: str, repository: Path) -> list[dict]:
     repository = repository.resolve()
     if not repository.is_dir():
         raise ValueError(f"Analyzer repository does not exist: {repository}")
     changes = parse_comment(comment)
-    configurations = find_configurations(repository, explicit)
+    configurations = find_configurations(repository)
     return [_prepare_change(change, repository, configurations) for change in changes]
 
 

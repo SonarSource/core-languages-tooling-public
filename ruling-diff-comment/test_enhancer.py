@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import json
-import subprocess
-import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -153,14 +151,12 @@ class MetadataTests(unittest.TestCase):
             write_metadata(self.root, f"{directory}/sonarpedia.json")
         self.assertEqual(find_configurations(self.root), [expected])
 
-    def test_ambiguous_metadata_requires_explicit_selection(self) -> None:
+    def test_ambiguous_metadata_is_rejected(self) -> None:
         write_metadata(self.root)
         write_metadata(self.root, "private/sonarpedia.json")
         comment = comment_section()
         with self.assertRaisesRegex(ValueError, "Ambiguous metadata"):
             prepare_inputs(comment, self.root)
-        selected = prepare_inputs(comment_section(), self.root, Path("private/sonarpedia.json"))
-        self.assertEqual(selected[0]["metadata"]["sonarpedia_path"], "private/sonarpedia.json")
 
     def test_missing_config_is_actionable(self) -> None:
         comment = comment_section()
@@ -219,10 +215,6 @@ class MetadataTests(unittest.TestCase):
         comment = comment_section()
         with self.assertRaisesRegex(ValueError, "escapes repository"):
             prepare_inputs(comment, self.root)
-
-    def test_explicit_configuration_must_be_inside_repository(self) -> None:
-        with self.assertRaisesRegex(ValueError, "inside"):
-            find_configurations(self.root, self.root.parent / "sonarpedia.json")
 
     def test_discovered_configuration_cannot_symlink_outside_repository(self) -> None:
         with tempfile.TemporaryDirectory() as outside:
@@ -331,10 +323,6 @@ class PredictorTests(unittest.TestCase):
         self.assertEqual(predictor.call_args.kwargs["change_counts"], {"added": 1, "removed": 1})
         self.assertEqual(predictor.call_args.kwargs["max_examples"], 2)
         self.assertEqual(report["selected_examples"][0]["snippet"], self.examples[0]["snippet"])
-        rendered = enhance.render_markdown([report])
-        self.assertIn("java:S9191", rendered)
-        self.assertIn("<b>Opinion:</b> 🔴 negative | <b>Confidence:</b> low", rendered)
-        self.assertIn("Added false positive", rendered)
 
     def test_one_invalid_prediction_does_not_discard_other_reviews(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -348,6 +336,7 @@ class PredictorTests(unittest.TestCase):
         self.assertEqual(reports[0]["selected_examples"][0]["id"], "E1")
         self.assertEqual(reports[1]["error"]["type"], "ValidationError")
         self.assertIn("unavailable", reports[1]["summary"])
+        self.assertIn("Invalid response fields: opinion, confidence, summary, selected_examples", reports[1]["summary"])
 
     def test_a_failed_prediction_before_a_valid_one_keeps_the_valid_review(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -382,6 +371,9 @@ class PredictorTests(unittest.TestCase):
         self.assertEqual(completion.call_args.kwargs["response_format"], {"type": "json_object"})
         self.assertEqual(completion.call_args.kwargs["num_retries"], 3)
         self.assertIn("change_counts", completion.call_args.kwargs["messages"][0]["content"])
+        self.assertIn('"selected_examples":', completion.call_args.kwargs["messages"][0]["content"])
+        self.assertIn('classification must be exactly one of', completion.call_args.kwargs["messages"][0]["content"])
+        self.assertIn("Do not wrap the object in a review field", completion.call_args.kwargs["messages"][0]["content"])
 
 
 class CommentIntegrationTests(unittest.TestCase):
@@ -506,8 +498,9 @@ class ReviewedCommentRenderingTests(unittest.TestCase):
 
         self.assertEqual(comment.count("### java:S9191"), 1)
         self.assertIn(
-            "### java:S9191 · **Projects:** first, second · **Removed:** 0 · **Added:** 2"
-            " · **Automated assessment:** 🔴 negative | **Confidence:** low\n",
+            "### java:S9191\n"
+            "**Projects:** first, second · **Removed:** 0 · **Added:** 2"
+            " · **Automated assessment:** 🔴 negative | **Confidence:** low\n\n",
             comment,
         )
         self.assertIn("| [java:S9191](#ruling-rule-1) | first, second | 0 / 2 | 🔴 negative | low |", comment)
@@ -615,74 +608,6 @@ class ReviewedCommentRenderingTests(unittest.TestCase):
 
     def test_no_changes_retains_the_ordinary_empty_comment(self) -> None:
         self.assertEqual(format_reviewed_comment([], []), core.format_comment([]))
-
-
-class CLITests(unittest.TestCase):
-    def test_model_required_unless_preparing_inputs(self) -> None:
-        with patch.dict(enhance.os.environ, {}, clear=True):
-            with patch.object(sys, "argv", ["enhance.py", "comment.md"]):
-                with patch("sys.stderr"), self.assertRaises(SystemExit):
-                    enhance.parse_args()
-
-    def test_max_examples_must_be_positive(self) -> None:
-        with patch.object(sys, "argv", ["enhance.py", "comment.md", "--prepare-only", "--max-examples", "0"]):
-            with patch("sys.stderr"), self.assertRaises(SystemExit):
-                enhance.parse_args()
-
-    def test_max_examples_cannot_exceed_three(self) -> None:
-        with patch.object(sys, "argv", ["enhance.py", "comment.md", "--prepare-only", "--max-examples", "4"]):
-            with patch("sys.stderr"), self.assertRaises(SystemExit):
-                enhance.parse_args()
-
-    def test_prepare_only_works_without_site_packages(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            write_metadata(root)
-            comment = root / "comment.md"
-            comment.write_text(comment_section(), encoding="utf-8")
-            result = subprocess.run(
-                [sys.executable, "-S", "-m", "ruling_diff_enhancer", str(comment),
-                 "--repo", str(root), "--prepare-only"],
-                cwd=Path(enhance.__file__).resolve().parent.parent,
-                capture_output=True, text=True, check=True,
-            )
-        self.assertEqual(json.loads(result.stdout)[0]["rule_key"], "S9191")
-        self.assertEqual(result.stderr, "")
-
-    def test_model_mode_writes_validated_json_without_external_calls(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            write_metadata(root)
-            comment = root / "comment.md"
-            comment.write_text(comment_section(), encoding="utf-8")
-            output = root / "review.json"
-            arguments = [
-                "enhance.py", str(comment), "--repo", str(root),
-                "--model", "provider/model", "--api-base", "http://localhost:8000/v1",
-                "--format", "json", "--output", str(output),
-            ]
-            predictor = Mock(return_value=SimpleNamespace(review=review_data()))
-            with (
-                patch.object(sys, "argv", arguments),
-                patch.object(enhance, "create_predictor", return_value=predictor),
-            ):
-                self.assertEqual(enhance.main(), 0)
-            report, = json.loads(output.read_text(encoding="utf-8"))
-            self.assertEqual(report["opinion"], "negative")
-            self.assertEqual(report["selected_examples"][0]["example_id"], "E1")
-
-    def test_invalid_input_returns_failure_before_model_initialization(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            comment = root / "comment.md"
-            comment.write_text("No rule sections", encoding="utf-8")
-            with (
-                patch.object(sys, "argv", ["enhance.py", str(comment), "--repo", str(root), "--model", "provider/model"]),
-                patch.object(enhance, "create_predictor") as create_predictor,
-                patch("sys.stderr"),
-            ):
-                self.assertEqual(enhance.main(), 1)
-            create_predictor.assert_not_called()
 
 
 if __name__ == "__main__":

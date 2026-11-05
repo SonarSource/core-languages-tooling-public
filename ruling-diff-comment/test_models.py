@@ -1,14 +1,9 @@
 from __future__ import annotations
 
-import json
 import os
-import tempfile
 import unittest
-from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, patch
 
-from ruling_diff_enhancer import enhance
 from ruling_diff_enhancer.ruling_diff_models import has_api_key, model_connection
 
 
@@ -132,33 +127,6 @@ class ModelConnectionTests(unittest.TestCase):
         for model, provider in ((" ", "auto"), ("unknown", "direct"), ("unknown", "portkey"), ("gpt-4.1", "invalid")):
             with self.subTest(model=model, provider=provider), self.assertRaises(ValueError):
                 model_connection(model, provider)
-
-    def test_cli_provider_environment_default_and_explicit_override(self) -> None:
-        os.environ["DSPY_PROVIDER"] = "portkey"
-        with patch("sys.argv", ["enhance.py", "comment.md", "--prepare-only"]):
-            self.assertEqual(enhance.parse_args().provider, "portkey")
-        with patch("sys.argv", ["enhance.py", "comment.md", "--prepare-only", "--provider", "direct"]):
-            self.assertEqual(enhance.parse_args().provider, "direct")
-
-    def test_cli_passes_portkey_connection_to_predictor(self) -> None:
-        from test_enhancer import comment_section, review_data, write_metadata
-
-        os.environ["PORTKEY_API_KEY"] = "test-key"
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            write_metadata(root)
-            comment = root / "comment.md"
-            comment.write_text(comment_section(), encoding="utf-8")
-            output = root / "review.json"
-            predictor = Mock(return_value=SimpleNamespace(review=review_data()))
-            with (
-                patch("sys.argv", ["enhance.py", str(comment), "--repo", str(root), "--model", "claude-test", "--format", "json", "--output", str(output)]),
-                patch.object(enhance, "create_predictor", return_value=predictor) as create_predictor,
-            ):
-                self.assertEqual(enhance.main(), 0)
-            model, options = model_connection("claude-test")
-            create_predictor.assert_called_once_with(model, options)
-            self.assertEqual(json.loads(output.read_text(encoding="utf-8"))[0]["opinion"], "negative")
 
     def test_real_litellm_transports_send_expected_portkey_requests(self) -> None:
         import httpx
