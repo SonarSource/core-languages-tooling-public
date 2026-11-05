@@ -119,17 +119,28 @@ def generate_comment(
     return add_enhancer_review(comment, rule_diffs)
 
 
-def write_output_file(output_file: str, comment: str | None) -> None:
+def resolve_output_file(output_file: str) -> Path:
     target = Path(output_file).resolve()
-    allowed_roots = (Path.cwd().resolve(), Path(tempfile.gettempdir()).resolve())
+    # /tmp supports the documented CLI path when TMPDIR points elsewhere.
+    # Resolve the target and require containment before writing.
+    allowed_roots = (
+        Path.cwd().resolve(),
+        Path(tempfile.gettempdir()).resolve(),
+        Path("/tmp").resolve(),  # NOSONAR
+    )
     if not any(target.is_relative_to(root) for root in allowed_roots):
-        raise ValueError("--output-file must be inside the current directory or temporary directory")
+        raise ValueError("--output-file must be inside the current directory, system temporary directory, or /tmp")
+    return target
+
+
+def write_output_file(target: Path, comment: str | None) -> None:
     target.write_text(comment or "", encoding="utf-8")
 
 
 def main(argv: list[str] | None = None) -> None:
     configure_logging()
     args = parse_args(argv)
+    output_file = resolve_output_file(args.output_file) if args.output_file else None
     if not has_required_context(args):
         logging.info("Missing pr/base/head arguments. Skipping ruling diff comment.")
         return
@@ -140,8 +151,8 @@ def main(argv: list[str] | None = None) -> None:
     if args.dry_run:
         if comment:
             print(comment)
-    elif args.output_file:
-        write_output_file(args.output_file, comment)
+    elif output_file is not None:
+        write_output_file(output_file, comment)
     elif comment:
         post_or_update_comment(args.pr_number, args.repository, comment)
 

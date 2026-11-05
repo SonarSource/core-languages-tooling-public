@@ -171,8 +171,8 @@ changed ruling SARIF files or no issue deltas, stdout is empty.
 
 Use `--output-file /tmp/ruling-comment.md` instead of `--dry-run` to write the
 comment directly to a file. This also needs no PR context and writes an empty
-file when there are no issue deltas. The file must be inside the current checkout
-or the system temporary directory. The two preview options cannot be combined.
+file when there are no issue deltas. The file must be inside the current checkout,
+the system temporary directory, or `/tmp`. The two preview options cannot be combined.
 
 Run from the analyzer repository root. Both revisions must exist locally, and
 the comparison uses Git's three-dot diff (`base...head`), just like the action.

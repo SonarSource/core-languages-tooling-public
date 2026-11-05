@@ -1,4 +1,5 @@
 import json
+import os
 import pathlib
 from pathlib import Path
 from contextlib import redirect_stderr, redirect_stdout
@@ -243,6 +244,52 @@ class RulingDiffCLITest(unittest.TestCase):
             self.assertEqual(output_file.read_text(encoding="utf-8"), "enhanced markdown")
             generate.assert_called_once_with("base", "head", None, io.RULING_SOURCES_SUBMODULE)
             post.assert_not_called()
+
+    def test_output_file_accepts_tmp_when_tmpdir_differs(self) -> None:
+        with (
+            tempfile.TemporaryDirectory() as repository_directory,
+            tempfile.TemporaryDirectory() as tmpdir,
+            tempfile.TemporaryDirectory(dir="/tmp") as output_directory,
+        ):
+            repository = Path(repository_directory)
+            LocalCLITests().git(repository, "init")
+            LocalCLITests().git(repository, "commit", "--allow-empty", "-m", "Base")
+            output_file = Path(output_directory) / "ruling-comment.md"
+            result = subprocess.run(
+                [sys.executable, str(LocalCLITests.CLI_DIRECTORY),
+                 "--output-file", str(output_file),
+                 "--base-sha", "HEAD", "--head-sha", "HEAD"],
+                cwd=repository,
+                env={**os.environ, "TMPDIR": tmpdir},
+                capture_output=True, text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(output_file.read_text(encoding="utf-8"), "")
+
+    def test_disallowed_output_file_fails_before_generation(self) -> None:
+        with (
+            patch.object(cli, "generate_comment") as generate,
+            patch.object(cli, "add_enhancer_review") as enhance,
+        ):
+            with self.assertRaisesRegex(ValueError, "--output-file must be inside"):
+                cli.main([
+                    "--output-file", "/etc/ruling-comment.md",
+                    "--base-sha", "base", "--head-sha", "head",
+                ])
+        generate.assert_not_called()
+        enhance.assert_not_called()
+
+    def test_output_file_rejects_symlink_outside_allowed_roots(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output_file = Path(directory) / "ruling-comment.md"
+            output_file.symlink_to("/etc/ruling-comment.md")
+            with patch.object(cli, "generate_comment") as generate:
+                with self.assertRaisesRegex(ValueError, "--output-file must be inside"):
+                    cli.main([
+                        "--output-file", str(output_file),
+                        "--base-sha", "base", "--head-sha", "head",
+                    ])
+            generate.assert_not_called()
 
     def test_output_file_is_empty_without_issue_deltas(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
