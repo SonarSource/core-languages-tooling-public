@@ -56,9 +56,20 @@ def take_selection(project: str, snippet: Snippet, selections: list[dict]) -> di
     return None
 
 
-def format_rule_group(
+def _empty_project_lines(rule_diffs: list[RuleDiff]) -> list[str]:
+    lines: list[str] = []
+    for diff in rule_diffs:
+        if not diff.snippets:
+            lines.extend([
+                f"#### {escape(diff.project)}", "",
+                "No source snippets available for this project.", "",
+            ])
+    return lines
+
+
+def _format_rule_group_with_count(
     rule_diffs: list[RuleDiff], report: dict | None, anchor: str, limit: int | None = None,
-) -> str:
+) -> tuple[str, int]:
     """Render a rule section of at most `limit` characters (no cap if `limit` is None).
 
     Selected examples come first. Examples that do not fit are discarded and an omission
@@ -109,13 +120,7 @@ def format_rule_group(
         block.extend([format_snippet_block(snippet), ""])
         return block
 
-    empty_projects: list[str] = []
-    for diff in rule_diffs:
-        if not diff.snippets:
-            empty_projects.extend([
-                f"#### {escape(diff.project)}", "",
-                "No source snippets available for this project.", "",
-            ])
+    empty_projects = _empty_project_lines(rule_diffs)
 
     def render(body: list[str], shown: int) -> str:
         parts = [*lines, "<details>", summary_line(shown), "", *body, *empty_projects]
@@ -134,7 +139,51 @@ def format_rule_group(
         body = candidate
         current_project = project
         shown += 1
-    return render(body, shown)
+    return render(body, shown), shown
+
+
+def format_rule_group(
+    rule_diffs: list[RuleDiff], report: dict | None, anchor: str, limit: int | None = None,
+) -> str:
+    return _format_rule_group_with_count(rule_diffs, report, anchor, limit)[0]
+
+
+def _compact_section_if_needed(
+    rule_diffs: list[RuleDiff], report: dict | None, anchor: str, limit: int,
+    section: str, shown: int,
+) -> str:
+    if not report or (len(section) <= limit and (shown > 0 or not any(rule.snippets for rule in rule_diffs))):
+        return section
+    compact_report = {
+        **report,
+        "summary": "Automated review omitted because it exceeds the comment size limit.",
+        "selected_examples": [],
+    }
+    compact_section, compact_shown = _format_rule_group_with_count(
+        rule_diffs, compact_report, anchor, limit,
+    )
+    return compact_section if len(section) > limit or compact_shown > shown else section
+
+
+def _format_sections(
+    keys: list[tuple[str, str]], grouped: dict[tuple[str, str], list[RuleDiff]],
+    reviews: dict[tuple[str, str], dict], anchors: dict[tuple[str, str], str],
+    intro_length: int, omission_notice: str,
+) -> list[str]:
+    sections: list[str] = []
+    sections_length = 0
+    for key in keys:
+        report = reviews.get(key)
+        # Reserve room for the separator and trailing omission notice.
+        used = intro_length + sections_length + (2 if sections else 0)
+        limit = COMMENT_SOFT_LIMIT - used - len(omission_notice)
+        section, shown = _format_rule_group_with_count(grouped[key], report, anchors[key], limit)
+        section = _compact_section_if_needed(grouped[key], report, anchors[key], limit, section, shown)
+        if len(section) > limit:
+            break
+        sections_length += len(section) + (2 if sections else 0)
+        sections.append(section)
+    return sections
 
 
 def format_reviewed_comment(rule_diffs: list[RuleDiff], reports: list[dict]) -> str:
@@ -170,26 +219,7 @@ def format_reviewed_comment(rule_diffs: list[RuleDiff], reports: list[dict]) -> 
         return format_comment(rule_diffs)
     overview_tail = overview_notice if len(rows) < len(keys) else ""
     intro_length = len(header) + len(table_header) + rows_length + len(overview_tail) + len(advisory)
-    sections: list[str] = []
-    sections_length = 0
-    for key in keys:
-        report = reviews.get(key)
-        # Remaining budget for this section, keeping room for the separator before it
-        # and for the trailing omission notice.
-        used = intro_length + sections_length + (2 if sections else 0)
-        limit = COMMENT_SOFT_LIMIT - used - len(omission_notice)
-        section = format_rule_group(grouped[key], report, anchors[key], limit)
-        if report and len(section) > limit:
-            compact_report = {
-                **report,
-                "summary": "Automated review omitted because it exceeds the comment size limit.",
-                "selected_examples": [],
-            }
-            section = format_rule_group(grouped[key], compact_report, anchors[key], limit)
-        if len(section) > limit:
-            break
-        sections_length += len(section) + (2 if sections else 0)
-        sections.append(section)
+    sections = _format_sections(keys, grouped, reviews, anchors, intro_length, omission_notice)
     rows = [
         overview_row(grouped[key], reviews.get(key), anchors[key] if index < len(sections) else None)
         for index, key in enumerate(keys[:len(rows)])

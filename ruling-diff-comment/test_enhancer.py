@@ -583,6 +583,19 @@ class ReviewedCommentRenderingTests(unittest.TestCase):
         self.assertIn(rule.snippets[0].body, comment)
         self.assertEqual(comment.count("<details>"), comment.count("</details>"))
 
+    def test_medium_assessment_compacts_to_preserve_source_example(self) -> None:
+        rule = self.rule()
+        report = self.report([rule])
+        report["summary"] = "x" * 700
+
+        with patch("ruling_diff_enhancer.rendering.COMMENT_SOFT_LIMIT", 1500):
+            comment = format_reviewed_comment([rule], [report])
+
+        self.assertLessEqual(len(comment), 1500)
+        self.assertIn("Automated review omitted", comment)
+        self.assertIn("1 of 1 changed findings shown", comment)
+        self.assertIn(rule.snippets[0].body, comment)
+
     def test_rule_group_limit_discards_examples_and_adds_an_omission_notice(self) -> None:
         rule = self.rule()
         location = rule.snippets[0].location
