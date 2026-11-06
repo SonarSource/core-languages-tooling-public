@@ -17,4 +17,4 @@ Development tooling for Core Languages & Parsers squad — For artifacts accessi
 ### Local Tools
 
 - **[ruling-diff-comment](ruling-diff-comment#previewing-real-ruling-changes-locally)** - Previews ruling JSON and SARIF diff comments from an analyzer checkout without GitHub credentials
-- **[ruling_diff_enhancer](ruling-diff-comment/ruling_diff_enhancer)** - Uses local rule metadata and LiteLLM to triage ruling diff examples
+- **[ruling_diff_enhancer](ruling-diff-comment/ruling_diff_enhancer)** - Uses local rule metadata and the OpenAI client through Portkey to triage ruling diff examples

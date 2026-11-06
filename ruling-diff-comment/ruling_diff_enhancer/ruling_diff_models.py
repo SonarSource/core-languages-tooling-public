@@ -27,9 +27,9 @@ def model_connection(model: str) -> tuple[str, dict]:
         raise ValueError("Set PORTKEY_API_KEY_OPENAI or PORTKEY_API_KEY to use Portkey")
     options: dict = {
         "api_key": key,
-        "api_base": PORTKEY_API_BASE,
-        "extra_headers": {"x-portkey-provider": "openai"},
+        "base_url": PORTKEY_API_BASE,
+        "default_headers": {"x-portkey-provider": "openai"},
     }
     if bare_model.startswith("gpt-5") or re.match(r"^o\d", bare_model):
-        options.update({"temperature": 1.0, "max_tokens": 16000})
-    return f"openai/{bare_model}", options
+        options.update({"temperature": 1.0, "max_completion_tokens": 16000})
+    return bare_model, options

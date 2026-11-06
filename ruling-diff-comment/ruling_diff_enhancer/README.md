@@ -15,7 +15,7 @@ analyzer repository.
 ## Model Connection
 
 Requires Python 3.10+, `uv`, and an OpenAI model enabled for your Portkey key.
-Reviews are always sent to OpenAI through Portkey via LiteLLM. Export
+Reviews are always sent to OpenAI through Portkey via the OpenAI client. Export
 `PORTKEY_API_KEY_OPENAI` (or the generic `PORTKEY_API_KEY`, used when the
 OpenAI-specific one is unset) using your usual secret-management mechanism;
 do not put tokens in arguments, source files, or comments. The HTML, JSON, and
@@ -27,19 +27,13 @@ Enable the enhancer only for content approved for sharing with both services.
 Obtain the applicable data-sharing approval before using it with proprietary
 analyzer code.
 
-Keep model and Hugging Face cache directories writable only by the current user.
-LiteLLM 1.106.6 (locked) requires `filelock<4`, and the locked `filelock` 3.32.7 has
-advisories involving lock paths that another local user can manipulate. The
-enhancer does not access those lock paths itself. Revisit this constraint when
-LiteLLM permits the fixed `filelock` 4.2.1 or later.
-
 Set `DSPY_MODEL` to the OpenAI model name, such as `gpt-4.1`; an `openai/`
 prefix is accepted. GPT-5 and o-series models use the required reasoning
 defaults. The enhancer does not cache source snippets locally.
 
 ## Review Results
 
-One structured LiteLLM call is made per rule/repository, merging examples from
+One structured OpenAI call is made per rule/repository, merging examples from
 multiple projects of the same rule. It prioritizes:
 
 - Added issues that look like **false positives**.

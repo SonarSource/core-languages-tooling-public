@@ -359,17 +359,22 @@ class PredictorTests(unittest.TestCase):
         report, = review_changes(inputs, predictor)
         self.assertEqual(report["selected_examples"][0]["classification"], "representative")
 
-    def test_litellm_predictor_requests_json_and_parses_the_response(self) -> None:
+    def test_openai_predictor_requests_json_and_parses_the_response(self) -> None:
         response = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps(review_data())))])
-        with patch("litellm.completion", return_value=response) as completion:
-            predictor = enhance.create_predictor("openai/gpt-4.1", {"api_base": "http://localhost:8000/v1"})
+        with patch("openai.OpenAI") as client:
+            client.return_value.chat.completions.create.return_value = response
+            predictor = enhance.create_predictor("gpt-4.1", {
+                "api_key": "test-key", "base_url": "http://localhost:8000/v1",
+                "default_headers": {"x-portkey-provider": "openai"},
+            })
             review = predictor(rule_key="S9191", repository="java", examples=[], max_examples=3)
 
+        completion = client.return_value.chat.completions.create
         self.assertEqual(review, review_data())
-        self.assertEqual(completion.call_args.kwargs["model"], "openai/gpt-4.1")
-        self.assertEqual(completion.call_args.kwargs["api_base"], "http://localhost:8000/v1")
+        self.assertEqual(completion.call_args.kwargs["model"], "gpt-4.1")
+        self.assertEqual(client.call_args.kwargs["base_url"], "http://localhost:8000/v1")
+        self.assertEqual(client.call_args.kwargs["max_retries"], 3)
         self.assertEqual(completion.call_args.kwargs["response_format"], {"type": "json_object"})
-        self.assertEqual(completion.call_args.kwargs["num_retries"], 3)
         self.assertIn("change_counts", completion.call_args.kwargs["messages"][0]["content"])
         self.assertIn('"selected_examples":', completion.call_args.kwargs["messages"][0]["content"])
         self.assertIn('classification must be exactly one of', completion.call_args.kwargs["messages"][0]["content"])
@@ -438,7 +443,7 @@ class CommentIntegrationTests(unittest.TestCase):
                 self.assertLess(len(comment), core.COMMENT_SOFT_LIMIT)
                 predictor.assert_called_once()
                 create_predictor.assert_called_once()
-                self.assertEqual(create_predictor.call_args.args[0], "openai/gpt-4.1")
+                self.assertEqual(create_predictor.call_args.args[0], "gpt-4.1")
                 self.assertEqual(create_predictor.call_args.args[1]["api_key"], "test-key")
                 example, = predictor.call_args.kwargs["examples"]
                 self.assertEqual(example["snippet"], self.rule_diffs[0].snippets[0].body)

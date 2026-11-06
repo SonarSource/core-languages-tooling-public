@@ -203,7 +203,7 @@ Without a preview option, the existing posting behavior is unchanged and
 ### AI-Assisted Diff Review
 
 The optional [`ruling_diff_enhancer`](ruling_diff_enhancer) submodule reviews
-the generated Markdown against local rule metadata using LiteLLM. The diff-comment
+the generated Markdown against local rule metadata using the OpenAI client. The diff-comment
 script automatically includes an automated review when `DSPY_MODEL` and a
 Portkey API key are set. A linked **Rule overview** table shows
 each rule's projects, removed/added counts, assessment, and plain-text confidence.
@@ -226,7 +226,7 @@ diff comment. Enable it only for repositories and source content approved for
 sharing with Portkey and OpenAI. In particular, obtain the applicable data-sharing
 approval before enabling it for proprietary analyzer code. Human reviewers remain
 responsible for interpreting the assessment.
-Without a model or key, the ordinary comment is unchanged and LiteLLM is
+Without a model or key, the ordinary comment is unchanged and the OpenAI client is
 not imported. Enhancer errors (including missing dependencies or metadata) emit
 a warning to stderr and preserve the original comment rather than blocking it.
 

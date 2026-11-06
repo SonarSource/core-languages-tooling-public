@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import os
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 from ruling_diff_enhancer.ruling_diff_models import has_api_key, model_connection
 
 
 class ModelConnectionTests(unittest.TestCase):
     def setUp(self) -> None:
-        environment = patch.dict(os.environ, {"LITELLM_LOCAL_MODEL_COST_MAP": "True"}, clear=True)
+        environment = patch.dict(os.environ, {}, clear=True)
         environment.start()
         self.addCleanup(environment.stop)
 
@@ -26,10 +26,10 @@ class ModelConnectionTests(unittest.TestCase):
         for model in ("gpt-4.1", "openai/gpt-4.1"):
             with self.subTest(model=model):
                 resolved, options = model_connection(model)
-                self.assertEqual(resolved, "openai/gpt-4.1")
-                self.assertEqual(options["api_base"], "https://api.portkey.ai/v1")
+                self.assertEqual(resolved, "gpt-4.1")
+                self.assertEqual(options["base_url"], "https://api.portkey.ai/v1")
                 self.assertEqual(options["api_key"], "test-key")
-                self.assertEqual(options["extra_headers"], {"x-portkey-provider": "openai"})
+                self.assertEqual(options["default_headers"], {"x-portkey-provider": "openai"})
 
     def test_openai_specific_key_takes_precedence(self) -> None:
         os.environ["PORTKEY_API_KEY"] = "generic-key"
@@ -42,7 +42,7 @@ class ModelConnectionTests(unittest.TestCase):
             with self.subTest(model=model):
                 _, options = model_connection(model)
                 self.assertEqual(options["temperature"], 1.0)
-                self.assertEqual(options["max_tokens"], 16000)
+                self.assertEqual(options["max_completion_tokens"], 16000)
 
     def test_invalid_configuration_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "PORTKEY_API_KEY"):
@@ -51,9 +51,9 @@ class ModelConnectionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             model_connection(" ")
 
-    def test_real_litellm_transport_sends_expected_portkey_request(self) -> None:
+    def test_real_openai_transport_sends_expected_portkey_request(self) -> None:
         import httpx
-        import litellm
+        from openai import OpenAI
 
         os.environ["PORTKEY_API_KEY"] = "test-key"
         model = "gpt-4.1"
@@ -70,11 +70,10 @@ class ModelConnectionTests(unittest.TestCase):
         resolved, options = model_connection(model)
         with (
             patch.object(httpx.Client, "send", side_effect=respond),
-            patch.object(httpx.AsyncClient, "send", side_effect=AssertionError("Unexpected async request")),
-            patch("litellm.utils._client_async_logging_helper", new_callable=AsyncMock),
         ):
-            result = litellm.completion(
-                model=resolved, messages=[{"role": "user", "content": "Review this change."}], **options,
+            client = OpenAI(**options)
+            result = client.chat.completions.create(
+                model=resolved, messages=[{"role": "user", "content": "Review this change."}],
             )
         self.assertEqual(result.choices[0].message.content, "review")
         self.assertEqual(len(requests), 1)
