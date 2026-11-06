@@ -7,7 +7,7 @@ dependencies = []
 
 [project.optional-dependencies]
 enhancer = [
-    "openai>=2.54.0,<3",
+    "openai>=3.42,<4",
     "pydantic>=2,<3",
 ]
 
