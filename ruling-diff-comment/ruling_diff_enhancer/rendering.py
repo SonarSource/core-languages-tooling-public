@@ -56,11 +56,17 @@ def take_selection(project: str, snippet: Snippet, selections: list[dict]) -> di
     return None
 
 
-def format_rule_group(rule_diffs: list[RuleDiff], report: dict | None, anchor: str) -> str:
+def format_rule_group(
+    rule_diffs: list[RuleDiff], report: dict | None, anchor: str, limit: int | None = None,
+) -> str:
+    """Render a rule section of at most `limit` characters (no cap if `limit` is None).
+
+    Selected examples come first. Examples that do not fit are discarded and an omission
+    notice, whose size is reserved in the limit, is added to the section.
+    """
     rule = rule_diffs[0]
     removed, added = change_counts(rule_diffs)
     projects = ", ".join(escape(diff.project) for diff in rule_diffs)
-    shown = sum(len(diff.snippets) for diff in rule_diffs)
     assessment = (
         f"{format_opinion(report['opinion'])} | **Confidence:** {report['confidence']}"
         if report else "⚠️ Not automatically assessed"
@@ -80,33 +86,55 @@ def format_rule_group(rule_diffs: list[RuleDiff], report: dict | None, anchor: s
         ])
     else:
         lines.extend(["No automated review available for this rule.", ""])
-    lines.extend([
-        "<details>",
-        f"<summary>Source examples — {shown} of {removed + added} changed findings shown</summary>", "",
-    ])
     selections = list(report["selected_examples"]) if report else []
     examples = [
         (diff.project, snippet, take_selection(diff.project, snippet, selections))
         for diff in rule_diffs
         for snippet in diff.snippets
     ]
-    current_project = None
-    for project, snippet, selection in sorted(examples, key=lambda example: example[2] is None):
-        if project != current_project:
-            lines.extend([f"#### {escape(project)}", ""])
-            current_project = project
+    examples.sort(key=lambda example: example[2] is None)
+    total_examples = len(examples)
+
+    def summary_line(shown: int) -> str:
+        return f"<summary>Source examples — {shown} of {removed + added} changed findings shown</summary>"
+
+    def omission_notice(shown: int) -> str:
+        return f"{total_examples - shown} source examples omitted because the comment is too large."
+
+    def example_lines(project: str, snippet: Snippet, selection: dict | None, new_project: bool) -> list[str]:
+        block: list[str] = [f"#### {escape(project)}", ""] if new_project else []
         if selection:
             label = selection["classification"].replace("_", " ").capitalize()
-            lines.extend([f"**Automated selection: {label}**", "", selection["rationale"], ""])
-        lines.extend([format_snippet_block(snippet), ""])
+            block.extend([f"**Automated selection: {label}**", "", selection["rationale"], ""])
+        block.extend([format_snippet_block(snippet), ""])
+        return block
+
+    empty_projects: list[str] = []
     for diff in rule_diffs:
         if not diff.snippets:
-            lines.extend([
+            empty_projects.extend([
                 f"#### {escape(diff.project)}", "",
                 "No source snippets available for this project.", "",
             ])
-    lines.append("</details>")
-    return "\n".join(lines)
+
+    def render(body: list[str], shown: int) -> str:
+        parts = [*lines, "<details>", summary_line(shown), "", *body, *empty_projects]
+        if shown < total_examples:
+            parts.extend([omission_notice(shown), ""])
+        parts.append("</details>")
+        return "\n".join(parts)
+
+    body: list[str] = []
+    current_project = None
+    shown = 0
+    for project, snippet, selection in examples:
+        candidate = body + example_lines(project, snippet, selection, project != current_project)
+        if limit is not None and len(render(candidate, shown + 1)) > limit:
+            break
+        body = candidate
+        current_project = project
+        shown += 1
+    return render(body, shown)
 
 
 def format_reviewed_comment(rule_diffs: list[RuleDiff], reports: list[dict]) -> str:
@@ -142,15 +170,19 @@ def format_reviewed_comment(rule_diffs: list[RuleDiff], reports: list[dict]) -> 
     sections: list[str] = []
     for key in keys:
         report = reviews.get(key)
-        section = format_rule_group(grouped[key], report, anchors[key])
-        if report and len(intro + "\n\n".join(sections + [section]) + omission_notice) > COMMENT_SOFT_LIMIT:
+        # Remaining budget for this section, keeping room for the separator before it
+        # and for the trailing omission notice.
+        used = len(intro) + len("\n\n".join(sections)) + (2 if sections else 0)
+        limit = COMMENT_SOFT_LIMIT - used - len(omission_notice)
+        section = format_rule_group(grouped[key], report, anchors[key], limit)
+        if report and len(section) > limit:
             compact_report = {
                 **report,
                 "summary": "Automated review omitted because it exceeds the comment size limit.",
                 "selected_examples": [],
             }
-            section = format_rule_group(grouped[key], compact_report, anchors[key])
-        if len(intro + "\n\n".join(sections + [section]) + omission_notice) > COMMENT_SOFT_LIMIT:
+            section = format_rule_group(grouped[key], compact_report, anchors[key], limit)
+        if len(section) > limit:
             break
         sections.append(section)
     rows = [

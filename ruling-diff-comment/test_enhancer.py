@@ -12,7 +12,7 @@ from unittest.mock import Mock, patch
 import ruling_diff as cli
 import ruling_diff_core as core
 from ruling_diff_enhancer import enhance
-from ruling_diff_enhancer.rendering import format_reviewed_comment
+from ruling_diff_enhancer.rendering import format_reviewed_comment, format_rule_group
 from ruling_diff_enhancer.ruling_diff_inputs import find_configurations, parse_comment, prepare_inputs
 from ruling_diff_enhancer.ruling_diff_predictor import Review, review_changes, validate_review
 
@@ -583,6 +583,28 @@ class ReviewedCommentRenderingTests(unittest.TestCase):
         self.assertIn("Automated review omitted", comment)
         self.assertIn(rule.snippets[0].body, comment)
         self.assertEqual(comment.count("<details>"), comment.count("</details>"))
+
+    def test_rule_group_limit_discards_examples_and_adds_an_omission_notice(self) -> None:
+        rule = self.rule()
+        location = rule.snippets[0].location
+        rule.snippets.extend(
+            core.Snippet("src/Example.java", location, "added", f"extra_{index}();") for index in range(3)
+        )
+        rule.file_diffs[0].added_locations.extend([location] * 3)
+        full = format_rule_group([rule], None, "anchor")
+        limit = len(full) - 1
+
+        section = format_rule_group([rule], None, "anchor", limit)
+
+        self.assertLessEqual(len(section), limit)
+        self.assertNotIn("omitted", full)
+        bodies = [snippet.body for snippet in rule.snippets]
+        shown = sum(body in section for body in bodies)
+        self.assertGreater(shown, 0)
+        self.assertLess(shown, 4)
+        self.assertIn(f"{shown} of 4 changed findings shown", section)
+        self.assertIn(f"{4 - shown} source examples omitted because the comment is too large.", section)
+        self.assertEqual(section.count("<details>"), section.count("</details>"))
 
     def test_truncation_keeps_complete_sections_and_only_links_to_present_anchors(self) -> None:
         rules = [self.rule(f"S{number}") for number in range(100, 120)]
