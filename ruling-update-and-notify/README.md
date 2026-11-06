@@ -12,11 +12,10 @@ SHA, not GitHub's synthetic PR merge commit.
 
 For `pull_request` workflows, the default `actions/checkout` ref is GitHub's
 temporary merge commit. Its tree includes changes from the target branch, and
-its commit message is not the PR head's message. This action checks the last
+its head is not the PR head's. This action checks the last
 commit for its auto-update marker and verifies that the checkout matches the
 event's PR head SHA before committing ruling results. Set `ref` explicitly in
-every job that invokes this action; update existing callers that rely on the
-default checkout.
+every job that invokes this action.
 
 ```yaml
 name: Build
