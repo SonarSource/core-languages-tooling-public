@@ -1,4 +1,9 @@
+import json
+import os
 import pathlib
+from pathlib import Path
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
 import subprocess
 import sys
 import tempfile
@@ -12,6 +17,7 @@ if str(MODULE_DIR) not in sys.path:
 
 import ruling_diff_core as core
 import ruling_diff_io as io
+import ruling_diff as cli
 from ruling_diff_core_lib.models_and_constants import SarifReport
 from ruling_diff_core_lib.snippet_generation import load_source_lines_with_cache
 
@@ -20,6 +26,349 @@ IssueLocation = core.IssueLocation
 IssueDiff = core.IssueDiff
 RuleDiff = core.RuleDiff
 Snippet = core.Snippet
+
+
+class LocalCLITests(unittest.TestCase):
+    CLI_DIRECTORY = Path(__file__).resolve().parent
+
+    def git(self, repository: Path, *arguments: str) -> str:
+        return subprocess.run(
+            ["git", "-c", "user.name=Test", "-c", "user.email=test@example.test",
+             "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", *arguments],
+            cwd=repository, check=True, capture_output=True, text=True,
+        ).stdout.strip()
+
+    def run_cli(self, repository: Path, *arguments: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [sys.executable, str(self.CLI_DIRECTORY), "--dry-run",
+             "--base-sha", "HEAD~1", "--head-sha", "HEAD",
+             "--sources-root", "its/sources", *arguments],
+            cwd=repository, capture_output=True, text=True,
+        )
+
+    def write_ruling(self, path: Path, lines: list[int]) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.suffix == ".sarif":
+            data = {"version": "2.1.0", "runs": [{"results": [
+                {"ruleId": "python:S100", "locations": [{"physicalLocation": {
+                    "artifactLocation": {"uri": "sample:file.py"},
+                    "region": {"startLine": line},
+                }}]} for line in lines
+            ]}]}
+        else:
+            data = {"sample:file.py": lines}
+        path.write_text(json.dumps(data), encoding="utf-8")
+
+    def test_directory_cli_compares_sarif_and_ignores_legacy_json(self) -> None:
+        for root in (
+            "its/ruling/src/test/resources/expected",
+            "private/its/ruling/src/test/resources/expected",
+            "private/its-enterprise/ruling/src/test/resources/expected",
+            "custom/expected",
+        ):
+            for extension in ("json", "sarif"):
+                for change in ("modified", "added", "deleted", "unchanged"):
+                    with self.subTest(root=root, extension=extension, change=change):
+                        with tempfile.TemporaryDirectory() as directory:
+                            repository = Path(directory)
+                            self.git(repository, "init")
+                            source = repository / "its/sources/sample/file.py"
+                            source.parent.mkdir(parents=True)
+                            source.write_text("first = 1\nsecond = 2\n", encoding="utf-8")
+                            expected = repository / root / f"sample/python-S100.{extension}"
+                            if change != "added":
+                                self.write_ruling(expected, [1])
+                            self.git(repository, "add", ".")
+                            self.git(repository, "commit", "-m", "Base ruling")
+                            if change == "deleted":
+                                expected.unlink()
+                            elif change != "unchanged":
+                                self.write_ruling(expected, [1, 2])
+                            self.git(repository, "add", ".")
+                            self.git(repository, "commit", "--allow-empty", "-m", "Updated ruling")
+                            original_head = self.git(repository, "rev-parse", "HEAD")
+                            arguments = ["--ruling-root", root] if root == "custom/expected" else []
+
+                            result = self.run_cli(repository, *arguments)
+
+                            self.assertEqual(result.returncode, 0, result.stderr)
+                            self.assertEqual(self.git(repository, "status", "--porcelain"), "")
+                            self.assertEqual(self.git(repository, "rev-parse", "HEAD"), original_head)
+                            if extension == "json" or change == "unchanged":
+                                self.assertEqual(result.stdout, "")
+                                continue
+                            self.assertTrue(result.stdout.startswith("<!-- ruling-diff-comment -->"))
+                            self.assertIn("## Ruling Diff Summary", result.stdout)
+                            self.assertIn("<b>S100</b> (<code>python</code>)", result.stdout)
+                            if change == "deleted":
+                                self.assertIn("1 issues removed, 0 issues added", result.stdout)
+                                self.assertIn("first = 1", result.stdout)
+                            else:
+                                added = 2 if change == "added" else 1
+                                self.assertIn(f"0 issues removed, {added} issues added", result.stdout)
+                                self.assertIn("second = 2", result.stdout)
+
+    def test_invalid_revision_exits_nonzero_without_comment(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory)
+            self.git(repository, "init")
+            result = self.run_cli(repository)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("Failed to generate ruling diff comment", result.stderr)
+
+    def test_malformed_sarif_fails_and_legacy_json_is_ignored(self) -> None:
+        for extension in ("json", "sarif"):
+            with self.subTest(extension=extension), tempfile.TemporaryDirectory() as directory:
+                repository = Path(directory)
+                self.git(repository, "init")
+                expected = repository / f"its/ruling/src/test/resources/expected/sample/python-S100.{extension}"
+                self.write_ruling(expected, [1])
+                self.git(repository, "add", ".")
+                self.git(repository, "commit", "-m", "Base ruling")
+                expected.write_text('{"invalid":', encoding="utf-8")
+                self.git(repository, "add", ".")
+                self.git(repository, "commit", "-m", "Malformed ruling")
+
+                result = self.run_cli(repository)
+
+                if extension == "json":
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(result.stdout, "")
+                    self.assertIn("No changed ruling report files", result.stderr)
+                    continue
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(result.stdout, "")
+                self.assertIn(f"python-S100.{extension} at HEAD", result.stderr)
+                self.assertIn("Malformed JSON", result.stderr)
+
+
+class RulingDiffCLITest(unittest.TestCase):
+    def setUp(self) -> None:
+        environment = patch.dict(cli.os.environ, {"DSPY_MODEL": ""})
+        environment.start()
+        self.addCleanup(environment.stop)
+
+    def parse_args(self, *arguments: str):
+        with patch.object(sys, "argv", ["ruling_diff.py", *arguments]):
+            return cli.parse_args()
+
+    def test_dry_run_does_not_require_github_context(self) -> None:
+        args = self.parse_args("--dry-run", "--base-sha", "base", "--head-sha", "head")
+
+        self.assertTrue(args.dry_run)
+        self.assertTrue(cli.has_required_context(args))
+        self.assertIsNone(args.pr_number)
+        self.assertIsNone(args.repository)
+
+    def test_output_file_does_not_require_github_context(self) -> None:
+        args = cli.parse_args([
+            "--output-file", "comment.md", "--base-sha", "base", "--head-sha", "head",
+        ])
+        self.assertTrue(cli.has_required_context(args))
+        self.assertIsNone(args.repository)
+
+    def test_empty_repository_is_valid_in_preview_modes(self) -> None:
+        for preview in (["--dry-run"], ["--output-file", "comment.md"]):
+            with self.subTest(preview=preview):
+                args = cli.parse_args([
+                    *preview, "--base-sha", "base", "--head-sha", "head",
+                    "--repository", "",
+                ])
+                self.assertTrue(cli.has_required_context(args))
+
+    def test_preview_modes_are_exclusive(self) -> None:
+        with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
+            cli.parse_args([
+                "--dry-run", "--output-file", "comment.md",
+                "--base-sha", "base", "--head-sha", "head",
+            ])
+
+    def test_posting_requires_github_context(self) -> None:
+        for context in ([], ["--pr-number", "123"], ["--repository", "org/repo"]):
+            with self.subTest(context=context), redirect_stderr(StringIO()):
+                with self.assertRaises(SystemExit) as error:
+                    self.parse_args("--base-sha", "base", "--head-sha", "head", *context)
+                self.assertEqual(error.exception.code, 2)
+
+    def test_dry_run_still_requires_revisions(self) -> None:
+        for revisions in ([], ["--base-sha", "base"], ["--head-sha", "head"]):
+            with self.subTest(revisions=revisions), redirect_stderr(StringIO()):
+                with self.assertRaises(SystemExit) as error:
+                    self.parse_args("--dry-run", *revisions)
+                self.assertEqual(error.exception.code, 2)
+
+    def test_dry_run_and_posting_use_same_comment(self) -> None:
+        for dry_run in (True, False):
+            with self.subTest(dry_run=dry_run):
+                arguments = ["--base-sha", "base", "--head-sha", "head"]
+                arguments.extend(
+                    ["--dry-run"] if dry_run
+                    else ["--pr-number", "123", "--repository", "org/repo"]
+                )
+                args = self.parse_args(*arguments)
+                output = StringIO()
+                with (
+                    patch.object(cli, "parse_args", return_value=args),
+                    patch.object(cli, "get_changed_ruling_files", return_value=["ruling.json"]),
+                    patch.object(cli, "GitHubActionIO") as io_factory,
+                    patch.object(cli, "build_rule_diffs", return_value=["diff"]) as build,
+                    patch.object(cli, "format_comment", return_value="markdown") as render,
+                    patch.object(cli, "add_enhancer_review", return_value="enhanced markdown") as enhance,
+                    patch.object(cli, "post_or_update_comment") as post,
+                    redirect_stdout(output),
+                ):
+                    cli.main()
+
+                build.assert_called_once_with(["ruling.json"], "base", "head", io_factory.return_value)
+                render.assert_called_once_with(["diff"])
+                enhance.assert_called_once_with("markdown", ["diff"])
+                if dry_run:
+                    self.assertEqual(output.getvalue(), "enhanced markdown\n")
+                    post.assert_not_called()
+                else:
+                    self.assertEqual(output.getvalue(), "")
+                    post.assert_called_once_with("123", "org/repo", "enhanced markdown")
+
+    def test_output_file_writes_generated_comment(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output_file = pathlib.Path(directory) / "comment.md"
+            with (
+                patch.object(cli, "generate_comment", return_value="enhanced markdown") as generate,
+                patch.object(cli, "post_or_update_comment") as post,
+            ):
+                cli.main([
+                    "--output-file", str(output_file), "--base-sha", "base",
+                    "--head-sha", "head",
+                ])
+            self.assertEqual(output_file.read_text(encoding="utf-8"), "enhanced markdown")
+            generate.assert_called_once_with("base", "head", None, io.RULING_SOURCES_SUBMODULE)
+            post.assert_not_called()
+
+    def test_output_file_accepts_tmp_when_tmpdir_differs(self) -> None:
+        with (
+            tempfile.TemporaryDirectory() as repository_directory,
+            tempfile.TemporaryDirectory() as tmpdir,
+            tempfile.TemporaryDirectory(dir="/tmp") as output_directory,
+        ):
+            repository = Path(repository_directory)
+            LocalCLITests().git(repository, "init")
+            LocalCLITests().git(repository, "commit", "--allow-empty", "-m", "Base")
+            output_file = Path(output_directory) / "ruling-comment.md"
+            result = subprocess.run(
+                [sys.executable, str(LocalCLITests.CLI_DIRECTORY),
+                 "--output-file", str(output_file),
+                 "--base-sha", "HEAD", "--head-sha", "HEAD"],
+                cwd=repository,
+                env={**os.environ, "TMPDIR": tmpdir},
+                capture_output=True, text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(output_file.read_text(encoding="utf-8"), "")
+
+    def test_disallowed_output_file_fails_before_generation(self) -> None:
+        with (
+            patch.object(cli, "generate_comment") as generate,
+            patch.object(cli, "add_enhancer_review") as enhance,
+        ):
+            with self.assertRaisesRegex(ValueError, "--output-file must be inside"):
+                cli.main([
+                    "--output-file", "/etc/ruling-comment.md",
+                    "--base-sha", "base", "--head-sha", "head",
+                ])
+        generate.assert_not_called()
+        enhance.assert_not_called()
+
+    def test_output_file_rejects_symlink_outside_allowed_roots(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output_file = Path(directory) / "ruling-comment.md"
+            output_file.symlink_to("/etc/ruling-comment.md")
+            with patch.object(cli, "generate_comment") as generate:
+                with self.assertRaisesRegex(ValueError, "--output-file must be inside"):
+                    cli.main([
+                        "--output-file", str(output_file),
+                        "--base-sha", "base", "--head-sha", "head",
+                    ])
+            generate.assert_not_called()
+
+    def test_output_file_is_empty_without_issue_deltas(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output_file = pathlib.Path(directory) / "comment.md"
+            output_file.write_text("stale comment", encoding="utf-8")
+            with patch.object(cli, "generate_comment", return_value=None):
+                cli.main([
+                    "--output-file", str(output_file), "--base-sha", "base",
+                    "--head-sha", "head",
+                ])
+            self.assertEqual(output_file.read_text(encoding="utf-8"), "")
+
+    def test_generate_comment_uses_supplied_paths(self) -> None:
+        with (
+            patch.object(cli, "get_changed_ruling_files", return_value=["ruling.sarif"]) as changed,
+            patch.object(cli, "GitHubActionIO") as io_factory,
+            patch.object(cli, "build_rule_diffs", return_value=["diff"]) as build,
+            patch.object(cli, "format_comment", return_value="markdown") as render,
+            patch.object(cli, "add_enhancer_review", return_value="enhanced markdown") as enhance,
+        ):
+            comment = cli.generate_comment("base", "head", "custom/expected", "its/sources")
+        self.assertEqual(comment, "enhanced markdown")
+        changed.assert_called_once_with("base", "head", "custom/expected")
+        io_factory.assert_called_once_with("custom/expected", "its/sources")
+        build.assert_called_once_with(["ruling.sarif"], "base", "head", io_factory.return_value)
+        render.assert_called_once_with(["diff"])
+        enhance.assert_called_once_with("markdown", ["diff"])
+
+    def test_dry_run_without_deltas_prints_nothing(self) -> None:
+        args = self.parse_args("--dry-run", "--base-sha", "base", "--head-sha", "head")
+        for changed_files in ([], ["ruling.json"]):
+            with self.subTest(changed_files=changed_files):
+                output = StringIO()
+                with (
+                    patch.object(cli, "parse_args", return_value=args),
+                    patch.object(cli, "get_changed_ruling_files", return_value=changed_files),
+                    patch.object(cli, "build_rule_diffs", return_value=[]),
+                    patch.object(cli, "post_or_update_comment") as post,
+                    redirect_stdout(output),
+                ):
+                    cli.main()
+                self.assertEqual(output.getvalue(), "")
+                post.assert_not_called()
+
+    def test_dry_run_with_local_git_revisions(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repository = pathlib.Path(directory)
+
+            def git(*arguments: str) -> str:
+                return subprocess.run(
+                    ["git", "-c", "user.name=Test", "-c", "user.email=test@example.test",
+                     "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", *arguments],
+                    cwd=repository, check=True, capture_output=True, text=True,
+                ).stdout.strip()
+
+            git("init")
+            expected = repository / "its/ruling/src/test/resources/expected/sample/python-S100.sarif"
+            expected.parent.mkdir(parents=True)
+            expected.write_text('{"version":"2.1.0","runs":[{"results":[{"locations":[{"physicalLocation":{"artifactLocation":{"uri":"sample:file.py"},"region":{"startLine":1}}}]}]}]}', encoding="utf-8")
+            source = repository / "its/sources/sample/file.py"
+            source.parent.mkdir(parents=True)
+            source.write_text("first = 1\nsecond = 2\n", encoding="utf-8")
+            git("add", ".")
+            git("commit", "-m", "Base ruling")
+            base = git("rev-parse", "HEAD")
+            expected.write_text('{"version":"2.1.0","runs":[{"results":[{"locations":[{"physicalLocation":{"artifactLocation":{"uri":"sample:file.py"},"region":{"startLine":1}}}]},{"locations":[{"physicalLocation":{"artifactLocation":{"uri":"sample:file.py"},"region":{"startLine":2}}}]}]}]}', encoding="utf-8")
+            git("add", ".")
+            git("commit", "-m", "Updated ruling")
+
+            result = subprocess.run(
+                [sys.executable, str(MODULE_DIR.resolve() / "ruling_diff.py"),
+                 "--dry-run", "--base-sha", base, "--head-sha", "HEAD",
+                 "--sources-root", "its/sources"],
+                cwd=repository, check=True, capture_output=True, text=True,
+            )
+
+        self.assertIn("## Ruling Diff Summary", result.stdout)
+        self.assertIn("0 issues removed, 1 issues added", result.stdout)
+        self.assertIn("second = 2", result.stdout)
 
 
 class FakeRulingDiffIO:
@@ -350,7 +699,8 @@ class FormattingTest(unittest.TestCase):
             )
             for index in range(5)
         ]
-        comment = core.format_comment(rule_diffs, soft_limit=500)
+        with patch("ruling_diff_core_lib.comment_rendering.COMMENT_SOFT_LIMIT", 500):
+            comment = core.format_comment(rule_diffs)
         self.assertIn("diff too large to display fully", comment)
 
 
@@ -377,6 +727,38 @@ class SnippetRenderingTest(unittest.TestCase):
 
 
 class BuildRuleDiffsWithIOTest(unittest.TestCase):
+    @patch("ruling_diff_core_lib.snippet_generation.Path.read_text")
+    def test_limits_added_and_removed_snippets_for_a_file(self, mocked_read) -> None:
+        changed_file = "its/ruling/src/test/resources/expected/sample/python-S100.sarif"
+        removed_locations = [IssueLocation(number) for number in range(1, 6)]
+        added_locations = [IssueLocation(number) for number in range(6, 11)]
+        io_impl = FakeRulingDiffIO({
+            (changed_file, "base"): {"sample:file.py": removed_locations},
+            (changed_file, "head"): {"sample:file.py": added_locations},
+        })
+        mocked_read.return_value = "\n".join(f"line {number}" for number in range(1, 11))
+
+        diffs = core.build_rule_diffs([changed_file], "base", "head", io_impl)
+
+        self.assertEqual(
+            [(snippet.change_kind, snippet.location.start_line) for snippet in diffs[0].snippets],
+            [("removed", number) for number in range(1, 4)]
+            + [("added", number) for number in range(6, 9)],
+        )
+
+    @patch("ruling_diff_core_lib.snippet_generation.Path.read_text", return_value="source")
+    def test_limits_snippets_for_a_rule(self, mocked_read) -> None:
+        changed_file = "its/ruling/src/test/resources/expected/sample/python-S100.sarif"
+        file_paths = [f"file{number:02}.py" for number in range(20)]
+        io_impl = FakeRulingDiffIO({
+            (changed_file, "base"): {},
+            (changed_file, "head"): {f"sample:{path}": [IssueLocation(1)] for path in file_paths},
+        })
+
+        diffs = core.build_rule_diffs([changed_file], "base", "head", io_impl)
+
+        self.assertEqual([snippet.file_path for snippet in diffs[0].snippets], file_paths[:15])
+
     @patch("ruling_diff_core_lib.snippet_generation.Path.read_text")
     def test_build_rule_diffs_compares_refs_and_reads_checkout(self, mocked_read) -> None:
         changed_file = (

@@ -5,5 +5,21 @@ description = "GitHub Action helper for ruling diff comments"
 requires-python = ">=3.10"
 dependencies = []
 
+[project.optional-dependencies]
+enhancer = [
+    "openai>=2.54.0,<3",
+    "pydantic>=2,<3",
+]
+
 [tool.uv]
 package = false
+
+[tool.uv.exclude-newer-package]
+anyio = "2026-10-31T00:00:00Z"
+openai = "2026-10-31T00:00:00Z"
+typing-inspection = "2026-10-31T00:00:00Z"
+
+[[tool.uv.index]]
+name = "repox"
+url = "https://repox.jfrog.io/artifactory/api/pypi/sonarsource-pypi/simple"
+default = true
