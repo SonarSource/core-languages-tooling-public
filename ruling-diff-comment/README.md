@@ -196,8 +196,8 @@ Without a preview option, the existing posting behavior is unchanged and
 
 The optional [`ruling_diff_enhancer`](ruling_diff_enhancer) submodule reviews
 the generated Markdown against local rule metadata using LiteLLM. The diff-comment
-script automatically includes an automated review when `DSPY_MODEL` and an API
-key for its selected connection are set. A linked **Rule overview** table shows
+script automatically includes an automated review when `DSPY_MODEL` and a
+Portkey API key are set. A linked **Rule overview** table shows
 each rule's projects, removed/added counts, assessment, and plain-text confidence.
 Rules are ordered by assessment, with negative assessments first. Each rule has
 one section combining its summary and collapsible source examples across projects;
@@ -209,13 +209,10 @@ This applies both to `--dry-run` previews and posted PR comments. The existing
 per-file and per-rule snippet limits still apply, and the review shares the
 comment size budget with the rule details.
 
-Set `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` / `GOOGLE_API_KEY`,
-or `AZURE_API_KEY` / `AZURE_OPENAI_API_KEY` for the corresponding direct provider.
-Portkey accepts `PORTKEY_API_KEY` or the matching family-specific variable
-(`PORTKEY_API_KEY_OPENAI`, `PORTKEY_API_KEY_CLAUDE`, `PORTKEY_API_KEY_GOOGLE`).
-`DSPY_PROVIDER` (`auto`, `direct`, or `portkey`) and `DSPY_API_BASE` configure
-the connection as described in the [enhancer documentation](ruling_diff_enhancer).
-Without a model or matching key, the ordinary comment is unchanged and LiteLLM is
+Reviews use OpenAI models, always through Portkey. Set `PORTKEY_API_KEY_OPENAI`
+(or the generic `PORTKEY_API_KEY`) as described in the
+[enhancer documentation](ruling_diff_enhancer).
+Without a model or key, the ordinary comment is unchanged and LiteLLM is
 not imported. Enhancer errors (including missing dependencies or metadata) emit
 a warning to stderr and preserve the original comment rather than blocking it.
 
@@ -224,8 +221,7 @@ then run from an analyzer checkout with committed SARIF expectation changes:
 
 ```bash
 tooling=/path/to/core-languages-tooling-public/ruling-diff-comment
-export DSPY_MODEL=claude-sonnet-4-5-20250929
-export DSPY_PROVIDER=portkey
+export DSPY_MODEL=gpt-4.1
 uv run --project "$tooling" --frozen --extra enhancer python "$tooling/" \
   --dry-run --base-sha origin/master --head-sha HEAD \
   --sources-root its/sources > /tmp/ruling-comment.md
@@ -236,7 +232,7 @@ Adjust the revisions and sources root for the analyzer. The checkout needs
 Open `/tmp/ruling-comment.md` to see the combined review and original snippets.
 This preview does not post to GitHub, but **does call the configured model**:
 rule metadata and visible source snippets leave your machine and charges may
-apply. Use an approved provider/model for the code being reviewed. Unset
+apply. Use an approved model for the code being reviewed. Unset
 `DSPY_MODEL` to preview the ordinary comment without making model calls.
 
 The GitHub Action installs enhancer dependencies when `DSPY_MODEL` is set;

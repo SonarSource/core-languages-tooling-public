@@ -32,11 +32,10 @@ def create_predictor(model: str, options: dict):
 
 
 def review_comment(
-    comment: str, repository: Path, *, model: str, provider: str = "auto",
-    api_base: str | None = None,
+    comment: str, repository: Path, *, model: str,
 ) -> list[dict]:
     inputs = prepare_inputs(comment, repository)
-    resolved_model, options = model_connection(model, provider, api_base)
+    resolved_model, options = model_connection(model)
     from .ruling_diff_predictor import review_changes
 
     return review_changes(inputs, create_predictor(resolved_model, options))

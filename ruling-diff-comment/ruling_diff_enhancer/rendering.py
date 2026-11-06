@@ -157,22 +157,26 @@ def format_reviewed_comment(rule_diffs: list[RuleDiff], reports: list[dict]) -> 
     overview_notice = "\n\nSome rules are omitted from the overview because the comment is too large."
     omission_notice = f"\n\n{len(keys)} rule sections omitted because the comment is too large."
     rows: list[str] = []
+    rows_length = 0
+    reserved = len(header) + len(table_header) + len(overview_notice) + len(advisory) + len(omission_notice)
     for key in keys:
         row = overview_row(grouped[key], reviews.get(key), anchors[key])
-        candidate = header + table_header + "\n".join(rows + [row])
-        if len(candidate + overview_notice + advisory + omission_notice) > COMMENT_SOFT_LIMIT:
+        row_length = len(row) + (1 if rows else 0)
+        if reserved + rows_length + row_length > COMMENT_SOFT_LIMIT:
             break
         rows.append(row)
+        rows_length += row_length
     if not rows:
         return format_comment(rule_diffs)
     overview_tail = overview_notice if len(rows) < len(keys) else ""
-    intro = header + table_header + "\n".join(rows) + overview_tail + advisory
+    intro_length = len(header) + len(table_header) + rows_length + len(overview_tail) + len(advisory)
     sections: list[str] = []
+    sections_length = 0
     for key in keys:
         report = reviews.get(key)
         # Remaining budget for this section, keeping room for the separator before it
         # and for the trailing omission notice.
-        used = len(intro) + len("\n\n".join(sections)) + (2 if sections else 0)
+        used = intro_length + sections_length + (2 if sections else 0)
         limit = COMMENT_SOFT_LIMIT - used - len(omission_notice)
         section = format_rule_group(grouped[key], report, anchors[key], limit)
         if report and len(section) > limit:
@@ -184,6 +188,7 @@ def format_reviewed_comment(rule_diffs: list[RuleDiff], reports: list[dict]) -> 
             section = format_rule_group(grouped[key], compact_report, anchors[key], limit)
         if len(section) > limit:
             break
+        sections_length += len(section) + (2 if sections else 0)
         sections.append(section)
     rows = [
         overview_row(grouped[key], reviews.get(key), anchors[key] if index < len(sections) else None)

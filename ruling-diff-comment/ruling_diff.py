@@ -73,14 +73,10 @@ def add_enhancer_review(comment: str, rule_diffs: list[RuleDiff]) -> str:
     model = os.environ.get("DSPY_MODEL", "").strip()
     if not model:
         return comment
-    provider = os.environ.get("DSPY_PROVIDER", "auto")
-    api_base = os.environ.get("DSPY_API_BASE")
     try:
-        if not has_api_key(model, provider, api_base):
+        if not has_api_key():
             return comment
-        reports = review_comment(
-            comment, Path.cwd(), model=model, provider=provider, api_base=api_base,
-        )
+        reports = review_comment(comment, Path.cwd(), model=model)
         return format_reviewed_comment(rule_diffs, reports)
     except Exception as error:
         logging.warning(

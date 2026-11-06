@@ -392,8 +392,8 @@ class CommentIntegrationTests(unittest.TestCase):
 
     def test_no_matching_key_or_model_keeps_comment_without_calling_enhancer(self) -> None:
         for environment in (
-            {}, {"OPENAI_API_KEY": "test-key"}, {"DSPY_MODEL": "gpt-4.1"},
-            {"DSPY_MODEL": "gpt-4.1", "ANTHROPIC_API_KEY": "unrelated-key"},
+            {}, {"PORTKEY_API_KEY": "test-key"}, {"DSPY_MODEL": "gpt-4.1"},
+            {"DSPY_MODEL": "gpt-4.1", "OPENAI_API_KEY": "unrelated-key"},
         ):
             with self.subTest(environment=environment), patch.dict(cli.os.environ, environment):
                 with patch.object(cli, "review_comment") as review:
@@ -415,8 +415,7 @@ class CommentIntegrationTests(unittest.TestCase):
                 with (
                     self.subTest(dry_run=dry_run),
                     patch.dict(cli.os.environ, {
-                        "DSPY_MODEL": "gpt-4.1", "OPENAI_API_KEY": "test-key",
-                        "DSPY_PROVIDER": "direct", "DSPY_API_BASE": "http://localhost:8000/v1",
+                        "DSPY_MODEL": "gpt-4.1", "PORTKEY_API_KEY": "test-key",
                     }),
                     patch.object(cli, "parse_args", return_value=args),
                     patch.object(cli, "get_changed_ruling_files", return_value=["ruling.sarif"]),
@@ -438,9 +437,9 @@ class CommentIntegrationTests(unittest.TestCase):
                 self.assertLess(comment.index("## Rule overview"), comment.index("### java:S9191"))
                 self.assertLess(len(comment), core.COMMENT_SOFT_LIMIT)
                 predictor.assert_called_once()
-                create_predictor.assert_called_once_with(
-                    "openai/gpt-4.1", {"api_base": "http://localhost:8000/v1"},
-                )
+                create_predictor.assert_called_once()
+                self.assertEqual(create_predictor.call_args.args[0], "openai/gpt-4.1")
+                self.assertEqual(create_predictor.call_args.args[1]["api_key"], "test-key")
                 example, = predictor.call_args.kwargs["examples"]
                 self.assertEqual(example["snippet"], self.rule_diffs[0].snippets[0].body)
                 self.assertEqual(example["message"], self.rule_diffs[0].snippets[0].location.message)
@@ -454,7 +453,7 @@ class CommentIntegrationTests(unittest.TestCase):
         for error in (ImportError("secret-key"), ValueError("secret-key"), RuntimeError("secret-key")):
             with (
                 self.subTest(error=type(error).__name__),
-                patch.dict(cli.os.environ, {"DSPY_MODEL": "gpt-4.1", "OPENAI_API_KEY": "secret-key"}),
+                patch.dict(cli.os.environ, {"DSPY_MODEL": "gpt-4.1", "PORTKEY_API_KEY": "secret-key"}),
                 patch.object(cli, "review_comment", side_effect=error),
                 self.assertLogs(level="WARNING") as logs,
             ):
