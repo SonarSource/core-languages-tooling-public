@@ -18,6 +18,9 @@ jobs:
   run-python-tests:
     runs-on: ubuntu-latest
     name: Test python scripts
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 #TODO: update to the last version
@@ -27,15 +30,28 @@ jobs:
         with:
           enable-cache: true
 
+      - name: Get Artifactory reader token from Vault
+        id: secrets
+        uses: SonarSource/vault-action-wrapper@v3
+        with:
+          secrets: |
+            development/artifactory/token/{REPO_OWNER_NAME_DASH}-private-reader access_token | ARTIFACTORY_ACCESS_TOKEN;
+
       - name: Run ruling-diff-comment unit tests
+        env:
+          UV_INDEX_REPOX_USERNAME: ""
+          UV_INDEX_REPOX_PASSWORD: ${{ fromJSON(steps.secrets.outputs.vault).ARTIFACTORY_ACCESS_TOKEN }}
         run: |
           cd ruling-diff-comment
-          uv run python -m unittest discover -v -s . -p "test_ruling_diff.py"
+          uv run --locked python -m unittest discover -v -s . -p "test_ruling_diff.py"
 
       - name: Run ruling-diff-comment enhancer unit tests
+        env:
+          UV_INDEX_REPOX_USERNAME: ""
+          UV_INDEX_REPOX_PASSWORD: ${{ fromJSON(steps.secrets.outputs.vault).ARTIFACTORY_ACCESS_TOKEN }}
         run: |
           cd ruling-diff-comment
-          uv run --extra enhancer python -m unittest -v test_enhancer test_models
+          uv run --locked --extra enhancer python -m unittest -v test_enhancer test_models
 
       - name: Run pvf-comment unit tests
         run: |

@@ -43,6 +43,12 @@ Add this action to your workflow:
 ## Requirements
 
 - `uv` must be installed in the workflow environment
+- The workflow must supply `UV_INDEX_REPOX_USERNAME` and
+  `UV_INDEX_REPOX_PASSWORD` to the action step so uv can download locked packages
+  from repox. For SonarSource CI, grant `id-token: write`, retrieve the
+  `{REPO_OWNER_NAME_DASH}-private-reader` Artifactory token with
+  `SonarSource/vault-action-wrapper@v3`, and set the username to an empty string
+  and the password to the retrieved token. See [example-workflow.yml](example-workflow.yml).
 - `gh` CLI must be configured with appropriate permissions
 - Repository must contain ruling files in the expected structure
 

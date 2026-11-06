@@ -23,6 +23,6 @@ openai = "2026-10-31T00:00:00Z"
 typing-inspection = "2026-10-31T00:00:00Z"
 
 [[tool.uv.index]]
-name = "pypi"
-url = "https://pypi.org/simple"
+name = "repox"
+url = "https://repox.jfrog.io/artifactory/api/pypi/sonarsource-pypi/simple"
 default = true
