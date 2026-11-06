@@ -71,7 +71,7 @@ class CommitRulingUpdateTests(unittest.TestCase):
         self.git("add", "unrelated.txt")
         (self.source / "untracked.txt").write_text("untracked unrelated edit")
         original_status = self.git("status", "--porcelain")
-        with patch.object(commit_ruling_update, "run", wraps=commit_ruling_update.run) as run:
+        with patch.object(commit_ruling_update, "push_update", wraps=commit_ruling_update.push_update) as push:
             base_sha, update_sha = self.update()
 
         self.assertEqual(base_sha, self.head_sha)
@@ -95,20 +95,14 @@ class CommitRulingUpdateTests(unittest.TestCase):
             "refs/heads/feature",
         )
         self.assertEqual(self.git("worktree", "list", "--porcelain").count("worktree "), 1)
-        commands = [call.args for call in run.call_args_list]
-        pushes = [command for command in commands if "push" in command]
-        self.assertEqual(len(pushes), 1)
-        self.assertEqual(pushes[0][-4:], (
-            "push", f"--force-with-lease=refs/heads/feature:{self.head_sha}",
-            "origin", "HEAD:refs/heads/feature",
-        ))
-        self.assertFalse(any(command[0] == "gh" for command in commands))
+        push.assert_called_once()
+        self.assertEqual(push.call_args.args[1:], ("feature", self.head_sha))
 
     def test_no_changes_does_not_commit_or_push(self) -> None:
-        with patch.object(commit_ruling_update, "run", wraps=commit_ruling_update.run) as run:
+        with patch.object(commit_ruling_update, "push_update", wraps=commit_ruling_update.push_update) as push:
             self.assertEqual(self.update(), (self.head_sha, ""))
         self.assertEqual(self.remote_head(), self.head_sha)
-        self.assertFalse(any("push" in call.args or "commit" in call.args for call in run.call_args_list))
+        push.assert_not_called()
         self.assertEqual(self.git("worktree", "list", "--porcelain").count("worktree "), 1)
 
     def test_rejects_stale_remote_branch(self) -> None:
@@ -131,18 +125,19 @@ class CommitRulingUpdateTests(unittest.TestCase):
 
     def test_rejects_a_concurrent_push_without_overwriting_it(self) -> None:
         (self.source / self.project / "report.json").write_text("new")
-        original_run = commit_ruling_update.run
+        original_push = commit_ruling_update.push_update
         remote_sha = self.head_sha
 
-        def run_with_racing_push(*command: str) -> None:
+        def push_with_racing_push(worktree: Path, target_ref: str, base_sha: str) -> None:
             nonlocal remote_sha
-            if "push" in command:
-                remote_sha = self.advance_peer()
-            original_run(*command)
+            remote_sha = self.advance_peer()
+            original_push(worktree, target_ref, base_sha)
 
-        with patch.object(commit_ruling_update, "run", side_effect=run_with_racing_push):
-            with self.assertRaises(subprocess.CalledProcessError):
+        with patch.object(commit_ruling_update, "push_update", side_effect=push_with_racing_push):
+            with self.assertRaisesRegex(RuntimeError, "stale info") as failure:
                 self.update()
+        self.assertIn("PR branch 'feature'", str(failure.exception))
+        self.assertIn(f"expected head {self.head_sha}", str(failure.exception))
         self.assertNotEqual(remote_sha, self.head_sha)
         self.assertEqual(self.remote_head(), remote_sha)
         self.assertEqual(self.git("show", f"{remote_sha}:{self.project}/report.json", cwd=self.origin), "old")
@@ -161,15 +156,14 @@ class CommitRulingUpdateTests(unittest.TestCase):
         self.head_sha = self.git("rev-parse", "HEAD")
         self.git("push", "origin", "feature")
         (self.source / self.project / "report.json").write_text("new")
-        original_run = commit_ruling_update.run
+        original_push = commit_ruling_update.push_update
 
-        def run_with_racing_rewind(*command: str) -> None:
-            if "push" in command:
-                self.git("push", "--force", "origin", f"{previous_head}:refs/heads/feature", cwd=self.peer)
-            original_run(*command)
+        def push_with_racing_rewind(worktree: Path, target_ref: str, base_sha: str) -> None:
+            self.git("push", "--force", "origin", f"{previous_head}:refs/heads/feature", cwd=self.peer)
+            original_push(worktree, target_ref, base_sha)
 
-        with patch.object(commit_ruling_update, "run", side_effect=run_with_racing_rewind):
-            with self.assertRaises(subprocess.CalledProcessError):
+        with patch.object(commit_ruling_update, "push_update", side_effect=push_with_racing_rewind):
+            with self.assertRaisesRegex(RuntimeError, "stale info"):
                 self.update()
         self.assertEqual(self.remote_head(), previous_head)
         self.assertEqual(self.git("rev-parse", "HEAD"), self.head_sha)
@@ -178,15 +172,14 @@ class CommitRulingUpdateTests(unittest.TestCase):
 
     def test_rejects_a_concurrent_deletion_without_recreating_the_branch(self) -> None:
         (self.source / self.project / "report.json").write_text("new")
-        original_run = commit_ruling_update.run
+        original_push = commit_ruling_update.push_update
 
-        def run_with_racing_deletion(*command: str) -> None:
-            if "push" in command:
-                self.git("push", "origin", ":refs/heads/feature", cwd=self.peer)
-            original_run(*command)
+        def push_with_racing_deletion(worktree: Path, target_ref: str, base_sha: str) -> None:
+            self.git("push", "origin", ":refs/heads/feature", cwd=self.peer)
+            original_push(worktree, target_ref, base_sha)
 
-        with patch.object(commit_ruling_update, "run", side_effect=run_with_racing_deletion):
-            with self.assertRaises(subprocess.CalledProcessError):
+        with patch.object(commit_ruling_update, "push_update", side_effect=push_with_racing_deletion):
+            with self.assertRaisesRegex(RuntimeError, "stale info"):
                 self.update()
         self.assertEqual(self.git("for-each-ref", "refs/heads/feature", cwd=self.origin), "")
         self.assertEqual(self.git("rev-parse", "HEAD"), self.head_sha)
