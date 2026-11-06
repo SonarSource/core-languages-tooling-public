@@ -32,7 +32,11 @@ runs:
         HEAD_SHA: ${{ inputs.head-sha }}
         SOURCES_ROOT: ${{ inputs.sources-root }}
       run: |
-        uv run --project "${{ github.action_path }}" python "${{ github.action_path }}/ruling_diff.py" \
+        enhancer_args=()
+        if [[ -n "${DSPY_MODEL:-}" ]]; then
+          enhancer_args+=(--extra enhancer)
+        fi
+        uv run --project "${{ github.action_path }}" "${enhancer_args[@]}" python "${{ github.action_path }}/ruling_diff.py" \
           --pr-number "$PR_NUMBER" \
           --repository "$REPOSITORY" \
           --base-sha "$BASE_SHA" \
