@@ -27,7 +27,7 @@ Add this action to your workflow:
     base-sha: ${{ github.event.pull_request.base.sha }}
     head-sha: ${{ github.event.pull_request.head.sha }}
     # Optional: customize for different analyzers
-    # sources-root: 'private/its-enterprise/sources_ruling' # For Python
+    # sources-root: 'private/its/sources'
 ```
 
 ## Inputs
