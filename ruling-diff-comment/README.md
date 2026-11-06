@@ -106,7 +106,7 @@ its/sources/{project}/
 ```
 
 Override with the `sources-root` input parameter (or CLI option) for different
-analyzers, such as `private/its-enterprise/sources_ruling` for Python.
+analyzers.
 
 Snippets for both added and removed issues use source files from the current
 checkout, not from the base or head revision. Only the ruling report comparison
