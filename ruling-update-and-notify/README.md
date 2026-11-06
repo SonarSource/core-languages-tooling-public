@@ -10,6 +10,14 @@ Keep test jobs read-only and publish their ruling artifacts from a separate
 job with write permissions. Both jobs must check out the triggering PR's head
 SHA, not GitHub's synthetic PR merge commit.
 
+For `pull_request` workflows, the default `actions/checkout` ref is GitHub's
+temporary merge commit. Its tree includes changes from the target branch, and
+its commit message is not the PR head's message. This action checks the last
+commit for its auto-update marker and verifies that the checkout matches the
+event's PR head SHA before committing ruling results. Set `ref` explicitly in
+every job that invokes this action; update existing callers that rely on the
+default checkout.
+
 ```yaml
 name: Build
 
@@ -112,7 +120,8 @@ instead. All artifacts in a run must use the same format.
 7. Pushes the commit directly to the PR branch with an explicit expected-SHA
    lease. The new commit extends the verified PR head; the push fails if the
    remote tip no longer matches, including after an advance, rewind, or branch
-   deletion. No differences means no commit or push.
+   deletion. Push failures report the branch, expected SHA, and Git's rejection
+   message. No differences means no commit or push.
 8. Posts or updates the ruling diff comment on the original PR, comparing
    the previous head with the newly pushed ruling commit.
 
