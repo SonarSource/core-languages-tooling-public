@@ -16,8 +16,6 @@ package = false
 
 [tool.uv.exclude-newer-package]
 anyio = "2026-10-31T00:00:00Z"
-boto3 = "2026-10-31T00:00:00Z"
-botocore = "2026-10-31T00:00:00Z"
 openai = "2026-10-31T00:00:00Z"
 typing-inspection = "2026-10-31T00:00:00Z"
 
