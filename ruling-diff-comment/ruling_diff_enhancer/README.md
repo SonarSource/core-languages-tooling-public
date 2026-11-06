@@ -19,9 +19,13 @@ Reviews are always sent to OpenAI through Portkey via LiteLLM. Export
 `PORTKEY_API_KEY_OPENAI` (or the generic `PORTKEY_API_KEY`, used when the
 OpenAI-specific one is unset) using your usual secret-management mechanism;
 do not put tokens in arguments, source files, or comments. The HTML, JSON, and
-visible code snippets are sent through Portkey to OpenAI, so Portkey's and
+visible code snippets, changed finding locations and messages, repository and
+rule keys are sent through Portkey to OpenAI, so Portkey's and
 OpenAI's logging, access controls, and retention policies apply; this may incur
 charges.
+Enable the enhancer only for content approved for sharing with both services.
+Obtain the applicable data-sharing approval before using it with proprietary
+analyzer code.
 
 Keep model and Hugging Face cache directories writable only by the current user.
 LiteLLM 1.106.6 (locked) requires `filelock<4`, and the locked `filelock` 3.32.7 has
@@ -78,4 +82,6 @@ uv run --frozen --extra enhancer python -m unittest -v test_enhancer test_models
 
 Tests use temporary metadata repositories, mocked predictions, and mocked HTTP
 requests for the actual Portkey transport.
-They require neither credentials nor paid/external model calls.
+They make no paid/external model calls. A cold-cache install of the enhancer
+dependencies requires `UV_INDEX_REPOX_USERNAME` and `UV_INDEX_REPOX_PASSWORD`
+for repox package downloads. These are not model credentials.

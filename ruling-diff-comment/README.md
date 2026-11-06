@@ -43,9 +43,11 @@ Add this action to your workflow:
 ## Requirements
 
 - `uv` must be installed in the workflow environment
-- The workflow must supply `UV_INDEX_REPOX_USERNAME` and
-  `UV_INDEX_REPOX_PASSWORD` to the action step so uv can download locked packages
-  from repox. For SonarSource CI, grant `id-token: write`, retrieve the
+- When the optional enhancer is enabled, the workflow must supply
+  `UV_INDEX_REPOX_USERNAME` and `UV_INDEX_REPOX_PASSWORD` to the action step
+  so uv can download its locked packages from repox. The base action has no
+  package dependencies and needs no repox credentials. For SonarSource CI,
+  grant `id-token: write`, retrieve the
   `{REPO_OWNER_NAME_DASH}-private-reader` Artifactory token with
   `SonarSource/vault-action-wrapper@v3`, and set the username to an empty string
   and the password to the retrieved token. See [example-workflow.yml](example-workflow.yml).
@@ -218,11 +220,19 @@ comment size budget with the rule details.
 Reviews use OpenAI models, always through Portkey. Set `PORTKEY_API_KEY_OPENAI`
 (or the generic `PORTKEY_API_KEY`) as described in the
 [enhancer documentation](ruling_diff_enhancer).
+The request includes rule HTML and JSON metadata, the repository and rule key,
+changed finding locations and messages, and the source snippets visible in the
+diff comment. Enable it only for repositories and source content approved for
+sharing with Portkey and OpenAI. In particular, obtain the applicable data-sharing
+approval before enabling it for proprietary analyzer code. Human reviewers remain
+responsible for interpreting the assessment.
 Without a model or key, the ordinary comment is unchanged and LiteLLM is
 not imported. Enhancer errors (including missing dependencies or metadata) emit
 a warning to stderr and preserve the original comment rather than blocking it.
 
 To test locally, export your key using your normal secret-management mechanism,
+and set `UV_INDEX_REPOX_USERNAME` and `UV_INDEX_REPOX_PASSWORD` to repox
+package-download credentials for a cold-cache enhancer install,
 then run from an analyzer checkout with committed SARIF expectation changes:
 
 ```bash
@@ -251,6 +261,11 @@ diff generation does not require AI dependencies.
 cd ruling-diff-comment
 uv run --extra enhancer python -m unittest discover -v -s . -p "test_*.py"
 ```
+
+For a cold-cache enhancer install, set `UV_INDEX_REPOX_USERNAME` and
+`UV_INDEX_REPOX_PASSWORD` to repox package-download credentials before this
+command. The tests use mocks and make no paid model calls. The base action
+requires no repox credentials.
 
 The tests cover CLI validation and preview/posting behavior, plus an integration
 test that renders real ruling changes from a temporary local Git repository.

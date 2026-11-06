@@ -135,7 +135,7 @@ def _format_rule_group_with_count(
     for project, snippet, selection in examples:
         candidate = body + example_lines(project, snippet, selection, project != current_project)
         if limit is not None and len(render(candidate, shown + 1)) > limit:
-            break
+            continue
         body = candidate
         current_project = project
         shown += 1

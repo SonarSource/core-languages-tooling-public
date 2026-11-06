@@ -618,6 +618,30 @@ class ReviewedCommentRenderingTests(unittest.TestCase):
         self.assertIn(f"{4 - shown} source examples omitted because the comment is too large.", section)
         self.assertEqual(section.count("<details>"), section.count("</details>"))
 
+    def test_rule_group_exact_fit_keeps_all_examples(self) -> None:
+        rule = self.rule("python-ParsingError")
+        full = format_rule_group([rule], None, "anchor")
+
+        self.assertEqual(format_rule_group([rule], None, "anchor", len(full)), full)
+        self.assertIn("python-ParsingError", full)
+        self.assertNotIn("omitted", full)
+
+    def test_rule_group_keeps_smaller_example_after_large_one_overflows(self) -> None:
+        rule = self.rule()
+        location = rule.snippets[0].location
+        rule.snippets[:] = [
+            core.Snippet("src/Example.java", location, "added", "large();" * 1000),
+            core.Snippet("src/Example.java", location, "added", "small();"),
+        ]
+        rule.file_diffs[0].added_locations.append(location)
+
+        section = format_rule_group([rule], None, "anchor", 600)
+
+        self.assertLessEqual(len(section), 600)
+        self.assertIn("small();", section)
+        self.assertNotIn("large();", section)
+        self.assertIn("1 source examples omitted", section)
+
     def test_truncation_keeps_complete_sections_and_only_links_to_present_anchors(self) -> None:
         rules = [self.rule(f"S{number}") for number in range(100, 120)]
         reports = [self.report([rule]) for rule in rules]
