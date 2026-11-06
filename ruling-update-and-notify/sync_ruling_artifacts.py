@@ -5,8 +5,7 @@ artifact contains the generated results relative to the actual directory, so
 ``project/report.sarif`` updates ``<expected-root>/project/report.sarif``. This
 script validates the download, copies only regular SARIF files, and
 removes the temporary directory. Expectations for projects absent from the
-artifacts are kept. A later step commits the updated expectations and creates
-a fix PR.
+artifacts are kept. A later step commits the updated expectations to the PR branch.
 """
 
 from __future__ import annotations
@@ -57,7 +56,7 @@ def has_symlink(root: Path, relative_path: Path) -> bool:
     return False
 
 
-def validate_download(artifact_directory: Path, download_outcome: str) -> list[Path]:
+def validate_download(artifact_directory: Path, download_outcome: str) -> list[tuple[Path, Path]]:
     if download_outcome != "success":
         print_diagnostics()
         raise RuntimeError(f"Failed to download artifacts (outcome: {download_outcome})")
@@ -66,7 +65,16 @@ def validate_download(artifact_directory: Path, download_outcome: str) -> list[P
         raise RuntimeError("No artifacts were downloaded (directory does not exist)")
     if not any(artifact_directory.iterdir()):
         raise RuntimeError("Artifact directory is empty; no 'actual_*' artifacts found")
-    result_files = find_result_files(artifact_directory)
+    isolated = sorted(
+        child for child in artifact_directory.iterdir()
+        if child.is_dir() and not child.is_symlink() and child.name.startswith("actual_")
+    )
+    roots = isolated or [artifact_directory]
+    result_files = [
+        (root, relative_path)
+        for root in roots
+        for relative_path in find_result_files(root)
+    ]
     if not result_files:
         raise RuntimeError("Downloaded artifacts contain no regular SARIF result files")
     return result_files
@@ -78,12 +86,12 @@ def sync_artifacts(expected_root: Path, artifact_directory: Path, download_outco
         if not expected_root.is_dir():
             raise RuntimeError(f"Expected ruling directory does not exist: {expected_root}")
         print(f"Copying {len(result_files)} result files into {expected_root}")
-        for relative_path in result_files:
+        for source_root, relative_path in result_files:
             destination = expected_root / relative_path
             if has_symlink(expected_root, relative_path):
                 raise RuntimeError(f"Refusing to write through a symlink: {destination}")
             destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(artifact_directory / relative_path, destination)
+            shutil.copyfile(source_root / relative_path, destination)
     finally:
         if artifact_directory.is_dir():
             shutil.rmtree(artifact_directory)
