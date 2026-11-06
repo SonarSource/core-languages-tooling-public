@@ -11,10 +11,7 @@ from ruling_diff_core_lib.models_and_constants import (
 )
 
 
-def format_comment(
-    rule_diffs: list[RuleDiff], soft_limit: int = COMMENT_SOFT_LIMIT,
-    *, review: str | None = None,
-) -> str:
+def format_comment(rule_diffs: list[RuleDiff], *, review: str | None = None) -> str:
     if not rule_diffs:
         return "\n".join(
             [
@@ -26,10 +23,10 @@ def format_comment(
         )
     comment = format_comment_header(rule_diffs)
     if review:
-        if len(comment) + len(review) + 2 > soft_limit:
+        if len(comment) + len(review) + 2 > COMMENT_SOFT_LIMIT:
             review = "AI review omitted because it exceeds the comment size limit."
         comment += review + "\n\n"
-    return append_rule_sections_with_soft_limit(comment, rule_diffs, soft_limit)
+    return append_rule_sections_with_soft_limit(comment, rule_diffs)
 
 
 def format_comment_header(rule_diffs: list[RuleDiff]) -> str:
@@ -48,15 +45,13 @@ def format_comment_header(rule_diffs: list[RuleDiff]) -> str:
     )
 
 
-def append_rule_sections_with_soft_limit(
-    comment: str, rule_diffs: list[RuleDiff], soft_limit: int
-) -> str:
+def append_rule_sections_with_soft_limit(comment: str, rule_diffs: list[RuleDiff]) -> str:
     sections = [format_rule_section(rule_diff) for rule_diff in rule_diffs]
     accepted_sections: list[str] = []
     truncated_count = 0
     for index, section in enumerate(sections):
         candidate = comment + "\n\n".join(accepted_sections + [section])
-        if len(candidate) > soft_limit:
+        if len(candidate) > COMMENT_SOFT_LIMIT:
             truncated_count = len(sections) - index
             break
         accepted_sections.append(section)

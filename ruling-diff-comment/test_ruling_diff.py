@@ -699,7 +699,8 @@ class FormattingTest(unittest.TestCase):
             )
             for index in range(5)
         ]
-        comment = core.format_comment(rule_diffs, soft_limit=500)
+        with patch("ruling_diff_core_lib.comment_rendering.COMMENT_SOFT_LIMIT", 500):
+            comment = core.format_comment(rule_diffs)
         self.assertIn("diff too large to display fully", comment)
 
 

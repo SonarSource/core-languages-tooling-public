@@ -109,11 +109,9 @@ def format_rule_group(rule_diffs: list[RuleDiff], report: dict | None, anchor: s
     return "\n".join(lines)
 
 
-def format_reviewed_comment(
-    rule_diffs: list[RuleDiff], reports: list[dict], soft_limit: int = COMMENT_SOFT_LIMIT,
-) -> str:
+def format_reviewed_comment(rule_diffs: list[RuleDiff], reports: list[dict]) -> str:
     if not rule_diffs:
-        return format_comment(rule_diffs, soft_limit)
+        return format_comment(rule_diffs)
     grouped: dict[tuple[str, str], list[RuleDiff]] = {}
     for rule in rule_diffs:
         grouped.setdefault((rule.repo, rule.rule_key), []).append(rule)
@@ -134,25 +132,25 @@ def format_reviewed_comment(
     for key in keys:
         row = overview_row(grouped[key], reviews.get(key), anchors[key])
         candidate = header + table_header + "\n".join(rows + [row])
-        if len(candidate + overview_notice + advisory + omission_notice) > soft_limit:
+        if len(candidate + overview_notice + advisory + omission_notice) > COMMENT_SOFT_LIMIT:
             break
         rows.append(row)
     if not rows:
-        return format_comment(rule_diffs, soft_limit)
+        return format_comment(rule_diffs)
     overview_tail = overview_notice if len(rows) < len(keys) else ""
     intro = header + table_header + "\n".join(rows) + overview_tail + advisory
     sections: list[str] = []
     for key in keys:
         report = reviews.get(key)
         section = format_rule_group(grouped[key], report, anchors[key])
-        if report and len(intro + "\n\n".join(sections + [section]) + omission_notice) > soft_limit:
+        if report and len(intro + "\n\n".join(sections + [section]) + omission_notice) > COMMENT_SOFT_LIMIT:
             compact_report = {
                 **report,
                 "summary": "Automated review omitted because it exceeds the comment size limit.",
                 "selected_examples": [],
             }
             section = format_rule_group(grouped[key], compact_report, anchors[key])
-        if len(intro + "\n\n".join(sections + [section]) + omission_notice) > soft_limit:
+        if len(intro + "\n\n".join(sections + [section]) + omission_notice) > COMMENT_SOFT_LIMIT:
             break
         sections.append(section)
     rows = [

@@ -576,7 +576,8 @@ class ReviewedCommentRenderingTests(unittest.TestCase):
         report = self.report([rule])
         report["summary"] = "x" * core.COMMENT_SOFT_LIMIT
 
-        comment = format_reviewed_comment([rule], [report], soft_limit=1500)
+        with patch("ruling_diff_enhancer.rendering.COMMENT_SOFT_LIMIT", 1500):
+            comment = format_reviewed_comment([rule], [report])
 
         self.assertLessEqual(len(comment), 1500)
         self.assertIn("Automated review omitted", comment)
@@ -587,7 +588,8 @@ class ReviewedCommentRenderingTests(unittest.TestCase):
         rules = [self.rule(f"S{number}") for number in range(100, 120)]
         reports = [self.report([rule]) for rule in rules]
 
-        comment = format_reviewed_comment(rules, reports, soft_limit=4000)
+        with patch("ruling_diff_enhancer.rendering.COMMENT_SOFT_LIMIT", 4000):
+            comment = format_reviewed_comment(rules, reports)
 
         self.assertLessEqual(len(comment), 4000)
         self.assertIn("rule sections omitted", comment)
@@ -600,7 +602,8 @@ class ReviewedCommentRenderingTests(unittest.TestCase):
     def test_large_overview_is_truncated_without_exceeding_the_budget(self) -> None:
         rules = [self.rule(f"S{number}") for number in range(100, 150)]
 
-        comment = format_reviewed_comment(rules, [], soft_limit=1500)
+        with patch("ruling_diff_enhancer.rendering.COMMENT_SOFT_LIMIT", 1500):
+            comment = format_reviewed_comment(rules, [])
 
         self.assertLessEqual(len(comment), 1500)
         self.assertIn("Some rules are omitted from the overview", comment)
