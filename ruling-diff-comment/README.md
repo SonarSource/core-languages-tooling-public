@@ -27,7 +27,7 @@ Add this action to your workflow:
     base-sha: ${{ github.event.pull_request.base.sha }}
     head-sha: ${{ github.event.pull_request.head.sha }}
     # Optional: customize for different analyzers
-    # sources-root: 'its/sources'                    # For Java
+    # sources-root: 'private/its/sources'
 ```
 
 ## Inputs
@@ -38,7 +38,7 @@ Add this action to your workflow:
 | `repository` | Repository in `owner/repo` format | Yes | - |
 | `base-sha` | Base commit SHA for comparison | Yes | - |
 | `head-sha` | Head commit SHA for comparison | Yes | - |
-| `sources-root` | Path to sources directory | No | `private/its-enterprise/sources_ruling` |
+| `sources-root` | Path to sources directory | No | `its/sources` |
 
 ## Requirements
 
@@ -102,10 +102,11 @@ sources for additions. All findings are compared; a mismatch does not stop the d
 
 Source files for code snippets are resolved based on project name. The default looks for sources in:
 ```
-private/its-enterprise/sources_ruling/{project}/
+its/sources/{project}/
 ```
 
-Override with the `sources-root` input parameter for different analyzers.
+Override with the `sources-root` input parameter (or CLI option) for different
+analyzers.
 
 Snippets for both added and removed issues use source files from the current
 checkout, not from the base or head revision. Only the ruling report comparison

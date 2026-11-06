@@ -17,7 +17,7 @@ inputs:
   sources-root:
     description: 'Path to sources directory (e.g., its/sources for Java)'
     required: false
-    default: 'private/its-enterprise/sources_ruling'
+    default: 'its/sources'
 
 runs:
   using: 'composite'

@@ -65,7 +65,7 @@ jobs:
           repository: ${{ github.repository }}
           base-sha: ${{ inputs.base-sha || github.event.pull_request.base.sha }}
           head-sha: ${{ inputs.head-sha || github.event.pull_request.head.sha }}
-          # For Java analyzer, use:
-          # sources-root: 'its/sources'
+          # Defaults to 'its/sources'. For entreprise analyzers, you may have to use for example:
+          # sources-root: 'private/its/sources'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
