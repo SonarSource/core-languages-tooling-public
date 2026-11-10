@@ -730,7 +730,7 @@ class SnippetRenderingTest(unittest.TestCase):
             [
                 "         1 | before",
                 ">>>      2 | value = duplicated",
-                " " * len(">>>      2 | ") + " " * 8 + "^" * 10,
+                "                     ^^^^^^^^^",
                 "         3 | after",
             ],
         )
@@ -760,11 +760,11 @@ class SnippetRenderingTest(unittest.TestCase):
             rendered.splitlines(),
             [
                 ">>>      1 |   first",
-                " " * len(">>>      1 | ") + "  " + "^" * 5,
+                "               ^^^^^",
                 "         2 | middle",
-                " " * len("         2 | ") + "^" * 6,
+                "               ^^^^^^",
                 "         3 | last!",
-                " " * len("         3 | ") + "^" * 2,
+                "               ^^",
             ],
         )
 
@@ -806,7 +806,7 @@ class BuildRuleDiffsWithIOTest(unittest.TestCase):
 
         diffs = core.build_rule_diffs([changed_file], "base", "head", io_impl)
 
-        self.assertIn(" " * len(">>>      1 | ") + " " * 8 + "^" * 10, diffs[0].snippets[0].body)
+        self.assertIn("                     ^^^^^^^^^", diffs[0].snippets[0].body)
 
     @patch("ruling_diff_core_lib.snippet_generation.Path.read_text")
     def test_limits_added_and_removed_snippets_for_a_file(self, mocked_read) -> None:
