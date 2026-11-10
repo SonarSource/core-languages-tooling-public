@@ -745,7 +745,7 @@ class SnippetRenderingTest(unittest.TestCase):
             rendered.splitlines(),
             [
                 ">>>      1 | \tvalue",
-                " " * len(">>>      1 | ") + "\t^",
+                "              \t^",
             ],
         )
 
@@ -773,7 +773,7 @@ class SnippetRenderingTest(unittest.TestCase):
             ["😀abc"], IssueLocation(1, 3, 1, 6), context=0,
         )
         self.assertEqual(
-            rendered.splitlines()[1], " " * len(">>>      1 | ") + "  ^^^"
+            rendered.splitlines()[1], "                ^^^"
         )
 
     def test_render_line_snippet_skips_unavailable_columns(self) -> None:
