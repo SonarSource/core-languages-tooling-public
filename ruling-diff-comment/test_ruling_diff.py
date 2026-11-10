@@ -730,7 +730,7 @@ class SnippetRenderingTest(unittest.TestCase):
             [
                 "         1 | before",
                 ">>>      2 | value = duplicated",
-                "                     ^^^^^^^^^",
+                "                     ^^^^^^^^^^",
                 "         3 | after",
             ],
         )
@@ -762,9 +762,9 @@ class SnippetRenderingTest(unittest.TestCase):
                 ">>>      1 |   first",
                 "               ^^^^^",
                 "         2 | middle",
-                "               ^^^^^^",
+                "             ^^^^^^",
                 "         3 | last!",
-                "               ^^",
+                "             ^^",
             ],
         )
 
