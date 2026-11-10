@@ -19,16 +19,14 @@ from ruling_diff_core_lib.models_and_constants import (
 
 def render_snippet(
     lines: OptionalSourceLines,
-    issue_line: int,
+    location: IssueLocation,
     context: int = SNIPPET_CONTEXT,
-    *,
-    location: IssueLocation | None = None,
 ) -> str:
     if lines is None:
         return "(source file not found at this revision)"
-    if issue_line == 0:
+    if location.start_line == 0:
         return render_file_level_snippet(lines, context)
-    return render_line_snippet(lines, issue_line, context, location=location)
+    return render_line_snippet(lines, location, context)
 
 
 def render_file_level_snippet(lines: SourceLines, context: int) -> str:
@@ -41,11 +39,10 @@ def render_file_level_snippet(lines: SourceLines, context: int) -> str:
 
 def render_line_snippet(
     lines: SourceLines,
-    issue_line: int,
-    context: int,
-    *,
-    location: IssueLocation | None = None,
+    location: IssueLocation,
+    context: int = SNIPPET_CONTEXT,
 ) -> str:
+    issue_line = location.start_line
     if not lines:
         return f">>> ISSUE HERE (line {issue_line})\n(empty file)"
     clamped_line = max(1, min(issue_line, len(lines)))
@@ -54,7 +51,7 @@ def render_line_snippet(
         prefix.append(
             f"(requested line {issue_line} not present, showing closest line {clamped_line})"
         )
-    body = render_line_window(lines, clamped_line, context, location=location)
+    body = render_line_window(lines, clamped_line, context, location)
     return "\n".join(prefix + body)
 
 
@@ -62,8 +59,7 @@ def render_line_window(
     lines: SourceLines,
     center_line: int,
     context: int,
-    *,
-    location: IssueLocation | None = None,
+    location: IssueLocation,
 ) -> list[str]:
     start = max(1, center_line - context)
     end = min(len(lines), center_line + context)
@@ -73,10 +69,9 @@ def render_line_window(
         prefix = f"{marker} {number:>6} | "
         source_line = lines[number - 1]
         rendered.append(f"{prefix}{source_line}")
-        if location is not None:
-            underline = render_issue_underline(source_line, prefix, number, location)
-            if underline is not None:
-                rendered.append(underline)
+        underline = render_issue_underline(source_line, prefix, number, location)
+        if underline is not None:
+            rendered.append(underline)
     return rendered
 
 
@@ -189,7 +184,7 @@ def create_issue_snippet(
     body = (
         f"(source file not found in checkout: {file_path})"
         if lines is None
-        else render_snippet(lines, location.start_line, location=location)
+        else render_snippet(lines, location)
     )
     return Snippet(
         file_path=file_path,
