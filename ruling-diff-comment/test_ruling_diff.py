@@ -707,13 +707,13 @@ class FormattingTest(unittest.TestCase):
 class SnippetRenderingTest(unittest.TestCase):
     def test_render_line_snippet_uses_plus_minus_five_lines(self) -> None:
         lines = [f"line {i}" for i in range(1, 21)]
-        rendered = core.render_line_snippet(lines, issue_line=10, context=5)
+        rendered = core.render_line_snippet(lines, IssueLocation(10), context=5)
         self.assertIn("      5 | line 5", rendered)
         self.assertIn(">>>     10 | line 10", rendered)
         self.assertIn("     15 | line 15", rendered)
 
     def test_render_line_snippet_handles_out_of_range_line(self) -> None:
-        rendered = core.render_line_snippet(["alpha", "beta"], issue_line=99, context=5)
+        rendered = core.render_line_snippet(["alpha", "beta"], IssueLocation(99), context=5)
         self.assertIn("requested line 99 not present", rendered)
         self.assertIn(">>>      2 | beta", rendered)
 
@@ -722,7 +722,7 @@ class SnippetRenderingTest(unittest.TestCase):
         location = IssueLocation(2, 9, 2, 19)
 
         rendered = core.render_line_snippet(
-            ["before", source, "after"], issue_line=2, context=1, location=location
+            ["before", source, "after"], location, context=1
         )
 
         self.assertEqual(
@@ -739,7 +739,7 @@ class SnippetRenderingTest(unittest.TestCase):
         source = "\tvalue"
         location = IssueLocation(1, 1, 1, 3)
         rendered = core.render_line_snippet(
-            [source], issue_line=1, context=0, location=location
+            [source], location, context=0
         )
         self.assertEqual(
             rendered.splitlines(),
@@ -753,7 +753,7 @@ class SnippetRenderingTest(unittest.TestCase):
         location = IssueLocation(1, 3, 3, 3)
 
         rendered = core.render_line_snippet(
-            ["  first", "middle", "last!"], issue_line=1, context=2, location=location
+            ["  first", "middle", "last!"], location, context=2
         )
 
         self.assertEqual(
@@ -770,8 +770,7 @@ class SnippetRenderingTest(unittest.TestCase):
 
     def test_render_line_snippet_uses_utf16_columns(self) -> None:
         rendered = core.render_line_snippet(
-            ["😀abc"], issue_line=1, context=0,
-            location=IssueLocation(1, 3, 1, 6),
+            ["😀abc"], IssueLocation(1, 3, 1, 6), context=0,
         )
         self.assertEqual(
             rendered.splitlines()[1], " " * len(">>>      1 | ") + "  ^^^"
@@ -781,7 +780,7 @@ class SnippetRenderingTest(unittest.TestCase):
         for location in (IssueLocation(1), IssueLocation(1, 99, 1, 100)):
             with self.subTest(location=location):
                 rendered = core.render_line_snippet(
-                    ["short"], issue_line=1, context=0, location=location
+                    ["short"], location, context=0
                 )
                 self.assertEqual(rendered, ">>>      1 | short")
 
@@ -790,7 +789,7 @@ class SnippetRenderingTest(unittest.TestCase):
         self.assertIn(">>> FILE-LEVEL ISSUE", rendered)
 
     def test_render_snippet_missing_source_placeholder(self) -> None:
-        rendered = core.render_snippet(None, issue_line=12, context=5)
+        rendered = core.render_snippet(None, IssueLocation(12), context=5)
         self.assertEqual(rendered, "(source file not found at this revision)")
 
 
