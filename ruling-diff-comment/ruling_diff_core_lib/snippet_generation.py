@@ -98,11 +98,18 @@ def render_issue_underline(
     if start_column > line_length or end_column <= start_column:
         return None
 
-    return (
-        " " * len(prefix)
-        + utf16_padding(source_line, start_column)
-        + "^" * (end_column - start_column)
-    )
+    underline = ""
+    column = 1
+    for char in source_line:
+        if column >= end_column:
+            break
+        width = 2 if ord(char) > 0xFFFF else 1
+        if char == "\t":
+            underline += "\t"
+        else:
+            underline += ("^" if column >= start_column else " ") * width
+        column += width
+    return " " * len(prefix) + underline
 
 
 def underline_end_column(
@@ -114,18 +121,6 @@ def underline_end_column(
         if number == location.start_line:
             return start_column + 1
     return line_length + 1
-
-
-def utf16_padding(source_line: str, start_column: int) -> str:
-    padding = ""
-    column = 1
-    for char in source_line:
-        if column >= start_column:
-            break
-        width = 2 if ord(char) > 0xFFFF else 1
-        padding += "\t" if char == "\t" else " " * width
-        column += width
-    return padding
 
 
 def build_snippets_for_rule(

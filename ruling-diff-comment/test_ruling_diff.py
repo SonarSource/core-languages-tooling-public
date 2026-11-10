@@ -735,6 +735,20 @@ class SnippetRenderingTest(unittest.TestCase):
             ],
         )
 
+    def test_render_line_snippet_underlines_after_tab(self) -> None:
+        source = "\tvalue"
+        location = IssueLocation(1, 1, 1, 3)
+        rendered = core.render_line_snippet(
+            [source], issue_line=1, context=0, location=location
+        )
+        self.assertEqual(
+            rendered.splitlines(),
+            [
+                ">>>      1 | \tvalue",
+                " " * len(">>>      1 | ") + "\t^",
+            ],
+        )
+
     def test_render_line_snippet_underlines_multiline_range(self) -> None:
         location = IssueLocation(1, 3, 3, 3)
 
