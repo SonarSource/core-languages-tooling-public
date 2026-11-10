@@ -1,6 +1,6 @@
 # core-languages-tooling-public
 
-Development tooling for the Analysis Platform squad — For artifacts accessible from public repos
+Development tooling owned by the Analysis Platform squad — For artifacts accessible from public repos
 
 ## Contents
 
