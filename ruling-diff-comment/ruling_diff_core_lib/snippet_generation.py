@@ -68,7 +68,7 @@ def render_line_window(
         marker = ">>>" if number == center_line else "   "
         prefix = f"{marker} {number:>6} | "
         source_line = lines[number - 1]
-        rendered.append(f"{prefix}{source_line}")
+        rendered.append(prefix + expand_source_tabs(source_line, len(prefix)))
         underline = render_issue_underline(source_line, prefix, number, location)
         if underline is not None:
             rendered.append(underline)
@@ -93,18 +93,9 @@ def render_issue_underline(
     if start_column > line_length or end_column <= start_column:
         return None
 
-    underline = ""
-    column = 1
-    for char in source_line:
-        if column >= end_column:
-            break
-        width = 2 if ord(char) > 0xFFFF else 1
-        if char == "\t":
-            underline += "\t"
-        else:
-            underline += ("^" if column >= start_column else " ") * width
-        column += width
-    return " " * len(prefix) + underline
+    return " " * len(prefix) + underline_marks(
+        source_line, len(prefix), start_column, end_column
+    )
 
 
 def underline_end_column(
@@ -116,6 +107,37 @@ def underline_end_column(
         if number == location.start_line:
             return start_column + 1
     return line_length + 1
+
+
+def underline_marks(
+    source_line: str, prefix_width: int, start_column: int, end_column: int
+) -> str:
+    marks = ""
+    column = 1
+    visual_column = prefix_width
+    for char in source_line:
+        if column >= end_column:
+            break
+        utf16_width = 2 if ord(char) > 0xFFFF else 1
+        visual_width = 8 - visual_column % 8 if char == "\t" else utf16_width
+        marks += ("^" if column + utf16_width > start_column else " ") * visual_width
+        column += utf16_width
+        visual_column += visual_width
+    return marks
+
+
+def expand_source_tabs(source_line: str, prefix_width: int) -> str:
+    expanded = ""
+    visual_column = prefix_width
+    for char in source_line:
+        width = 2 if ord(char) > 0xFFFF else 1
+        if char == "\t":
+            width = 8 - visual_column % 8
+            expanded += " " * width
+        else:
+            expanded += char
+        visual_column += width
+    return expanded
 
 
 def build_snippets_for_rule(
