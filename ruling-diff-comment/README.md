@@ -121,6 +121,12 @@ is revision-based. Initialize the required source submodules in the calling
 workflow; the action does not fetch source content. Missing files produce a
 placeholder snippet.
 
+When a finding has column coordinates, the snippet underlines its range with
+carets beneath the source. The end column is exclusive; a location with only a
+start column gets one caret. Multi-line ranges are underlined on each displayed
+line. Line-only and file-level findings have no underline. If the current source
+is shorter than a reported range, the underline stops at the available text.
+
 ### Source Component Keys
 
 `artifactLocation.uri` values emitted by LITS can include project/module

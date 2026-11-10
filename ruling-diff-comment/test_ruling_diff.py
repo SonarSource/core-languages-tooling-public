@@ -717,6 +717,60 @@ class SnippetRenderingTest(unittest.TestCase):
         self.assertIn("requested line 99 not present", rendered)
         self.assertIn(">>>      2 | beta", rendered)
 
+    def test_render_line_snippet_underlines_precise_columns(self) -> None:
+        source = "value = duplicated"
+        location = IssueLocation(2, 9, 2, 19)
+
+        rendered = core.render_line_snippet(
+            ["before", source, "after"], issue_line=2, context=1, location=location
+        )
+
+        self.assertEqual(
+            rendered.splitlines(),
+            [
+                "         1 | before",
+                ">>>      2 | value = duplicated",
+                " " * len(">>>      2 | ") + " " * 8 + "^" * 10,
+                "         3 | after",
+            ],
+        )
+
+    def test_render_line_snippet_underlines_multiline_range(self) -> None:
+        location = IssueLocation(1, 3, 3, 3)
+
+        rendered = core.render_line_snippet(
+            ["  first", "middle", "last!"], issue_line=1, context=2, location=location
+        )
+
+        self.assertEqual(
+            rendered.splitlines(),
+            [
+                ">>>      1 |   first",
+                " " * len(">>>      1 | ") + "  " + "^" * 5,
+                "         2 | middle",
+                " " * len("         2 | ") + "^" * 6,
+                "         3 | last!",
+                " " * len("         3 | ") + "^" * 2,
+            ],
+        )
+
+    def test_render_line_snippet_uses_utf16_columns(self) -> None:
+        rendered = core.render_line_snippet(
+            ["😀abc"], issue_line=1, context=0,
+            location=IssueLocation(1, 3, 1, 6),
+        )
+        self.assertEqual(
+            rendered.splitlines()[1], " " * len(">>>      1 | ") + "  ^^^"
+        )
+
+    def test_render_line_snippet_skips_unavailable_columns(self) -> None:
+        for location in (IssueLocation(1), IssueLocation(1, 99, 1, 100)):
+            with self.subTest(location=location):
+                rendered = core.render_line_snippet(
+                    ["short"], issue_line=1, context=0, location=location
+                )
+                self.assertEqual(rendered, ">>>      1 | short")
+
     def test_render_file_level_snippet_marker(self) -> None:
         rendered = core.render_file_level_snippet(["a", "b", "c"], context=5)
         self.assertIn(">>> FILE-LEVEL ISSUE", rendered)
@@ -727,6 +781,19 @@ class SnippetRenderingTest(unittest.TestCase):
 
 
 class BuildRuleDiffsWithIOTest(unittest.TestCase):
+    @patch("ruling_diff_core_lib.snippet_generation.Path.read_text", return_value="value = duplicated")
+    def test_build_rule_diffs_underlines_sarif_range(self, mocked_read) -> None:
+        changed_file = "its/ruling/src/test/resources/expected/sample/python-S100.sarif"
+        location = IssueLocation(1, 9, 1, 19)
+        io_impl = FakeRulingDiffIO({
+            (changed_file, "base"): {},
+            (changed_file, "head"): {"sample:file.py": [location]},
+        })
+
+        diffs = core.build_rule_diffs([changed_file], "base", "head", io_impl)
+
+        self.assertIn(" " * len(">>>      1 | ") + " " * 8 + "^" * 10, diffs[0].snippets[0].body)
+
     @patch("ruling_diff_core_lib.snippet_generation.Path.read_text")
     def test_limits_added_and_removed_snippets_for_a_file(self, mocked_read) -> None:
         changed_file = "its/ruling/src/test/resources/expected/sample/python-S100.sarif"
