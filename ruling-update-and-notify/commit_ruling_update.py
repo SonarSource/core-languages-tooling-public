@@ -14,6 +14,30 @@ def run(*command: str) -> None:
     subprocess.run(command, check=True)
 
 
+def push_update(worktree: Path, target_ref: str, base_sha: str) -> None:
+    result = subprocess.run(
+        (
+            "git", "-C", str(worktree), "push",
+            f"--force-with-lease=refs/heads/{target_ref}:{base_sha}",
+            "origin", f"HEAD:refs/heads/{target_ref}",
+        ),
+        capture_output=True, text=True, check=False,
+    )
+    if result.returncode:
+        git_output = result.stderr.strip() or result.stdout.strip()
+        details = " | ".join(git_output.splitlines()) or "Git provided no details"
+        raise RuntimeError(
+            f"Could not push ruling update to PR branch '{target_ref}' "
+            f"(expected head {base_sha}, exit status {result.returncode}). "
+            f"Check the job's contents: write permission, branch rules, and whether the PR head moved. "
+            f"Git reported: {details}"
+        )
+    if result.stdout:
+        print(result.stdout, end="")
+    if result.stderr:
+        print(result.stderr, end="", file=sys.stderr)
+
+
 def output(*command: str) -> str:
     result = subprocess.run(command, check=True, stdout=subprocess.PIPE, text=True)
     return result.stdout.strip()
@@ -83,11 +107,7 @@ def commit_ruling_update(target_ref: str, ruling_root: str, head_sha: str) -> tu
                 "commit", "-m", f"Update ruling results\n\n{GENERATED_MARKER}",
             )
             update_sha = output("git", "-C", str(worktree), "rev-parse", "HEAD")
-            run(
-                "git", "-C", str(worktree), "push",
-                f"--force-with-lease=refs/heads/{target_ref}:{base_sha}",
-                "origin", f"HEAD:refs/heads/{target_ref}",
-            )
+            push_update(worktree, target_ref, base_sha)
         finally:
             run("git", "worktree", "remove", "--force", str(worktree))
     return base_sha, update_sha
