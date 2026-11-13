@@ -25,8 +25,7 @@ The selected directory is uploaded directly, without copying or converting
 files: a generated `actual/project/report.sarif` is stored as
 `project/report.sarif` in the artifact, and `ruling-update-and-notify` copies it
 to `expected/project/report.sarif`. Only `.sarif` files are synced by the update
-action. Python 3 must be available as `python3` or
-`python` on the runner.
+action. Python 3 must be available as `python3` or `python` on the runner.
 
 ## Why a Separate Action?
 
