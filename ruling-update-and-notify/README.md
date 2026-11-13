@@ -93,10 +93,12 @@ update job merges all of them into one ruling update. Producers must write
 disjoint project paths, or choose one platform as the source for overlapping
 projects.
 
-Artifacts prepared by `prepare-ruling-artifact` contain an `expected/`
-directory and are copied into the detected ruling resources directory. Legacy
-artifacts without that wrapper are copied into its `expected/` directory
-instead. All artifacts in a run must use the same format.
+Each artifact contains `.sarif` result files relative to its `actual`
+directory, for example `project/report.sarif`. The action copies these files
+into the detected `expected` directory. Other files and symlinks are ignored,
+and existing expectations for projects absent from the artifacts are kept.
+The update fails if no regular SARIF file was downloaded or if a destination
+path contains a symlink.
 
 ## Behavior
 
