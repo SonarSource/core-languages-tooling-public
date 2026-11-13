@@ -707,26 +707,131 @@ class FormattingTest(unittest.TestCase):
 class SnippetRenderingTest(unittest.TestCase):
     def test_render_line_snippet_uses_plus_minus_five_lines(self) -> None:
         lines = [f"line {i}" for i in range(1, 21)]
-        rendered = core.render_line_snippet(lines, issue_line=10, context=5)
+        rendered = core.render_line_snippet(lines, IssueLocation(10), context=5)
         self.assertIn("      5 | line 5", rendered)
         self.assertIn(">>>     10 | line 10", rendered)
         self.assertIn("     15 | line 15", rendered)
 
     def test_render_line_snippet_handles_out_of_range_line(self) -> None:
-        rendered = core.render_line_snippet(["alpha", "beta"], issue_line=99, context=5)
+        rendered = core.render_line_snippet(["alpha", "beta"], IssueLocation(99), context=5)
         self.assertIn("requested line 99 not present", rendered)
         self.assertIn(">>>      2 | beta", rendered)
+
+    def test_render_line_snippet_underlines_precise_columns(self) -> None:
+        source = "value = duplicated"
+        location = IssueLocation(2, 9, 2, 19)
+
+        rendered = core.render_line_snippet(
+            ["before", source, "after"], location, context=1
+        )
+
+        self.assertEqual(
+            rendered.splitlines(),
+            [
+                "         1 | before",
+                ">>>      2 | value = duplicated",
+                " " * len(">>>      2 | ") + " " * 8 + "^" * 10,
+                "         3 | after",
+            ],
+        )
+
+    def test_render_line_snippet_underlines_multiline_range(self) -> None:
+        location = IssueLocation(1, 3, 3, 3)
+
+        rendered = core.render_line_snippet(
+            ["  first", "middle", "last!"], location, context=2
+        )
+
+        self.assertEqual(
+            rendered.splitlines(),
+            [
+                ">>>      1 |   first",
+                " " * len(">>>      1 | ") + "  " + "^" * 5,
+                "         2 | middle",
+                " " * len("         2 | ") + "^" * 6,
+                "         3 | last!",
+                " " * len("         3 | ") + "^" * 2,
+            ],
+        )
+
+    def test_render_line_snippet_uses_utf16_columns(self) -> None:
+        rendered = core.render_line_snippet(
+            ["😀abc"], IssueLocation(1, 3, 1, 6), context=0,
+        )
+        self.assertEqual(
+            rendered.splitlines()[1], "               ^^^"
+        )
+
+    def test_render_line_snippet_skips_unavailable_columns(self) -> None:
+        for location in (IssueLocation(1), IssueLocation(1, 99, 1, 100)):
+            with self.subTest(location=location):
+                rendered = core.render_line_snippet(
+                    ["short"], location, context=0
+                )
+                self.assertEqual(rendered, ">>>      1 | short")
+
+    def test_render_line_snippet_underlines_tab_range(self) -> None:
+        rendered = core.render_line_snippet(
+            ["\tvalue"], IssueLocation(1, 1, 1, 3), context=0
+        )
+        self.assertEqual(
+            rendered.splitlines(),
+            [">>>      1 |    value", " " * 13 + "^^^^"],
+        )
+
+    def test_render_line_snippet_underlines_tab_only(self) -> None:
+        rendered = core.render_line_snippet(
+            ["\tvalue"], IssueLocation(1, 1, 1, 2), context=0
+        )
+        self.assertEqual(rendered.splitlines()[1], " " * 13 + "^^^")
+
+    def test_render_line_snippet_underlines_after_tab(self) -> None:
+        rendered = core.render_line_snippet(
+            ["\tvalue"], IssueLocation(1, 2, 1, 7), context=0
+        )
+        self.assertEqual(rendered.splitlines()[1], " " * 16 + "^^^^^")
+
+    def test_render_line_snippet_aligns_tab_after_utf16_character(self) -> None:
+        rendered = core.render_line_snippet(
+            ["😀\tvalue"], IssueLocation(1, 4, 1, 9), context=0
+        )
+        self.assertEqual(
+            rendered.splitlines(),
+            [">>>      1 | 😀 value", " " * 16 + "^^^^^"],
+        )
+
+    def test_render_line_snippet_underlines_tabbed_continuation(self) -> None:
+        rendered = core.render_line_snippet(
+            ["start", "\tvalue"], IssueLocation(1, 1, 2, 3), context=1
+        )
+        self.assertEqual(rendered.splitlines()[-1], " " * 13 + "^^^^")
 
     def test_render_file_level_snippet_marker(self) -> None:
         rendered = core.render_file_level_snippet(["a", "b", "c"], context=5)
         self.assertIn(">>> FILE-LEVEL ISSUE", rendered)
 
     def test_render_snippet_missing_source_placeholder(self) -> None:
-        rendered = core.render_snippet(None, issue_line=12, context=5)
+        rendered = core.render_snippet(None, IssueLocation(12), context=5)
         self.assertEqual(rendered, "(source file not found at this revision)")
 
 
 class BuildRuleDiffsWithIOTest(unittest.TestCase):
+    @patch("ruling_diff_core_lib.snippet_generation.Path.read_text", return_value="value = duplicated")
+    def test_build_rule_diffs_underlines_sarif_range(self, mocked_read) -> None:
+        changed_file = "its/ruling/src/test/resources/expected/sample/python-S100.sarif"
+        location = IssueLocation(1, 9, 1, 19)
+        io_impl = FakeRulingDiffIO({
+            (changed_file, "base"): {},
+            (changed_file, "head"): {"sample:file.py": [location]},
+        })
+
+        diffs = core.build_rule_diffs([changed_file], "base", "head", io_impl)
+
+        self.assertIn(
+            " " * len(">>>      1 | ") + " " * 8 + "^" * 10,
+            diffs[0].snippets[0].body.splitlines(),
+        )
+
     @patch("ruling_diff_core_lib.snippet_generation.Path.read_text")
     def test_limits_added_and_removed_snippets_for_a_file(self, mocked_read) -> None:
         changed_file = "its/ruling/src/test/resources/expected/sample/python-S100.sarif"
