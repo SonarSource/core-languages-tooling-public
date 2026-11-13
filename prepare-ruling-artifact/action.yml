@@ -6,6 +6,10 @@ inputs:
     description: 'Unique artifact name beginning with actual_'
     required: false
     default: 'actual_ruling'
+  actual-path:
+    description: 'Directory containing generated ruling results; defaults to automatic discovery'
+    required: false
+    default: ''
 
 outputs:
   artifact-id:
@@ -23,6 +27,7 @@ runs:
       shell: bash
       env:
         ARTIFACT_NAME: ${{ inputs.artifact-name }}
+        ACTUAL_PATH: ${{ inputs.actual-path }}
       run: |
         if command -v python3 >/dev/null 2>&1; then
           python3 "${{ github.action_path }}/prepare.py"

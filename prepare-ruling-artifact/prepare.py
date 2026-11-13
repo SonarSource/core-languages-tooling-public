@@ -17,7 +17,15 @@ ACTUAL_ROOTS = (
 )
 
 
-def select_actual_root() -> Path:
+def select_actual_root(actual_path: str | None = None) -> Path:
+    if actual_path:
+        root = Path(actual_path)
+        if not root.is_absolute():
+            root = Path(os.environ["GITHUB_WORKSPACE"]) / root
+        if not root.is_dir():
+            raise ValueError(f"Configured actual-path is not a directory: {root}")
+        return root
+
     candidates = [root for root in ACTUAL_ROOTS if root.is_dir()]
     checked_roots = ", ".join(str(root) for root in ACTUAL_ROOTS)
     if len(candidates) > 1:
@@ -44,7 +52,7 @@ def main() -> int:
             "artifact-name must begin with actual_ and contain only letters, numbers, _, ., or -"
         )
 
-    actual_root = select_actual_root()
+    actual_root = select_actual_root(os.environ.get("ACTUAL_PATH"))
     if not has_result_files(actual_root):
         raise ValueError(f"No generated ruling SARIF files found in {actual_root}")
 

@@ -16,6 +16,9 @@ class PrepareRulingArtifactTests(unittest.TestCase):
         self,
         roots: tuple[str, ...],
         artifact_name: str = "actual_ruling",
+        actual_path: str = "",
+        absolute_actual_path: bool = False,
+        run_directory: str = "",
         result_files: tuple[str, ...] = ("xml-S123.sarif",),
         symlink_results: bool = False,
     ) -> tuple[subprocess.CompletedProcess[str], Path | None, Path]:
@@ -35,12 +38,18 @@ class PrepareRulingArtifactTests(unittest.TestCase):
                 else:
                     result_path.write_text('{"rule": [1]}')
         output = workspace / "github-output"
+        cwd = workspace / run_directory
+        cwd.mkdir(parents=True, exist_ok=True)
         result = subprocess.run(
             (sys.executable, str(SCRIPT)),
-            cwd=workspace,
+            cwd=cwd,
             env={
                 **os.environ,
                 "ARTIFACT_NAME": artifact_name,
+                "ACTUAL_PATH": (
+                    str(workspace / actual_path) if absolute_actual_path else actual_path
+                ),
+                "GITHUB_WORKSPACE": str(workspace),
                 "GITHUB_OUTPUT": str(output),
             },
             capture_output=True,
@@ -130,13 +139,43 @@ class PrepareRulingArtifactTests(unittest.TestCase):
         self.assertIn("No generated ruling directory", result.stderr)
         self.assertIn("its/ruling/target/actual", result.stderr)
 
+    def test_uploads_configured_relative_directory_from_workspace(self) -> None:
+        result, upload_path, workspace = self.run_preparer(
+            ("custom/actual",), actual_path="custom/actual", run_directory="sub"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(upload_path, workspace / "custom/actual")
+        self.assertTrue((upload_path / "project/xml-S123.sarif").exists())
+
+    def test_uploads_configured_absolute_directory_despite_standard_directories(self) -> None:
+        custom_root = "custom/actual"
+        result, upload_path, workspace = self.run_preparer(
+            (custom_root, "its/ruling/target/actual", "private/its/ruling/target/actual"),
+            actual_path=custom_root,
+            absolute_actual_path=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(upload_path, workspace / custom_root)
+        self.assertTrue((upload_path / "project/xml-S123.sarif").exists())
+
+    def test_rejects_missing_configured_directory(self) -> None:
+        result, upload_path, workspace = self.run_preparer(
+            ("its/ruling/target/actual",), actual_path="custom/missing"
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIsNone(upload_path)
+        self.assertIn(
+            f"Configured actual-path is not a directory: {workspace / 'custom/missing'}",
+            result.stderr,
+        )
+
     def test_rejects_repository_root_build_directory(self) -> None:
         result, _, _ = self.run_preparer(("build/actual",))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("No generated ruling directory", result.stderr)
 
     def test_rejects_directory_without_sarif(self) -> None:
-        for filenames in ((), ("report.txt",), ("report.sarif/note.txt",)):
+        for filenames in ((), ("report.txt",), ("report.json",), ("report.sarif/note.txt",)):
             with self.subTest(filenames=filenames):
                 result, upload_path, _ = self.run_preparer(
                     ("its/ruling/target/actual",), result_files=filenames

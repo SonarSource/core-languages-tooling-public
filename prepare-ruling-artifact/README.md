@@ -11,6 +11,12 @@ The action selects exactly one generated-result directory:
 | Private | `private/its/ruling/target/actual` | `private/its/ruling/build/actual` |
 | Python enterprise | `private/its-enterprise/ruling/target/actual` | `private/its-enterprise/ruling/build/actual` |
 
+By default, the action discovers one of these directories. Set `actual-path`
+to use a different directory. Relative paths are resolved from the workspace
+root (`GITHUB_WORKSPACE`), regardless of job-level
+`defaults.run.working-directory`; absolute paths are also supported. When set,
+this directory is used even if standard directories also exist.
+
 It fails if none or several of these directories exist, and the error lists
 the checked directories. It also fails if the selected directory contains no
 regular (non-symlink) `.sarif` file.
@@ -18,7 +24,8 @@ regular (non-symlink) `.sarif` file.
 The selected directory is uploaded directly, without copying or converting
 files: a generated `actual/project/report.sarif` is stored as
 `project/report.sarif` in the artifact, and `ruling-update-and-notify` copies it
-to `expected/project/report.sarif`. Python 3 must be available as `python3` or
+to `expected/project/report.sarif`. Only `.sarif` files are synced by the update
+action. Python 3 must be available as `python3` or
 `python` on the runner.
 
 ## Why a Separate Action?
@@ -44,6 +51,7 @@ This action uploads those files for `ruling-update-and-notify` to consume later.
 | Input | Required | Default | Purpose |
 |-------|----------|---------|---------|
 | `artifact-name` | No | `actual_ruling` | Use a distinct `actual_*` name when multiple jobs upload results. |
+| `actual-path` | No | Automatic discovery | Directory containing generated ruling results. |
 
 | Output | Purpose |
 |--------|---------|
