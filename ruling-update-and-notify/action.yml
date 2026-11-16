@@ -69,7 +69,7 @@ runs:
       uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
       with:
         pattern: actual_*
-        path: ruling-artifacts-temp
+        path: ${{ runner.temp }}/ruling-artifacts
         # Keep every artifact in its own directory. Merging during extraction
         # can concurrently write the same report from different platforms,
         # resulting in corrupted files when their byte representations differ.
@@ -80,7 +80,8 @@ runs:
       if: inputs.ruling-failed == 'true' && env.skip-update == 'false'
       shell: bash
       env:
-        RULING_ROOT: ${{ steps.ruling-paths.outputs.ruling-root }}
+        EXPECTED_ROOT: ${{ steps.ruling-paths.outputs.expected-root }}
+        ARTIFACT_DIRECTORY: ${{ runner.temp }}/ruling-artifacts
         DOWNLOAD_OUTCOME: ${{ steps.download-artifacts.outcome }}
       run: python3 "${{ github.action_path }}/sync_ruling_artifacts.py"
 
@@ -91,7 +92,7 @@ runs:
       env:
         TARGET_REF: ${{ github.event.pull_request.head.ref }}
         PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        RULING_ROOT: ${{ steps.ruling-paths.outputs.ruling-root }}
+        RULING_ROOT: ${{ steps.ruling-paths.outputs.expected-root }}
       run: python3 "${{ github.action_path }}/commit_ruling_update.py"
 
     - name: Post ruling diff comment
