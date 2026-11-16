@@ -52,7 +52,7 @@ class ModelConnectionTests(unittest.TestCase):
             model_connection(" ")
 
     def test_real_openai_transport_sends_expected_portkey_request(self) -> None:
-        import httpx
+        import httpx2
         from openai import OpenAI
 
         os.environ["PORTKEY_API_KEY"] = "test-key"
@@ -61,7 +61,7 @@ class ModelConnectionTests(unittest.TestCase):
 
         def respond(request, **kwargs):
             requests.append(request)
-            return httpx.Response(200, request=request, json={
+            return httpx2.Response(200, request=request, json={
                 "id": "chatcmpl-test", "object": "chat.completion", "created": 0,
                 "model": model, "choices": [{"index": 0, "message": {"role": "assistant", "content": "review"}, "finish_reason": "stop"}],
                 "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
@@ -69,7 +69,7 @@ class ModelConnectionTests(unittest.TestCase):
 
         resolved, options = model_connection(model)
         with (
-            patch.object(httpx.Client, "send", side_effect=respond),
+            patch.object(httpx2.Client, "send", side_effect=respond),
         ):
             client = OpenAI(**options)
             result = client.chat.completions.create(

@@ -16,7 +16,7 @@ package = false
 
 [tool.uv.exclude-newer-package]
 anyio = "2026-10-31T00:00:00Z"
-openai = "2026-10-31T00:00:00Z"
+openai = "2026-11-06T00:00:00Z"
 typing-inspection = "2026-10-31T00:00:00Z"
 
 [[tool.uv.index]]
