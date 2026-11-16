@@ -176,7 +176,7 @@ class PrepareRulingArtifactTests(unittest.TestCase):
         self.assertIn("No generated ruling directory", result.stderr)
 
     def test_rejects_directory_without_sarif(self) -> None:
-        for filenames in ((), ("report.txt",), ("report.sarif/note.txt",)):
+        for filenames in ((), ("report.txt",), ("report.json",), ("report.sarif/note.txt",)):
             with self.subTest(filenames=filenames):
                 result, upload_path, _ = self.run_preparer(
                     ("its/ruling/target/actual",), result_files=filenames
