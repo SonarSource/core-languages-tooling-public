@@ -42,7 +42,7 @@ Add this action to your workflow:
 
 ## Requirements
 
-- `uv` must be installed in the workflow environment
+- `uv` 0.13.8 or newer must be installed in the workflow environment
 - When the optional enhancer is enabled, the workflow must supply
   `UV_INDEX_REPOX_USERNAME` and `UV_INDEX_REPOX_PASSWORD` to the action step
   so uv can download its locked packages from repox. The base action has no

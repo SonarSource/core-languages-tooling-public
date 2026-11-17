@@ -9,11 +9,8 @@ resolution-markers = [
 ]
 
 [options]
-
-[options.exclude-newer-package]
-anyio = "2026-10-31T00:00:00Z"
-openai = "2026-11-06T00:00:00Z"
-typing-inspection = "2026-10-31T00:00:00Z"
+exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for backwards compatibility when using relative exclude-newer values.
+exclude-newer-span = "P5D"
 
 [[package]]
 name = "annotated-types"
@@ -63,9 +60,6 @@ wheels = [
 name = "httpcore2"
 version = "2.14.0"
 source = { registry = "https://repox.jfrog.io/artifactory/api/pypi/sonarsource-pypi/simple" }
-resolution-markers = [
-    "python_full_version < '3.11'",
-]
 dependencies = [
     { name = "h11" },
     { name = "truststore" },
@@ -76,61 +70,20 @@ wheels = [
 ]
 
 [[package]]
-name = "httpcore2"
-version = "2.16.1"
-source = { registry = "https://repox.jfrog.io/artifactory/api/pypi/sonarsource-pypi/simple" }
-resolution-markers = [
-    "python_full_version >= '3.14'",
-    "python_full_version == '3.11.*' or (python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform != 'emscripten')",
-]
-dependencies = [
-    { name = "h11" },
-    { name = "truststore" },
-]
-sdist = { url = "https://repox.jfrog.io/artifactory/api/pypi/sonarsource-pypi/packages/packages/31/74/902fb5889cdf87345caacfa286d7dfdca6bd1315c6b32173848b0e4d98dc/httpcore2-2.16.1.tar.gz", hash = "sha256:3daab6418ea53dd0f3de37bb6a5b15d8d334570d9781b9d64bc1fb8b6527a6df", size = 70058, upload-time = "2026-11-16T08:51:41.976Z" }
-wheels = [
-    { url = "https://repox.jfrog.io/artifactory/api/pypi/sonarsource-pypi/packages/packages/01/be/fdafbb964a5e8fa373c66a3037cbe35216cad794ec9370aee72890efe5a7/httpcore2-2.16.1-py3-none-any.whl", hash = "sha256:11f097034886b99d6f5829dde0a0f3bc0169c38935474ce1333bb10b3e4a0093", size = 85548, upload-time = "2026-11-16T08:51:38.763Z" },
-]
-
-[[package]]
 name = "httpx2"
 version = "2.14.0"
 source = { registry = "https://repox.jfrog.io/artifactory/api/pypi/sonarsource-pypi/simple" }
-resolution-markers = [
-    "python_full_version < '3.11'",
-]
 dependencies = [
     { name = "anyio", marker = "sys_platform != 'emscripten'" },
-    { name = "httpcore2", version = "2.14.0", source = { registry = "https://repox.jfrog.io/artifactory/api/pypi/sonarsource-pypi/simple" }, marker = "sys_platform != 'emscripten'" },
-    { name = "idna" },
-    { name = "truststore", marker = "sys_platform != 'emscripten'" },
-    { name = "typing-extensions" },
-]
-sdist = { url = "https://repox.jfrog.io/artifactory/api/pypi/sonarsource-pypi/packages/packages/e8/67/58353f1848b4ba568e1ec22ea1e0d8e039f0bca5fde7e2d1f07739fd83e7/httpx2-2.14.0.tar.gz", hash = "sha256:47ad61a3c40282cd8d0dc96311531f00f5bfc71a066c6fe3b36d8f63fb9e4f6e", size = 102036, upload-time = "2026-10-18T16:29:22.627Z" }
-wheels = [
-    { url = "https://repox.jfrog.io/artifactory/api/pypi/sonarsource-pypi/packages/packages/69/5a/469616aa8c2cbb0bb9dd67a3c18d07c01ab604cc0b236ee1c47d260c7f6e/httpx2-2.14.0-py3-none-any.whl", hash = "sha256:9d20c13a10bae1773a0be3b0f1e5beeb4bdd549bc3a2ba18efa32897c65403e4", size = 96901, upload-time = "2026-10-18T16:29:20.819Z" },
-]
-
-[[package]]
-name = "httpx2"
-version = "2.16.1"
-source = { registry = "https://repox.jfrog.io/artifactory/api/pypi/sonarsource-pypi/simple" }
-resolution-markers = [
-    "python_full_version >= '3.14'",
-    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'emscripten'",
-    "python_full_version == '3.11.*' or (python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform != 'emscripten')",
-]
-dependencies = [
-    { name = "anyio", marker = "sys_platform != 'emscripten'" },
-    { name = "httpcore2", version = "2.16.1", source = { registry = "https://repox.jfrog.io/artifactory/api/pypi/sonarsource-pypi/simple" }, marker = "sys_platform != 'emscripten'" },
+    { name = "httpcore2", marker = "sys_platform != 'emscripten'" },
     { name = "httpx2-jsfetch", marker = "python_full_version >= '3.12' and sys_platform == 'emscripten'" },
     { name = "idna" },
     { name = "truststore", marker = "sys_platform != 'emscripten'" },
     { name = "typing-extensions", marker = "python_full_version < '3.13'" },
 ]
-sdist = { url = "https://repox.jfrog.io/artifactory/api/pypi/sonarsource-pypi/packages/packages/40/c9/50553244c50e7833e5d19788a9a32dfd19dd53e8738b4795fe8ff82affcb/httpx2-2.16.1.tar.gz", hash = "sha256:a344d3f2f1ee08990f69675d191e3213a25ec4bf1c5be9e6bb1b3960946747bc", size = 103455, upload-time = "2026-11-16T08:51:43.096Z" }
+sdist = { url = "https://repox.jfrog.io/artifactory/api/pypi/sonarsource-pypi/packages/packages/e8/67/58353f1848b4ba568e1ec22ea1e0d8e039f0bca5fde7e2d1f07739fd83e7/httpx2-2.14.0.tar.gz", hash = "sha256:47ad61a3c40282cd8d0dc96311531f00f5bfc71a066c6fe3b36d8f63fb9e4f6e", size = 102036, upload-time = "2026-10-18T16:29:22.627Z" }
 wheels = [
-    { url = "https://repox.jfrog.io/artifactory/api/pypi/sonarsource-pypi/packages/packages/4c/03/f98fa91b1c47dd265e94fe80ca1074cd739f81b97f4d6c532b2d6f05ebf8/httpx2-2.16.1-py3-none-any.whl", hash = "sha256:29e8566f8ab355075e7590643e04756361fcdb7d5f2be4d9cb959bde7d33d215", size = 98070, upload-time = "2026-11-16T08:51:40.288Z" },
+    { url = "https://repox.jfrog.io/artifactory/api/pypi/sonarsource-pypi/packages/packages/69/5a/469616aa8c2cbb0bb9dd67a3c18d07c01ab604cc0b236ee1c47d260c7f6e/httpx2-2.14.0-py3-none-any.whl", hash = "sha256:9d20c13a10bae1773a0be3b0f1e5beeb4bdd549bc3a2ba18efa32897c65403e4", size = 96901, upload-time = "2026-10-18T16:29:20.819Z" },
 ]
 
 [[package]]
@@ -283,8 +236,7 @@ version = "3.46.0"
 source = { registry = "https://repox.jfrog.io/artifactory/api/pypi/sonarsource-pypi/simple" }
 dependencies = [
     { name = "anyio" },
-    { name = "httpx2", version = "2.14.0", source = { registry = "https://repox.jfrog.io/artifactory/api/pypi/sonarsource-pypi/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "httpx2", version = "2.16.1", source = { registry = "https://repox.jfrog.io/artifactory/api/pypi/sonarsource-pypi/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "httpx2" },
     { name = "jiter" },
     { name = "pydantic" },
     { name = "sniffio" },
