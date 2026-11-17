@@ -7,7 +7,7 @@ inputs:
     required: false
     default: 'actual_ruling'
   actual-path:
-    description: 'Directory containing generated ruling results; defaults to automatic discovery'
+    description: 'Directory containing generated ruling results; defaults to automatic discovery of target/actual or build/actual under its/ruling or private/its/ruling'
     required: false
     default: ''
 

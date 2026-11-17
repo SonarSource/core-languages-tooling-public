@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 RESULT_SUFFIX = ".sarif"
-ACTUAL_ROOTS = (
+DEFAULT_ACTUAL_ROOTS = (
     Path("its/ruling/target/actual"),
     Path("private/its/ruling/target/actual"),
     Path("private/its-enterprise/ruling/target/actual"),
@@ -17,17 +17,17 @@ ACTUAL_ROOTS = (
 )
 
 
-def select_actual_root(actual_path: str | None = None) -> Path:
-    if actual_path:
-        root = Path(actual_path)
+def select_actual_root(configured_actual_root: str | None = None) -> Path:
+    if configured_actual_root:
+        root = Path(configured_actual_root)
         if not root.is_absolute():
             root = Path(os.environ["GITHUB_WORKSPACE"]) / root
         if not root.is_dir():
             raise ValueError(f"Configured actual-path is not a directory: {root}")
         return root
 
-    candidates = [root for root in ACTUAL_ROOTS if root.is_dir()]
-    checked_roots = ", ".join(str(root) for root in ACTUAL_ROOTS)
+    candidates = [root for root in DEFAULT_ACTUAL_ROOTS if root.is_dir()]
+    checked_roots = ", ".join(str(root) for root in DEFAULT_ACTUAL_ROOTS)
     if len(candidates) > 1:
         found_roots = ", ".join(str(root) for root in candidates)
         raise ValueError(
