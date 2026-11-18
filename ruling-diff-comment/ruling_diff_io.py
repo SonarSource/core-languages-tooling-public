@@ -13,7 +13,7 @@ from ruling_diff_core_lib.models_and_constants import (
     OptionalSarifReport,
 )
 
-RULING_SOURCES_SUBMODULE = "private/its-enterprise/sources_ruling"
+RULING_SOURCES_SUBMODULE = "its/sources"
 SOURCES_INTERNAL_RULING_ROOT = "private/its-enterprise/sources_internal_ruling"
 SOURCES_INTERNAL_NAMESPACE_RULING_ROOT = (
     "private/its-enterprise/sources_internal_namespace_ruling"

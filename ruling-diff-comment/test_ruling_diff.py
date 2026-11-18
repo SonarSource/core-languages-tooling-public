@@ -370,6 +370,16 @@ class RulingDiffCLITest(unittest.TestCase):
         self.assertIn("0 issues removed, 1 issues added", result.stdout)
         self.assertIn("second = 2", result.stdout)
 
+    def test_sources_root_defaults_to_its_sources(self) -> None:
+        args = self.parse_args("--dry-run", "--base-sha", "base", "--head-sha", "head")
+        self.assertEqual(args.sources_root, "its/sources")
+
+    def test_sources_root_can_be_overridden(self) -> None:
+        args = self.parse_args(
+            "--dry-run", "--base-sha", "base", "--head-sha", "head",
+            "--sources-root", "private/its-enterprise/sources_ruling",
+        )
+        self.assertEqual(args.sources_root, "private/its-enterprise/sources_ruling")
 
 class FakeRulingDiffIO:
     def __init__(
@@ -993,7 +1003,7 @@ class GitHubActionIOTest(unittest.TestCase):
         io_impl = io.GitHubActionIO()
         self.assertEqual(
             io_impl.resolve_source_path("project", "biopython/Bio/Nexus/Nexus.py"),
-            "private/its-enterprise/sources_ruling/biopython/Bio/Nexus/Nexus.py",
+            "its/sources/biopython/Bio/Nexus/Nexus.py",
         )
 
     def test_resolve_source_path_for_project_rulings_falls_back_to_sources_internal(self) -> None:
@@ -1062,6 +1072,13 @@ class GitHubActionIOTest(unittest.TestCase):
                 io_impl = io.GitHubActionIO(sources_root=sources_ruling)
                 self.assertEqual(io_impl.resolve_source_path("project", "missing.py"), primary)
 
+    def test_resolve_source_path_uses_explicit_sources_root(self) -> None:
+        io_impl = io.GitHubActionIO(sources_root="private/its-enterprise/sources_ruling")
+        self.assertEqual(
+            io_impl.resolve_source_path("custom-project", "pkg/file.py"),
+            "private/its-enterprise/sources_ruling/custom-project/pkg/file.py",
+        )
+
     def test_resolve_source_path_uses_project_overrides(self) -> None:
         io_impl = io.GitHubActionIO()
         overrides = {
@@ -1080,7 +1097,7 @@ class GitHubActionIOTest(unittest.TestCase):
         io_impl = io.GitHubActionIO()
         self.assertEqual(
             io_impl.resolve_source_path("custom-project", "/pkg/file.py"),
-            "private/its-enterprise/sources_ruling/custom-project/pkg/file.py",
+            "its/sources/custom-project/pkg/file.py",
         )
 
 
