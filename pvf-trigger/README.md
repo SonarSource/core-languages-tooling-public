@@ -11,11 +11,23 @@ budget already used by the PVF framework chain.
 Internally it calls the [`pvf-comment`](../pvf-comment) parser action. When a `/pvf` command is found
 it invokes the host workflow (`performance-validation.yml` by default) in the target-repo (caller by default).
 
+## Waiting for the build
+
+When the artifact is not there yet, the action waits for the build workflow instead of failing:
+
+- It polls every 60 seconds.
+- When no run exists for the PR head SHA yet, it waits up to 5 minutes for one to show up.
+- When a run shows up, it waits up to 60 minutes for the artifact to be uploaded.
+- It gives up early when the newest run is red: it finished without success, or a job has already failed.
+
+The caller job therefore holds a runner for up to about 65 minutes; make sure its `timeout-minutes`
+(if set) leaves room for that.
+
 ## Feedback on the comment
 
 On a successful dispatch the triggering comment is reacted to with 👀. Otherwise the action replies on
-the PR with the reason, e.g. a missing `candidate-version` artifact or, with `required-permission`
-set, a commenter without enough access.
+the PR with the reason, e.g. a red build, a timeout while waiting for the `candidate-version` artifact
+or, with `required-permission` set, a commenter without enough access.
 
 ## Two modes
 

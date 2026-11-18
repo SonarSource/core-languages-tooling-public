@@ -122,34 +122,76 @@ runs:
         head_sha="$(jq -r .head.sha <<<"$pull")"
         title="$(jq -r .title <<<"$pull")"
         # Use the newest run containing the required artifact. Each model forwards different inputs.
-        run_ids="$(gh api \
-          "repos/${GITHUB_REPOSITORY}/actions/workflows/${BUILD_WORKFLOW}/runs?head_sha=${head_sha}&event=pull_request&per_page=10" \
-          --jq '.workflow_runs[].id')" \
-          || fail "Failed to list ${BUILD_WORKFLOW} runs for ${head_sha}"
-
+        artifact="${EXECUTABLE_ARTIFACT:-candidate-version}"
         resolved_run_id=""
-        if [ -n "${EXECUTABLE_ARTIFACT}" ]; then
-          for run_id in $run_ids; do
-            has="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts?per_page=100" \
-              | jq --arg name "$EXECUTABLE_ARTIFACT" 'any(.artifacts[]; .name == $name and .expired == false)')" \
-              || continue
-            if [ "$has" = "true" ]; then
+        find_artifact_run() {
+          local run_id has
+          for run_id in "$@"; do
+            if [ -n "${EXECUTABLE_ARTIFACT}" ]; then
+              has="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts?per_page=100" \
+                | jq --arg name "$EXECUTABLE_ARTIFACT" 'any(.artifacts[]; .name == $name and .expired == false)')" \
+                || continue
+              if [ "$has" = "true" ]; then
+                resolved_run_id="$run_id"
+                return 0
+              fi
+            elif gh run download "$run_id" --repo "$GITHUB_REPOSITORY" -n candidate-version; then
               resolved_run_id="$run_id"
-              break
+              return 0
             fi
           done
-          [ -n "$resolved_run_id" ] \
-            || fail "No ${EXECUTABLE_ARTIFACT} artifact for ${head_sha}; wait for Build to finish"
+          return 1
+        }
+
+        # Wait up to 5 minutes for a Build run to show up, then up to 60 minutes for it to upload the
+        # artifact. Give up early once the newest run is red.
+        poll_interval=60
+        discover_deadline=$((SECONDS + 300))
+        wait_deadline=""
+        wait_or_fail() {
+          [ "$SECONDS" -lt "${wait_deadline:-$discover_deadline}" ] || fail "$1"
+          sleep "$poll_interval"
+        }
+        while true; do
+          # A placeholder conclusion keeps the tab-separated fields aligned while a run is not finished.
+          if ! runs="$(gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/${BUILD_WORKFLOW}/runs?head_sha=${head_sha}&event=pull_request&per_page=10" \
+            --jq '.workflow_runs[] | [.id, .status, .conclusion // "none", .html_url] | @tsv')"; then
+            echo "Failed to list ${BUILD_WORKFLOW} runs for ${head_sha}, retrying"
+            wait_or_fail "Failed to list ${BUILD_WORKFLOW} runs for ${head_sha}"
+            continue
+          fi
+          if [ -z "$runs" ]; then
+            echo "Waiting for a ${BUILD_WORKFLOW} run for ${head_sha}"
+            wait_or_fail "No ${BUILD_WORKFLOW} run for ${head_sha} after 5 minutes"
+            continue
+          fi
+          wait_deadline="${wait_deadline:-$((SECONDS + 3600))}"
+
+          mapfile -t run_ids < <(cut -f1 <<<"$runs")
+          if find_artifact_run "${run_ids[@]}"; then
+            break
+          fi
+
+          IFS=$'\t' read -r newest_id newest_status newest_conclusion newest_url <<<"$runs"
+          if [ "$newest_status" = "completed" ]; then
+            [ "$newest_conclusion" = "success" ] \
+              || fail "Build ${newest_url} is ${newest_conclusion}; fix it and comment /pvf again"
+            fail "No ${artifact} artifact for ${head_sha} in ${newest_url}"
+          fi
+          # Fail fast on a run that is still going but already red. A failed lookup is retried next poll.
+          failed_jobs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${newest_id}/jobs?per_page=100" \
+            --jq '[.jobs[] | select(.conclusion == "failure") | .name] | join(", ")')" \
+            || failed_jobs=""
+          [ -z "$failed_jobs" ] \
+            || fail "Build ${newest_url} has failed jobs (${failed_jobs}); fix it and comment /pvf again"
+          echo "Waiting for ${newest_url} (${newest_status}) to upload the ${artifact} artifact"
+          wait_or_fail "Timed out after 60 minutes waiting for the ${artifact} artifact from ${newest_url}"
+        done
+
+        if [ -n "${EXECUTABLE_ARTIFACT}" ]; then
           candidate_args=(-f "uploaded-executable-run-id=${resolved_run_id}" -f "executable-artifact=${EXECUTABLE_ARTIFACT}")
         else
-          for run_id in $run_ids; do
-            if gh run download "$run_id" --repo "$GITHUB_REPOSITORY" -n candidate-version; then
-              resolved_run_id="$run_id"
-              break
-            fi
-          done
-          [ -n "$resolved_run_id" ] \
-            || fail "No candidate-version artifact for ${head_sha}; wait for Build to finish"
           [ -s candidate-version.txt ] \
             || fail "candidate-version artifact for ${head_sha} is missing or empty"
           candidate_args=(-f "candidate-version=$(cat candidate-version.txt)")
