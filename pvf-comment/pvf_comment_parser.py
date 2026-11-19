@@ -9,6 +9,7 @@ PVF_COMMAND_PREFIX = '/pvf'
 SEPARATORS = ' ', ',', '\t'
 ALL = "ALL", "all", '*'
 FPS = "FPS", "fps"
+FULL = "FULL", "full"
 
 
 def main():
@@ -63,7 +64,8 @@ def _parse_payload(payload: list[str], rule_prefixes: list[str]) -> PvfCommentPa
 
     all_flag = has_flag(ALL)
     fps = has_flag(FPS)
-    used = {*ALL, *FPS}
+    mode = "full" if has_flag(FULL) else "light"
+    used = {*ALL, *FPS, *FULL}
     rules = [tu for t in payload if is_rule(tu := t.upper()) and t not in used]
     used_rules = set(rules)
     languages = [t for t in payload if t not in used and t.upper() not in used_rules]
@@ -77,7 +79,8 @@ def _parse_payload(payload: list[str], rule_prefixes: list[str]) -> PvfCommentPa
         rules=rules,
         languages=languages,
         fps=fps,
-        all_flag=all_flag
+        all_flag=all_flag,
+        mode=mode
     )
 
 
@@ -96,6 +99,7 @@ def _write_github_outputs(payload: PvfCommentPayload | None, output_path: str | 
             handle.write("rules-request=\n")
             handle.write("fps=false\n")
             handle.write("languages=[]\n")
+            handle.write("mode=light\n")
             return
 
         rules_request = "" if payload.all_flag or not payload.rules else ",".join(payload.rules)
@@ -104,6 +108,7 @@ def _write_github_outputs(payload: PvfCommentPayload | None, output_path: str | 
         handle.write(f"rules-request={rules_request}\n")
         handle.write(f"fps={'true' if payload.fps else 'false'}\n")
         handle.write(f"languages={languages_json}\n")
+        handle.write(f"mode={payload.mode}\n")
 
 
 if __name__ == '__main__':

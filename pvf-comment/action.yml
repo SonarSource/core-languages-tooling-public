@@ -23,6 +23,9 @@ outputs:
   languages:
     description: 'JSON array of language tokens from the comment'
     value: ${{ steps.parse.outputs.languages }}
+  mode:
+    description: 'PVF execution mode: light by default, full when the full flag is present'
+    value: ${{ steps.parse.outputs.mode }}
 
 runs:
   using: 'composite'
