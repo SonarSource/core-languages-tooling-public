@@ -67,6 +67,7 @@ runs:
         GH_TOKEN: ${{ github.token }}
         PR_NUMBER: ${{ inputs.pr-number }}
         RULES_REQUEST: ${{ steps.pvf.outputs.rules-request }}
+        MODE: ${{ steps.pvf.outputs.mode }}
         BUILD_WORKFLOW: ${{ inputs.build-workflow }}
         EXECUTABLE_ARTIFACT: ${{ inputs.executable-artifact }}
         TARGET_REPO: ${{ inputs.target-repo }}
@@ -183,6 +184,7 @@ runs:
           --ref "$ref" \
           "${candidate_args[@]}" \
           -f "rules-request=${RULES_REQUEST}" \
+          -f "mode=${MODE}" \
           -f "pr-number=${PR_NUMBER}" \
           -f "run-description=${title}" \
           ${extra_args[@]+"${extra_args[@]}"} 2>&1)"; then

@@ -11,6 +11,11 @@ budget already used by the PVF framework chain.
 Internally it calls the [`pvf-comment`](../pvf-comment) parser action. When a `/pvf` command is found
 it invokes the host workflow (`performance-validation.yml` by default) in the target-repo (caller by default).
 
+`/pvf` runs all rules in light mode by default. Use `/pvf full` to run all rules in
+full mode. Rule filters work in either mode, for example `/pvf S123` or `/pvf full S123`.
+The action always forwards the parsed mode as `-f mode=light` or `-f mode=full`;
+the host workflow must declare a `mode` input and forward it to PVF.
+
 ## Feedback on the comment
 
 On a successful dispatch the triggering comment is reacted to with 👀. Otherwise the action replies on

@@ -43,9 +43,13 @@ unconfigured rule prefixes and malformed suffixes such as `MC-2012_17.`,
 `MC-2012_17..3`, or `MC-2012_17.3x`. Signed and underscore-separated suffixes
 (previously accepted by integer parsing) are no longer recognized as rule keys.
 
-Flag behavior is unchanged: `all`, `ALL`, or `*` clears the requested rules;
-`fps` or `FPS` enables FPS. A bare `/pvf`, or a command with no recognized rules,
-requests all rules. Other flag casing is treated as language tokens.
+`all`, `ALL`, or `*` clears the requested rules; `fps` or `FPS` enables FPS.
+Commands use light mode by default. `full` or `FULL` selects full mode and is
+not treated as a language token. A bare `/pvf`, or a command with no recognized
+rules, requests all rules. Other flag casing is treated as language tokens.
+
+For example, `/pvf` requests all rules in light mode, `/pvf full` requests all
+rules in full mode, and `/pvf full S123` requests only `S123` in full mode.
 
 ## Outputs
 
@@ -55,6 +59,7 @@ requests all rules. Other flag casing is treated as language tokens.
 | `rules-request` | Rule keys for PVF `rules-request` when `found=true`; empty means all rules (e.g. bare `/pvf` or `/pvf all`) |
 | `fps` | Whether the `fps` flag was present |
 | `languages` | JSON array of language tokens from the comment |
+| `mode` | `light` by default, or `full` when the `full` or `FULL` flag is present |
 
 ## Requirements
 
