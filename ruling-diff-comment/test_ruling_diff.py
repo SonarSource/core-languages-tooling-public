@@ -100,6 +100,7 @@ class LocalCLITests(unittest.TestCase):
                             self.assertTrue(result.stdout.startswith("<!-- ruling-diff-comment -->"))
                             self.assertIn("## Ruling Diff Summary", result.stdout)
                             self.assertIn("<b>S100</b> (<code>python</code>)", result.stdout)
+                            self.assertTrue(result.stdout.rstrip().endswith(cli.REVIEW_TIME_SURVEY))
                             if change == "deleted":
                                 self.assertIn("1 issues removed, 0 issues added", result.stdout)
                                 self.assertIn("first = 1", result.stdout)
@@ -224,11 +225,17 @@ class RulingDiffCLITest(unittest.TestCase):
                 render.assert_called_once_with(["diff"])
                 enhance.assert_called_once_with("markdown", ["diff"])
                 if dry_run:
-                    self.assertEqual(output.getvalue(), "enhanced markdown\n")
+                    self.assertEqual(
+                        output.getvalue(),
+                        f"enhanced markdown\n\n{cli.REVIEW_TIME_SURVEY}\n",
+                    )
                     post.assert_not_called()
                 else:
                     self.assertEqual(output.getvalue(), "")
-                    post.assert_called_once_with("123", "org/repo", "enhanced markdown")
+                    post.assert_called_once_with(
+                        "123", "org/repo",
+                        f"enhanced markdown\n\n{cli.REVIEW_TIME_SURVEY}",
+                    )
 
     def test_output_file_writes_generated_comment(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -311,7 +318,7 @@ class RulingDiffCLITest(unittest.TestCase):
             patch.object(cli, "add_enhancer_review", return_value="enhanced markdown") as enhance,
         ):
             comment = cli.generate_comment("base", "head", "custom/expected", "its/sources")
-        self.assertEqual(comment, "enhanced markdown")
+        self.assertEqual(comment, f"enhanced markdown\n\n{cli.REVIEW_TIME_SURVEY}")
         changed.assert_called_once_with("base", "head", "custom/expected")
         io_factory.assert_called_once_with("custom/expected", "its/sources")
         build.assert_called_once_with(["ruling.sarif"], "base", "head", io_factory.return_value)
@@ -996,6 +1003,89 @@ class GitHubCommentLookupTest(unittest.TestCase):
     def test_parse_json_documents_handles_multiple_arrays(self) -> None:
         documents = io.parse_json_documents('[{"a":1}]\n[{"b":2}]')
         self.assertEqual(len(documents), 2)
+
+    @patch("ruling_diff_io.run_command")
+    def test_new_comment_gets_all_survey_reactions(self, mocked_run_command) -> None:
+        mocked_run_command.side_effect = ["[]", '{"id": 42}', *("" for _ in range(5))]
+
+        io.post_or_update_comment("123", "org/repo", "survey body")
+
+        commands = [call.args[0] for call in mocked_run_command.call_args_list]
+        self.assertEqual(commands[1], [
+            "gh", "api", "--method", "POST", "repos/org/repo/issues/123/comments",
+            "-f", "body=survey body",
+        ])
+        self.assertEqual(
+            [command[-1] for command in commands[2:]],
+            ["content=+1", "content=laugh", "content=hooray",
+             "content=confused", "content=eyes"],
+        )
+        self.assertTrue(all(
+            command[4] == "repos/org/repo/issues/comments/42/reactions"
+            for command in commands[2:]
+        ))
+
+    @patch("ruling_diff_io.run_command")
+    def test_failed_reaction_warns_and_attempts_remaining_reactions(
+        self, mocked_run_command
+    ) -> None:
+        mocked_run_command.side_effect = [
+            "[]", '{"id": 42}', "", io.CommandError("reaction rejected"),
+            "", "", "",
+        ]
+
+        with self.assertLogs(level="WARNING") as captured:
+            io.post_or_update_comment("123", "org/repo", "survey body")
+
+        self.assertIn("laugh", captured.output[0])
+        self.assertIn("reaction rejected", captured.output[0])
+        commands = [call.args[0] for call in mocked_run_command.call_args_list]
+        self.assertEqual(
+            [command[-1] for command in commands[2:]],
+            ["content=+1", "content=laugh", "content=hooray",
+             "content=confused", "content=eyes"],
+        )
+
+    @patch("ruling_diff_io.run_command")
+    def test_failed_comment_post_remains_fatal(self, mocked_run_command) -> None:
+        mocked_run_command.side_effect = ["[]", io.CommandError("comment rejected")]
+
+        with self.assertRaisesRegex(io.CommandError, "comment rejected"):
+            io.post_or_update_comment("123", "org/repo", "survey body")
+
+        self.assertEqual(mocked_run_command.call_count, 2)
+
+    @patch("ruling_diff_io.run_command")
+    def test_updated_comment_gets_survey_reactions(self, mocked_run_command) -> None:
+        mocked_run_command.side_effect = [
+            '[{"id": 42, "body": "<!-- ruling-diff-comment -->"}]',
+            *("" for _ in range(6)),
+        ]
+
+        io.post_or_update_comment("123", "org/repo", "updated survey body")
+
+        commands = [call.args[0] for call in mocked_run_command.call_args_list]
+        self.assertEqual(commands[1], [
+            "gh", "api", "--method", "PATCH", "repos/org/repo/issues/comments/42",
+            "-f", "body=updated survey body",
+        ])
+        self.assertEqual(len(commands), 7)
+        self.assertTrue(all(
+            command[4] == "repos/org/repo/issues/comments/42/reactions"
+            for command in commands[2:]
+        ))
+
+    @patch("ruling_diff_io.run_command")
+    def test_failed_comment_update_remains_fatal(self, mocked_run_command) -> None:
+        mocked_run_command.side_effect = [
+            '[{"id": 42, "body": "<!-- ruling-diff-comment -->"}]',
+            io.CommandError("update rejected"),
+        ]
+
+        with self.assertRaisesRegex(io.CommandError, "update rejected"):
+            io.post_or_update_comment("123", "org/repo", "survey body")
+
+        self.assertEqual(mocked_run_command.call_count, 2)
 
 
 class GitHubActionIOTest(unittest.TestCase):

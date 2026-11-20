@@ -116,7 +116,8 @@ path contains a symlink.
    remote tip no longer matches, including after an advance, rewind, or branch
    deletion. No differences means no commit or push.
 8. Posts or updates the ruling diff comment on the original PR, comparing
-   the previous head with the newly pushed ruling commit.
+   the previous head with the newly pushed ruling commit. The comment includes
+   the temporary review-time survey and its preset reaction choices.
 
 The action never creates update branches or additional PRs, and does not
 manage or close existing PRs.
