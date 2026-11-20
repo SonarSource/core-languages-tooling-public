@@ -1026,6 +1026,36 @@ class GitHubCommentLookupTest(unittest.TestCase):
         ))
 
     @patch("ruling_diff_io.run_command")
+    def test_failed_reaction_warns_and_attempts_remaining_reactions(
+        self, mocked_run_command
+    ) -> None:
+        mocked_run_command.side_effect = [
+            "[]", '{"id": 42}', "", io.CommandError("reaction rejected"),
+            "", "", "",
+        ]
+
+        with self.assertLogs(level="WARNING") as captured:
+            io.post_or_update_comment("123", "org/repo", "survey body")
+
+        self.assertIn("laugh", captured.output[0])
+        self.assertIn("reaction rejected", captured.output[0])
+        commands = [call.args[0] for call in mocked_run_command.call_args_list]
+        self.assertEqual(
+            [command[-1] for command in commands[2:]],
+            ["content=+1", "content=laugh", "content=hooray",
+             "content=confused", "content=eyes"],
+        )
+
+    @patch("ruling_diff_io.run_command")
+    def test_failed_comment_post_remains_fatal(self, mocked_run_command) -> None:
+        mocked_run_command.side_effect = ["[]", io.CommandError("comment rejected")]
+
+        with self.assertRaisesRegex(io.CommandError, "comment rejected"):
+            io.post_or_update_comment("123", "org/repo", "survey body")
+
+        self.assertEqual(mocked_run_command.call_count, 2)
+
+    @patch("ruling_diff_io.run_command")
     def test_updated_comment_gets_survey_reactions(self, mocked_run_command) -> None:
         mocked_run_command.side_effect = [
             '[{"id": 42, "body": "<!-- ruling-diff-comment -->"}]',
@@ -1044,6 +1074,18 @@ class GitHubCommentLookupTest(unittest.TestCase):
             command[4] == "repos/org/repo/issues/comments/42/reactions"
             for command in commands[2:]
         ))
+
+    @patch("ruling_diff_io.run_command")
+    def test_failed_comment_update_remains_fatal(self, mocked_run_command) -> None:
+        mocked_run_command.side_effect = [
+            '[{"id": 42, "body": "<!-- ruling-diff-comment -->"}]',
+            io.CommandError("update rejected"),
+        ]
+
+        with self.assertRaisesRegex(io.CommandError, "update rejected"):
+            io.post_or_update_comment("123", "org/repo", "survey body")
+
+        self.assertEqual(mocked_run_command.call_count, 2)
 
 
 class GitHubActionIOTest(unittest.TestCase):

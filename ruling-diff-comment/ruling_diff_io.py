@@ -223,14 +223,17 @@ def post_or_update_comment(pr_number: str, repository: str, body: str) -> None:
         )
 
     for reaction in ("+1", "laugh", "hooray", "confused", "eyes"):
-        run_command(
-            [
-                "gh",
-                "api",
-                "--method",
-                "POST",
-                f"repos/{repository}/issues/comments/{comment_id}/reactions",
-                "-f",
-                f"content={reaction}",
-            ]
-        )
+        try:
+            run_command(
+                [
+                    "gh",
+                    "api",
+                    "--method",
+                    "POST",
+                    f"repos/{repository}/issues/comments/{comment_id}/reactions",
+                    "-f",
+                    f"content={reaction}",
+                ]
+            )
+        except CommandError as exc:
+            logging.warning("Failed to add %s reaction: %s", reaction, exc)
