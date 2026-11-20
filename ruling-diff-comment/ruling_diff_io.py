@@ -195,21 +195,42 @@ def post_or_update_comment(pr_number: str, repository: str, body: str) -> None:
     comment_id = get_existing_comment_id(pr_number, repository)
     if comment_id is None:
         logging.info("Posting new ruling diff comment on PR #%s", pr_number)
-        run_command(
-            ["gh", "pr", "comment", pr_number, "--repo", repository, "--body", body]
+        comment = run_gh_json(
+            [
+                "api",
+                "--method",
+                "POST",
+                f"repos/{repository}/issues/{pr_number}/comments",
+                "-f",
+                f"body={body}",
+            ]
         )
-        return
-    logging.info(
-        "Updating existing ruling diff comment %s on PR #%s", comment_id, pr_number
-    )
-    run_command(
-        [
-            "gh",
-            "api",
-            "--method",
-            "PATCH",
-            f"repos/{repository}/issues/comments/{comment_id}",
-            "-f",
-            f"body={body}",
-        ]
-    )
+        comment_id = str(comment["id"])
+    else:
+        logging.info(
+            "Updating existing ruling diff comment %s on PR #%s", comment_id, pr_number
+        )
+        run_command(
+            [
+                "gh",
+                "api",
+                "--method",
+                "PATCH",
+                f"repos/{repository}/issues/comments/{comment_id}",
+                "-f",
+                f"body={body}",
+            ]
+        )
+
+    for reaction in ("+1", "laugh", "hooray", "confused", "eyes"):
+        run_command(
+            [
+                "gh",
+                "api",
+                "--method",
+                "POST",
+                f"repos/{repository}/issues/comments/{comment_id}/reactions",
+                "-f",
+                f"content={reaction}",
+            ]
+        )

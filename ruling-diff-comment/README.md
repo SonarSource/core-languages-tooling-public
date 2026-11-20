@@ -52,7 +52,14 @@ Add this action to your workflow:
   `SonarSource/vault-action-wrapper@v3`, and set the username to an empty string
   and the password to the retrieved token. See [example-workflow.yml](example-workflow.yml).
 - `gh` CLI must be configured with appropriate permissions
+- The token needs permission to write PR comments and issue comment reactions.
 - Repository must contain ruling files in the expected structure
+
+Posted ruling diff comments end with a temporary review-time survey for the PR
+author and reviewer. The action adds the five reaction choices to new and
+updated comments so each person can select one. The survey is scheduled for
+removal by the end of December 2026. Preview modes show the survey but make no
+GitHub API calls.
 
 ## Environment Variables
 
