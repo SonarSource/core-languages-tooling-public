@@ -19,24 +19,24 @@ class PvfCommentParserTest(unittest.TestCase):
         self.assertEqual(payload.languages, ["vbnet", "csharp"])
         self.assertTrue(payload.fps)
         self.assertFalse(payload.all_flag)
-        self.assertEqual(payload.mode, "light")
+        self.assertTrue(payload.light_mode)
 
     def test_parse_payload_full_mode(self):
         for flag in ("full", "FULL"):
             with self.subTest(flag=flag):
                 payload = _parse_payload([flag], ['S'])
-                self.assertEqual(payload.mode, "full")
                 self.assertEqual(payload.rules, [])
                 self.assertEqual(payload.languages, [])
                 self.assertTrue(payload.all_flag)
+                self.assertFalse(payload.light_mode)
 
     def test_parse_payload_full_mode_preserves_filters_and_flags(self):
         payload = _parse_payload(["full", "S123", "java", "fps", "Full"], ['S'])
-        self.assertEqual(payload.mode, "full")
         self.assertEqual(payload.rules, ["S123"])
         self.assertEqual(payload.languages, ["java", "Full"])
         self.assertTrue(payload.fps)
         self.assertFalse(payload.all_flag)
+        self.assertFalse(payload.light_mode)
 
     def test_parse_payload_lowercase_rule_ids(self):
         payload = _parse_payload(["s1234", "S567"], ['S'])
