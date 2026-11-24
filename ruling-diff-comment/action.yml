@@ -36,6 +36,10 @@ runs:
         BASE_SHA: ${{ inputs.base-sha }}
         HEAD_SHA: ${{ inputs.head-sha }}
         SOURCES_ROOT: ${{ inputs.sources-root }}
+        UV_PYTHON_DOWNLOADS: automatic
+        UV_PYTHON_PREFERENCE: only-managed
+        UV_NO_MANAGED_PYTHON: "false"
+        UV_MANAGED_PYTHON: "false"
       run: |
         enhancer_args=()
         if [[ -n "${DSPY_MODEL:-}" ]]; then
