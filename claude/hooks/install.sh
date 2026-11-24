@@ -20,7 +20,7 @@ chmod +x "$HOOKS_DIR/add-bom-to-dotnet.sh"
 echo "  installed: $HOOKS_DIR/add-bom-to-dotnet.sh"
 
 # Create settings.json if it doesn't exist
-[ -f "$SETTINGS" ] || echo '{}' > "$SETTINGS"
+[[ -f "$SETTINGS" ]] || echo '{}' > "$SETTINGS"
 
 # Add Write hook only if not already present
 if jq -e '.hooks.PostToolUse // [] | map(select(.matcher == "Write")) | length > 0' "$SETTINGS" > /dev/null 2>&1; then
