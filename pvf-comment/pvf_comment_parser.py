@@ -64,7 +64,7 @@ def _parse_payload(payload: list[str], rule_prefixes: list[str]) -> PvfCommentPa
 
     all_flag = has_flag(ALL)
     fps = has_flag(FPS)
-    mode = "full" if has_flag(FULL) else "light"
+    is_light_mode = not has_flag(FULL)
     used = {*ALL, *FPS, *FULL}
     rules = [tu for t in payload if is_rule(tu := t.upper()) and t not in used]
     used_rules = set(rules)
@@ -80,7 +80,7 @@ def _parse_payload(payload: list[str], rule_prefixes: list[str]) -> PvfCommentPa
         languages=languages,
         fps=fps,
         all_flag=all_flag,
-        mode=mode
+        light_mode=is_light_mode
     )
 
 
@@ -108,7 +108,7 @@ def _write_github_outputs(payload: PvfCommentPayload | None, output_path: str | 
         handle.write(f"rules-request={rules_request}\n")
         handle.write(f"fps={'true' if payload.fps else 'false'}\n")
         handle.write(f"languages={languages_json}\n")
-        handle.write(f"mode={payload.mode}\n")
+        handle.write(f"mode={'light' if payload.light_mode else 'full'}\n")
 
 
 if __name__ == '__main__':

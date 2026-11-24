@@ -22,7 +22,7 @@ On a successful dispatch the triggering comment is reacted to with 👀. Otherwi
 the PR with the reason, e.g. a missing `candidate-version` artifact or, with `required-permission`
 set, a commenter without enough access.
 
-## Two modes
+## Two variants
 
 - **Same-repo (default):** the host workflow (`performance-validation.yml` by default) lives in the
   caller repo and publishes to the caller's own GitHub Pages.
