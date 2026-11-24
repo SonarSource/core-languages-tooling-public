@@ -22,6 +22,14 @@ outputs:
 runs:
   using: 'composite'
   steps:
+    - name: Set up Python and uv
+      uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+      with:
+        cache: false
+        tool_versions: |
+          python 3.13.17
+          uv 0.13.9
+
     - name: Select ruling results
       id: select
       shell: bash
@@ -29,11 +37,7 @@ runs:
         ARTIFACT_NAME: ${{ inputs.artifact-name }}
         ACTUAL_PATH: ${{ inputs.actual-path }}
       run: |
-        if command -v python3 >/dev/null 2>&1; then
-          python3 "${{ github.action_path }}/prepare.py"
-        else
-          python "${{ github.action_path }}/prepare.py"
-        fi
+        uv run --no-project --no-managed-python python "${{ github.action_path }}/prepare.py"
 
     - name: Upload ruling results
       id: upload
