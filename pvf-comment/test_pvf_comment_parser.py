@@ -19,6 +19,24 @@ class PvfCommentParserTest(unittest.TestCase):
         self.assertEqual(payload.languages, ["vbnet", "csharp"])
         self.assertTrue(payload.fps)
         self.assertFalse(payload.all_flag)
+        self.assertTrue(payload.light_mode)
+
+    def test_parse_payload_full_mode(self):
+        for flag in ("full", "FULL"):
+            with self.subTest(flag=flag):
+                payload = _parse_payload([flag], ['S'])
+                self.assertEqual(payload.rules, [])
+                self.assertEqual(payload.languages, [])
+                self.assertTrue(payload.all_flag)
+                self.assertFalse(payload.light_mode)
+
+    def test_parse_payload_full_mode_preserves_filters_and_flags(self):
+        payload = _parse_payload(["full", "S123", "java", "fps", "Full"], ['S'])
+        self.assertEqual(payload.rules, ["S123"])
+        self.assertEqual(payload.languages, ["java", "Full"])
+        self.assertTrue(payload.fps)
+        self.assertFalse(payload.all_flag)
+        self.assertFalse(payload.light_mode)
 
     def test_parse_payload_lowercase_rule_ids(self):
         payload = _parse_payload(["s1234", "S567"], ['S'])
@@ -93,6 +111,28 @@ class PvfCommentParserTest(unittest.TestCase):
             self.assertIn("found=true", text)
             self.assertIn("rules-request=", text)
             self.assertNotIn("rules-request=S", text)
+            self.assertIn("mode=light\n", text)
+
+    def test_main_mode_outputs(self):
+        for comment, expected_mode, expected_rules in (
+            ("/pvf", "light", ""),
+            ("/pvf all", "light", ""),
+            ("/pvf S123", "light", "S123"),
+            ("/pvf full", "full", ""),
+            ("/pvf FULL", "full", ""),
+            ("/pvf full S123", "full", "S123"),
+            ("/pvf full all S123", "full", ""),
+        ):
+            with self.subTest(comment=comment), tempfile.TemporaryDirectory() as tmp_dir:
+                output_path = pathlib.Path(tmp_dir) / "output"
+                with patch.dict(os.environ, {"GITHUB_OUTPUT": str(output_path)}):
+                    with patch("sys.argv", ["pvf_comment_parser.py", "--comment=" + comment]):
+                        main()
+                self.assertEqual(
+                    output_path.read_text(encoding="utf-8"),
+                    f"found=true\nrules-request={expected_rules}\nfps=false\n"
+                    f"languages=[]\nmode={expected_mode}\n",
+                )
 
     def test_main_accepts_hyphen_leading_body(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -111,7 +151,10 @@ class PvfCommentParserTest(unittest.TestCase):
             with patch.dict(os.environ, {"GITHUB_OUTPUT": str(output_path)}):
                 with patch("sys.argv", ["pvf_comment_parser.py", "--comment=hello", "--rule-prefixes=S"]):
                     main()
-            self.assertIn("found=false", output_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                output_path.read_text(encoding="utf-8"),
+                "found=false\nrules-request=\nfps=false\nlanguages=[]\nmode=light\n",
+            )
 
     def test_main_rule_prefixes_multiple_values(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -144,7 +187,7 @@ class PvfCommentParserTest(unittest.TestCase):
                 self.assertEqual(
                     output_path.read_text(encoding="utf-8"),
                     f"found=true\nrules-request={expected_rules}\nfps={expected_fps}\n"
-                    f"languages={expected_languages}\n",
+                    f"languages={expected_languages}\nmode=light\n",
                 )
 
 

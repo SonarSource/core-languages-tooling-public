@@ -7,3 +7,4 @@ class PvfCommentPayload:
     languages: list[str]
     fps: bool
     all_flag: bool
+    light_mode: bool
