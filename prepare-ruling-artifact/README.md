@@ -23,8 +23,9 @@ at least one regular, non-symlink `.sarif` file.
 The selected directory is uploaded directly, without copying or converting
 files: a generated `actual/project/report.sarif` is stored as
 `project/report.sarif` in the artifact, and `ruling-update-and-notify` copies it
-to `expected/project/report.sarif`. The action installs Python and uv with mise;
-the calling workflow does not need to set them up.
+to `expected/project/report.sarif`. The action installs uv with
+`step-security/setup-uv` and uses it to provide Python 3.13.17; the calling
+workflow does not need to set them up.
 
 ## Why a Separate Action?
 
