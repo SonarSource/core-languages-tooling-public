@@ -22,6 +22,11 @@ inputs:
 runs:
   using: 'composite'
   steps:
+    - name: Set up uv
+      uses: step-security/setup-uv@b49aac5576b90039e3e427495dda1a21aba6aaec # v10.3.3
+      with:
+        version: "0.13.9"
+
     - name: Generate and post ruling diff comment
       shell: bash
       env:
@@ -36,7 +41,7 @@ runs:
         if [[ -n "${DSPY_MODEL:-}" ]]; then
           enhancer_args+=(--extra enhancer)
         fi
-        uv run --project "${{ github.action_path }}" "${enhancer_args[@]}" python "${{ github.action_path }}/ruling_diff.py" \
+        uv run --project "${{ github.action_path }}" --python 3.13.17 "${enhancer_args[@]}" python "${{ github.action_path }}/ruling_diff.py" \
           --pr-number "$PR_NUMBER" \
           --repository "$REPOSITORY" \
           --base-sha "$BASE_SHA" \
