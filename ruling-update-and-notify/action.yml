@@ -61,7 +61,11 @@ runs:
       id: ruling-paths
       if: inputs.ruling-failed == 'true' && env.skip-update == 'false'
       shell: bash
-      run: python3 "${{ github.action_path }}/find_ruling_directory.py"
+      env:
+        UV_PYTHON_PREFERENCE: only-managed
+      run: |
+        unset UV_CONFIG_FILE UV_WORKING_DIR UV_PYTHON_DOWNLOADS UV_NO_MANAGED_PYTHON UV_MANAGED_PYTHON
+        uv run --no-config --no-project --python 3.13.17 python "${{ github.action_path }}/find_ruling_directory.py"
 
     - name: Download ruling artifacts
       id: download-artifacts
@@ -84,7 +88,10 @@ runs:
         EXPECTED_ROOT: ${{ steps.ruling-paths.outputs.expected-root }}
         ARTIFACT_DIRECTORY: ${{ runner.temp }}/ruling-artifacts
         DOWNLOAD_OUTCOME: ${{ steps.download-artifacts.outcome }}
-      run: python3 "${{ github.action_path }}/sync_ruling_artifacts.py"
+        UV_PYTHON_PREFERENCE: only-managed
+      run: |
+        unset UV_CONFIG_FILE UV_WORKING_DIR UV_PYTHON_DOWNLOADS UV_NO_MANAGED_PYTHON UV_MANAGED_PYTHON
+        uv run --no-config --no-project --python 3.13.17 python "${{ github.action_path }}/sync_ruling_artifacts.py"
 
     - name: Commit ruling update
       id: commit-ruling-update
@@ -94,7 +101,10 @@ runs:
         TARGET_REF: ${{ github.event.pull_request.head.ref }}
         PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         RULING_ROOT: ${{ steps.ruling-paths.outputs.expected-root }}
-      run: python3 "${{ github.action_path }}/commit_ruling_update.py"
+        UV_PYTHON_PREFERENCE: only-managed
+      run: |
+        unset UV_CONFIG_FILE UV_WORKING_DIR UV_PYTHON_DOWNLOADS UV_NO_MANAGED_PYTHON UV_MANAGED_PYTHON
+        uv run --no-config --no-project --python 3.13.17 python "${{ github.action_path }}/commit_ruling_update.py"
 
     - name: Post ruling diff comment
       if: steps.commit-ruling-update.outputs.update-sha != ''

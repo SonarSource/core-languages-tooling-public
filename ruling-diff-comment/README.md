@@ -42,7 +42,8 @@ Add this action to your workflow:
 
 ## Requirements
 
-- `uv` 0.13.8 or newer must be installed in the workflow environment
+- The action installs uv 0.13.9 with `step-security/setup-uv` and uses it to
+  provide Python 3.13.17; the calling workflow does not need to set them up.
 - When the optional enhancer is enabled, the workflow must supply
   `UV_INDEX_REPOX_USERNAME` and `UV_INDEX_REPOX_PASSWORD` to the action step
   so uv can download its locked packages from repox. The base action has no

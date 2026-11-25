@@ -23,7 +23,10 @@ at least one regular, non-symlink `.sarif` file.
 The selected directory is uploaded directly, without copying or converting
 files: a generated `actual/project/report.sarif` is stored as
 `project/report.sarif` in the artifact, and `ruling-update-and-notify` copies it
-to `expected/project/report.sarif`. Python 3 must be available as `python3` or `python` on the runner.
+to `expected/project/report.sarif`. The action installs uv with
+`step-security/setup-uv` and uses it to provide Python 3.13.17; the calling
+workflow does not need to set them up. The selector ignores the caller's uv
+configuration and requires uv-managed Python.
 
 ## Why a Separate Action?
 

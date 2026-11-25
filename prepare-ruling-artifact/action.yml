@@ -22,18 +22,21 @@ outputs:
 runs:
   using: 'composite'
   steps:
+    - name: Set up uv
+      uses: step-security/setup-uv@b49aac5576b90039e3e427495dda1a21aba6aaec # v10.3.3
+      with:
+        version: "0.13.9"
+
     - name: Select ruling results
       id: select
       shell: bash
       env:
         ARTIFACT_NAME: ${{ inputs.artifact-name }}
         ACTUAL_PATH: ${{ inputs.actual-path }}
+        UV_PYTHON_PREFERENCE: only-managed
       run: |
-        if command -v python3 >/dev/null 2>&1; then
-          python3 "${{ github.action_path }}/prepare.py"
-        else
-          python "${{ github.action_path }}/prepare.py"
-        fi
+        unset UV_CONFIG_FILE UV_WORKING_DIR UV_PYTHON_DOWNLOADS UV_NO_MANAGED_PYTHON UV_MANAGED_PYTHON
+        uv run --no-config --no-project --python 3.13.17 python "${{ github.action_path }}/prepare.py"
 
     - name: Upload ruling results
       id: upload

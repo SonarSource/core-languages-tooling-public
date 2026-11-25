@@ -139,12 +139,14 @@ manage or close existing PRs.
 
 ## Requirements
 
-- Python 3 and the `gh` CLI must be available on the runner.
+- The `gh` CLI must be available on the runner.
 - The caller must check out `github.event.pull_request.head.sha` in both
   the test and update jobs and upload `actual_*` artifacts on ruling failures.
 - The update job needs `contents: write` and `pull-requests: write`
   permissions, with authenticated Git push access supplied by checkout.
-- `uv` is installed by the action when a ruling update is needed.
+- The action installs uv 0.13.9 when a ruling update is needed and uses it to
+  provide Python 3.13.17 for its scripts. The scripts ignore the caller's uv
+  configuration and require uv-managed Python.
 
 GitHub's built-in `GITHUB_TOKEN` does not trigger push workflows, and PR
 synchronization workflows caused by it can require manual approval. If the
