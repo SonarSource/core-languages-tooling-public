@@ -18,6 +18,14 @@ from ruling_diff_io import (
     post_or_update_comment,
 )
 
+REVIEW_TIME_SURVEY = """----
+**PR author and reviewer: how much active time did you each spend checking the ruling changes?**
+Click one reaction below. Count reading the diff/report and checking source; exclude waits and fixes.
+
+👍 ≤5 min · 😄 >5–15 min · 🎉 >15–30 min · 😕 Didn’t check · 👀 >30 min
+
+<sub>This survey is for validation purposes. It will be removed by the end of December 2026.</sub>"""
+
 
 def configure_logging() -> None:
     level = logging.DEBUG if os.environ.get("RUNNER_DEBUG") else logging.INFO
@@ -112,7 +120,7 @@ def generate_comment(
         return None
 
     comment = format_comment(rule_diffs)
-    return add_enhancer_review(comment, rule_diffs)
+    return f"{add_enhancer_review(comment, rule_diffs).rstrip()}\n\n{REVIEW_TIME_SURVEY}"
 
 
 def resolve_output_file(output_file: str) -> Path:
